@@ -125,12 +125,27 @@ async def random_delay(min_sec: float = 2.0, max_sec: float = 5.0):
 async def scroll_reviews(page: Page, times: int = 5):
     """Scroll the reviews panel to load more reviews."""
     try:
-        # Find the scrollable reviews container
         for _ in range(times):
-            await page.evaluate("""
-                const panels = document.querySelectorAll('[role="feed"]');
-                if (panels.length > 0) {
-                    panels[0].scrollTo(0, panels[0].scrollHeight);
+            scrolled = await page.evaluate("""
+                () => {
+                    // ลอง selector หลายแบบ (Google Maps เปลี่ยน HTML บ่อย)
+                    const selectors = [
+                        '[role="feed"]',
+                        '.m6QErb.DxyBCb.kA9KIf.dS8AEf',
+                        '.m6QErb[aria-label]',
+                        '.DxyBCb',
+                        'div[tabindex="-1"] > div[aria-label]',
+                    ];
+                    for (const sel of selectors) {
+                        const el = document.querySelector(sel);
+                        if (el && el.scrollHeight > el.clientHeight) {
+                            el.scrollTo(0, el.scrollHeight);
+                            return sel;   // คืนค่า selector ที่ใช้ได้
+                        }
+                    }
+                    // fallback: เลื่อนหน้าทั้งหมด
+                    window.scrollBy(0, 800);
+                    return 'window';
                 }
             """)
             await asyncio.sleep(1.5)
@@ -195,7 +210,7 @@ async def extract_reviews(page: Page, max_reviews: int = 20) -> list[dict]:
         debug_dir.mkdir(parents=True, exist_ok=True)
         await page.screenshot(path=str(debug_dir / "after_reviews_tab.png"))
 
-        # Step 2: Sort by Lowest rating
+        # Step 2: Sort by Newest — หาจากข้อความ ไม่ใช่ index
         try:
             sort_btn = page.locator('button', has_text="จัดเรียง").first
             if await sort_btn.count() == 0:
@@ -203,20 +218,29 @@ async def extract_reviews(page: Page, max_reviews: int = 20) -> list[dict]:
             if await sort_btn.count() > 0:
                 await sort_btn.click(timeout=4000)
                 await random_delay(0.8, 1.5)
-                # Click last option = Lowest rating
                 try:
                     options = page.locator('[role="menuitemradio"], [role="option"]')
                     count = await options.count()
-                    if count > 0:
-                        await options.nth(count - 1).click(timeout=3000)
-                        await random_delay(1.5, 2.5)
+                    clicked = False
+                    # หา option ที่มีข้อความ "ล่าสุด" หรือ "Newest"
+                    for i in range(count):
+                        opt = options.nth(i)
+                        txt = (await opt.inner_text()).strip()
+                        if "ล่าสุด" in txt or "newest" in txt.lower() or "recent" in txt.lower():
+                            await opt.click(timeout=3000)
+                            clicked = True
+                            break
+                    # ถ้าหาไม่เจอ → ใช้ index 1
+                    if not clicked and count > 1:
+                        await options.nth(1).click(timeout=3000)
+                    await random_delay(1.5, 2.5)
                 except Exception:
                     pass
         except Exception:
             pass
 
-        # Step 3: Scroll to load more reviews
-        await scroll_reviews(page, times=8)
+        # Step 3: Scroll to load more reviews (เพิ่มจาก 8 → 20 รอบ)
+        await scroll_reviews(page, times=20)
 
         # Step 4: Extract reviews via JavaScript
         # Match ONLY exact "N ดาว" patterns (e.g. "1 ดาว", "2 ดาว") to avoid
@@ -308,9 +332,8 @@ async def extract_reviews(page: Page, max_reviews: int = 20) -> list[dict]:
                 if "Local Guide" in text and len(text) < 60:
                     continue
 
-                # Keep 1-3 star reviews (or unknown rating)
-                if rating and rating > 3:
-                    continue
+                # เก็บทุกดาว (1-5) เพื่อข้อมูลมากขึ้น
+                # (เดิมกรองแค่ 1-3 ดาว)
 
                 reviews.append({
                     "rating": rating,
@@ -424,9 +447,9 @@ async def scrape_place(page: Page, place_name: str) -> dict | None:
         safe_name = re.sub(r'[^\w]', '_', actual_name)[:20]
         await debug_page(page, f"before_reviews_{safe_name}")
 
-        # Scrape reviews
-        reviews = await extract_reviews(page, max_reviews=30)
-        print(f"  Collected {len(reviews)} low-rating reviews")
+        # Scrape reviews (เพิ่มจาก 30 → 80 รีวิวต่อสถานที่)
+        reviews = await extract_reviews(page, max_reviews=80)
+        print(f"  Collected {len(reviews)} reviews")
 
         return {
             "place_name": actual_name,

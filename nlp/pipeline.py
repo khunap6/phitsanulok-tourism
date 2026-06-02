@@ -85,16 +85,28 @@ async def _save_analyzed(session: AsyncSession, rows: list[dict]) -> int:
 # Single-review analysis (rule-based + optional WangchanBERTa)
 # ---------------------------------------------------------------------------
 
+def _sentiment_from_rating(rating: int | None) -> str:
+    """ประเมิน sentiment จากดาว (ใช้เมื่อไม่มีโมเดล)"""
+    if rating is None:
+        return "neutral"
+    if rating >= 4:
+        return "positive"
+    if rating == 3:
+        return "neutral"
+    return "negative"  # 1-2 ดาว
+
+
 def _analyze_rule_based(review: dict) -> dict:
     """Fallback: rule-based category + severity from rating."""
     _, tokens = preprocess(review["text"])
     categories = rule_based_categorize(review["text"])
+    rating = review.get("rating")
     return {
         "review_id": review["id"],
-        "sentiment": "negative",
+        "sentiment": _sentiment_from_rating(rating),
         "pain_point_category": categories[0],
         "pain_point_thai": review["text"][:60] + ("..." if len(review["text"]) > 60 else ""),
-        "severity": severity_from_rating(review.get("rating")),
+        "severity": severity_from_rating(rating),
         "keywords": tokens[:10],
         "model_used": "rule-based",
     }
