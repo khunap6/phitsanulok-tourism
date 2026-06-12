@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import KPICard from '../components/KPICard'
 import PainPointChart from '../components/PainPointChart'
 import PlaceSelector from '../components/PlaceSelector'
@@ -7,6 +8,33 @@ import SeverityPie from '../components/SeverityPie'
 import { useInsights, useTopPlaces } from '../hooks/useInsights'
 import { usePlaceReviews, usePlaces } from '../hooks/usePlaces'
 import { useReviews } from '../hooks/useReviews'
+
+// ── LDA hook ──────────────────────────────────────────────────────────────
+interface LdaTopic {
+  id: number
+  label: string
+  keywords: string[]
+  review_count: number
+  percent: number
+}
+interface LdaResult {
+  num_topics: number
+  total_reviews: number
+  topics: LdaTopic[]
+}
+
+function useLdaTopics() {
+  return useQuery<LdaResult>({
+    queryKey: ['lda-topics'],
+    queryFn: async () => {
+      const res = await fetch('/api/insights/lda-topics')
+      if (!res.ok) return null
+      return res.json()
+    },
+    retry: false,
+    staleTime: 1000 * 60 * 10,
+  })
+}
 
 const ALL_CATEGORIES = [
   'การเดินทางและที่จอดรถ',
@@ -29,6 +57,7 @@ export default function Dashboard() {
   const { data: insights, isLoading: insightsLoading } = useInsights()
   const { data: topPlaces } = useTopPlaces(5)
   const { data: places = [] } = usePlaces()
+  const { data: ldaData } = useLdaTopics()
 
   // รีวิวตาม place ที่เลือก หรือ paginated ทั้งหมด
   const { data: placeReviews = [], isLoading: placeReviewsLoading } = usePlaceReviews(
@@ -120,6 +149,66 @@ export default function Dashboard() {
                 <span className="text-red-400 text-sm w-16 text-right">{p.high_count} high</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* LDA Topic Modeling */}
+      {ldaData && ldaData.topics && (
+        <div className="bg-brand-card rounded-xl p-5 border border-brand-border">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-brand-text font-semibold">
+                หมวดหมู่ Pain Point (LDA Topic Modeling)
+              </h3>
+              <p className="text-brand-subtext text-xs mt-1">
+                ค้นพบอัตโนมัติจาก {ldaData.total_reviews.toLocaleString()} รีวิว
+                · {ldaData.num_topics} หมวด
+              </p>
+            </div>
+            <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-1 rounded-full">
+              AI-Generated
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {[...ldaData.topics]
+              .sort((a, b) => b.review_count - a.review_count)
+              .map((topic) => (
+                <div
+                  key={topic.id}
+                  className="bg-brand-bg rounded-lg p-3 border border-brand-border"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-brand-text text-sm font-medium truncate flex-1">
+                      {topic.label}
+                    </span>
+                    <span className="text-brand-subtext text-xs ml-2 shrink-0">
+                      {topic.percent}%
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="w-full bg-brand-border rounded-full h-1.5 mb-2">
+                    <div
+                      className="h-1.5 rounded-full bg-blue-500"
+                      style={{ width: `${Math.min(100, topic.percent * 2)}%` }}
+                    />
+                  </div>
+
+                  {/* Keywords */}
+                  <div className="flex flex-wrap gap-1">
+                    {topic.keywords.slice(0, 5).map((kw) => (
+                      <span
+                        key={kw}
+                        className="text-xs bg-brand-border text-brand-subtext px-1.5 py-0.5 rounded"
+                      >
+                        {kw}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
           </div>
         </div>
       )}

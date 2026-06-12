@@ -1,6 +1,8 @@
+import json
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +16,20 @@ from api.schemas.analysis import (
 )
 
 router = APIRouter(prefix="/insights", tags=["insights"])
+
+LDA_RESULT_PATH = Path(__file__).parent.parent.parent / "data" / "lda_output" / "lda_result.json"
+
+
+@router.get("/lda-topics")
+async def lda_topics():
+    """คืนผลลัพธ์ LDA Topic Modeling จากไฟล์ที่รันไว้"""
+    if not LDA_RESULT_PATH.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="ยังไม่มีผล LDA — รัน: uv run python scripts/topic_model_lda.py ก่อน"
+        )
+    with open(LDA_RESULT_PATH, encoding="utf-8") as f:
+        return json.load(f)
 
 
 @router.get("/summary", response_model=InsightResponse)

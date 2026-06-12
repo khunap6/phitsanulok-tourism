@@ -28,6 +28,8 @@ dependencies = [
     "apscheduler>=3.10",
     "sentencepiece>=0.2.1",
     "tiktoken>=0.13.0",
+    # Topic Modeling (sklearn ไม่ต้อง compile C++)
+    "scikit-learn>=1.4",
 ]
 
 [tool.hatch.build.targets.wheel]

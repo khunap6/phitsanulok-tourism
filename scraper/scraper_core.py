@@ -74,7 +74,43 @@ async def discover_places(page: Page, query: str = "สถานที่ท่�
         await page.goto("https://www.google.com/maps", wait_until="domcontentloaded")
         await random_delay(2.0, 3.0)
 
-        search_box = page.locator('#searchboxinput').first
+        # ปิด Cookie Consent / Terms dialog ถ้ามี
+        for consent_sel in [
+            'button[aria-label*="Accept"]',
+            'button[aria-label*="ยอมรับ"]',
+            'button[aria-label*="Agree"]',
+            'form[action*="consent"] button',
+            '[id*="consent"] button',
+            'button:has-text("Accept all")',
+            'button:has-text("ยอมรับทั้งหมด")',
+            'button:has-text("I agree")',
+            'button:has-text("Reject all")',
+        ]:
+            try:
+                btn = page.locator(consent_sel).first
+                if await btn.is_visible(timeout=2000):
+                    await btn.click()
+                    await asyncio.sleep(1.5)
+                    print("  ✅ ปิด consent dialog แล้ว")
+                    break
+            except Exception:
+                continue
+
+        # หา search box ด้วยหลาย selector
+        search_box = None
+        for sel in ['#searchboxinput', 'input[name="q"]', '[aria-label*="ค้นหา"]', 'input[type="text"]']:
+            try:
+                loc = page.locator(sel).first
+                if await loc.is_visible(timeout=3000):
+                    search_box = loc
+                    break
+            except Exception:
+                continue
+
+        if search_box is None:
+            print("  ⚠️  หา search box ไม่เจอ — ข้าม query นี้")
+            return places
+
         await search_box.click()
         await search_box.fill(query)
         await page.keyboard.press("Enter")
@@ -84,12 +120,26 @@ async def discover_places(page: Page, query: str = "สถานที่ท่�
         scroll_attempts = 0
         max_scrolls = 15
         while len(places) < max_places and scroll_attempts < max_scrolls:
-            # Extract place names from search results
-            items = await page.query_selector_all('[class*="hfpxzc"], [role="article"] a[href*="maps/place"]')
-            for item in items:
+            # ลอง selector หลายแบบ (Google Maps เปลี่ยน class บ่อย)
+            all_items = []
+            for sel in [
+                '[class*="hfpxzc"]',                      # class เก่า
+                'a[href*="/maps/place/"]',                 # link ตรงๆ
+                '[role="article"] a',                      # article link
+                '[jsaction*="mouseover"] a[aria-label]',  # jsaction pattern
+            ]:
+                found_sel = await page.query_selector_all(sel)
+                if found_sel:
+                    all_items = found_sel
+                    break  # ใช้ selector แรกที่เจอ
+
+            for item in all_items:
                 try:
+                    # ลองดึง aria-label จาก element เอง หรือจาก parent
                     aria = await item.get_attribute("aria-label")
-                    if aria and aria not in places:
+                    if not aria:
+                        aria = await item.evaluate("el => el.closest('[aria-label]')?.getAttribute('aria-label')")
+                    if aria and aria not in places and len(aria) > 3:
                         places.append(aria)
                 except Exception:
                     continue
@@ -97,10 +147,28 @@ async def discover_places(page: Page, query: str = "สถานที่ท่�
             if len(places) >= max_places:
                 break
 
-            # Scroll the results panel
-            await page.evaluate("""
-                const panel = document.querySelector('[role="feed"]');
-                if (panel) panel.scrollBy(0, 800);
+            # Scroll the results panel — ลอง selector หลายแบบ
+            scrolled = await page.evaluate("""
+                () => {
+                    const sels = [
+                        '[role="feed"]',
+                        '.m6QErb.DxyBCb',
+                        '.m6QErb',
+                        'div[aria-label*="ผลลัพธ์"]',
+                        'div[aria-label*="Results"]',
+                        '[role="main"] > div > div',
+                    ];
+                    for (const sel of sels) {
+                        const el = document.querySelector(sel);
+                        if (el && el.scrollHeight > el.clientHeight + 50) {
+                            el.scrollBy(0, 800);
+                            return sel;
+                        }
+                    }
+                    // fallback: scroll ทั้งหน้า
+                    window.scrollBy(0, 800);
+                    return 'window';
+                }
             """)
             await asyncio.sleep(2.0)
             scroll_attempts += 1
@@ -466,6 +534,13 @@ async def scrape_place(page: Page, place_name: str) -> dict | None:
         return None
 
 
+# Query หลายประเภทที่จะค้นหาใน Google Maps
+DISCOVER_QUERIES = [
+    "สถานที่ท่องเที่ยว พิษณุโลก",
+    "คาเฟ่ พิษณุโลก",
+]
+
+
 async def run_scraper(places: list[str] = None, headless: bool = True, max_places: int = None, auto_discover: bool = True) -> list[dict]:
     """Main scraper function."""
     async with async_playwright() as p:
@@ -484,10 +559,20 @@ async def run_scraper(places: list[str] = None, headless: bool = True, max_place
         await context.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });")
         page = await context.new_page()
 
-        # Auto-discover places if not provided
+        # Auto-discover places จากหลาย query
         if places is None:
             if auto_discover:
-                places = await discover_places(page, max_places=max_places or 60)
+                per_query = max(10, (max_places or 60) // len(DISCOVER_QUERIES))
+                all_places: list[str] = []
+                seen: set[str] = set()
+                for query in DISCOVER_QUERIES:
+                    found = await discover_places(page, query=query, max_places=per_query)
+                    for p_name in found:
+                        if p_name not in seen:
+                            seen.add(p_name)
+                            all_places.append(p_name)
+                    print(f"  [{query}] → {len(found)} places (รวม {len(all_places)} ไม่ซ้ำ)")
+                places = all_places
             if not places:
                 places = PHITSANULOK_PLACES_FALLBACK
 

@@ -355,9 +355,10 @@ async def run_discover(
             auto_discover=True,
         )
 
-        # Only save truly new places
-        new_results = [r for r in results if r and r.get("place_name") not in existing]
-        places_count, reviews_new = await save_to_db(new_results, session)
+        # บันทึกทุกสถานที่ (UPSERT จัดการ duplicate เอง)
+        # ไม่กรองล่วงหน้า เพราะชื่อจาก Google Maps อาจต่างจาก DB เล็กน้อย
+        valid_results = [r for r in results if r]
+        places_count, reviews_new = await save_to_db(valid_results, session)
         duration = round(time() - t0, 1)
 
         await session.execute(
