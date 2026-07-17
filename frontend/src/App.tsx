@@ -3,6 +3,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { Link, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import MapView from './pages/MapView'
+import ZoneDashboard from './pages/ZoneDashboard'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,11 +35,13 @@ function Layout() {
         <span className="text-brand-text font-bold text-sm mr-4">
           Phitsanulok Tourism
         </span>
-        <NavLink to="/" label="Dashboard" />
+        <NavLink to="/" label="ภาพรวม" />
+        <NavLink to="/zones" label="วิเคราะห์ตามโซน" />
         <NavLink to="/map" label="แผนที่" />
       </nav>
       <Routes>
         <Route path="/" element={<Dashboard />} />
+        <Route path="/zones" element={<ZoneDashboard />} />
         <Route path="/map" element={<MapView />} />
       </Routes>
     </div>

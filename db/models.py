@@ -32,6 +32,8 @@ class Place(Base):
     location: Mapped[Optional[object]] = mapped_column(
         Geometry("POINT", srid=4326), nullable=True
     )
+    zone: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, index=True)
+    google_category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     scraped_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
     updated_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()

@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Test-Path *)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Get-WmiObject *)",
+      "PowerShell(Get-Command *)",
+      "PowerShell(Get-Service *)",
+      "PowerShell(Get-PSDrive *)",
+      "PowerShell(Get-ItemProperty *)",
+      "PowerShell(nvidia-smi *)",
+      "PowerShell(winget show *)",
+      "PowerShell(winget list *)",
+      "PowerShell(Get-Content *)",
+      "PowerShell(Measure-Object *)",
+      "PowerShell(Select-Object *)",
+      "PowerShell(Format-List *)",
+      "PowerShell(Format-Table *)",
+      "PowerShell(Get-Process *)"
+    ],
+    "deny": []
+  }
+}

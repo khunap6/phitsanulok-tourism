@@ -9,6 +9,12 @@
 
 Set-Location "D:\Claude_Workspace\New\WebScraping\phitsanulok-tourism"
 
+# ── UTF-8 ENCODING (ให้ terminal แสดงภาษาไทยถูกต้อง) ──────────
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+$env:PYTHONIOENCODING = "utf-8"
+chcp 65001 > $null
+
 # ── DISCOVER (หาสถานที่ใหม่) ─────────────────────────────────
 # uv run python scripts\discover_5.py        # ทดสอบ 5 สถานที่
 # uv run python scripts\discover_20.py       # 20 สถานที่
@@ -26,9 +32,22 @@ Set-Location "D:\Claude_Workspace\New\WebScraping\phitsanulok-tourism"
 # ── RUN ALL (ทำครบทุกขั้นตอน) ────────────────────────────────
 # uv run python scripts\run_all.py           # ปรับ MAX_PLACES ใน run_all.py ก่อน
 
+# ── ZONE-BASED DISCOVERY (ค้นหาแบบแยกพื้นที่) ────────────────
+# uv run python scripts\assign_zones.py                              # ติด zone ให้ข้อมูลเดิม
+# uv run python scripts\discover_by_zone.py                         # scrape ทุกโซน
+# uv run python scripts\discover_by_zone.py --zone naresuan         # เฉพาะ ม.นเรศวร
+# uv run python scripts\discover_by_zone.py --zone rajabhat         # เฉพาะ ม.ราชภัฏ
+# uv run python scripts\discover_by_zone.py --zone city_center      # เฉพาะตัวเมือง
+
 # ── TOPIC MODELING (LDA) ─────────────────────────────────────
 # uv run python scripts\topic_model_lda.py   # ค้นหาหมวดหมู่อัตโนมัติ
 # uv run python scripts\test_discover.py     # ทดสอบ selector ของ Google Maps
+
+# ── GOOGLE CATEGORY (ทดสอบ + backfill ข้อมูลเดิม) ─────────────
+# uv run python scripts\test_category_selector.py         # ทดสอบ selector ดึง google_category ก่อน
+# uv run python scripts\backfill_category.py --limit 10   # ทดสอบ backfill แค่ 10 แห่งก่อน
+# uv run python scripts\backfill_category.py              # backfill ทุกแห่งที่ยังเป็น NULL
+# uv run python scripts\backfill_category.py --visible    # เปิด browser ให้เห็น (debug)
 
 # ── BACKUP DATABASE ──────────────────────────────────────────
 # สร้างโฟลเดอร์ backup (ทำครั้งเดียวพอ)

@@ -69,22 +69,27 @@ async def save_to_db(results: list[dict], session: AsyncSession) -> tuple[int, i
         except (ValueError, TypeError):
             rating = None
 
+        google_category = result.get("google_category")
+
         # Upsert place — with or without coordinates
+        # COALESCE ป้องกันไม่ให้ refresh ที่ไม่ได้ category มาทับของเดิมด้วย NULL
         if lat is not None and lng is not None:
             place_row = await session.execute(
                 text("""
-                    INSERT INTO places (name, search_query, overall_rating, location, scraped_at)
-                    VALUES (:name, :search_query, :rating, ST_MakePoint(:lng, :lat), NOW())
+                    INSERT INTO places (name, search_query, overall_rating, google_category, location, scraped_at)
+                    VALUES (:name, :search_query, :rating, :google_category, ST_MakePoint(:lng, :lat), NOW())
                     ON CONFLICT (name) DO UPDATE SET
-                        overall_rating = EXCLUDED.overall_rating,
-                        location       = EXCLUDED.location,
-                        scraped_at     = EXCLUDED.scraped_at
+                        overall_rating   = EXCLUDED.overall_rating,
+                        google_category  = COALESCE(EXCLUDED.google_category, places.google_category),
+                        location         = EXCLUDED.location,
+                        scraped_at       = EXCLUDED.scraped_at
                     RETURNING id
                 """),
                 {
                     "name": result["place_name"],
                     "search_query": result.get("search_query"),
                     "rating": rating,
+                    "google_category": google_category,
                     "lng": lng,
                     "lat": lat,
                 },
@@ -92,17 +97,19 @@ async def save_to_db(results: list[dict], session: AsyncSession) -> tuple[int, i
         else:
             place_row = await session.execute(
                 text("""
-                    INSERT INTO places (name, search_query, overall_rating, scraped_at)
-                    VALUES (:name, :search_query, :rating, NOW())
+                    INSERT INTO places (name, search_query, overall_rating, google_category, scraped_at)
+                    VALUES (:name, :search_query, :rating, :google_category, NOW())
                     ON CONFLICT (name) DO UPDATE SET
-                        overall_rating = EXCLUDED.overall_rating,
-                        scraped_at     = EXCLUDED.scraped_at
+                        overall_rating   = EXCLUDED.overall_rating,
+                        google_category  = COALESCE(EXCLUDED.google_category, places.google_category),
+                        scraped_at       = EXCLUDED.scraped_at
                     RETURNING id
                 """),
                 {
                     "name": result["place_name"],
                     "search_query": result.get("search_query"),
                     "rating": rating,
+                    "google_category": google_category,
                 },
             )
 
@@ -210,6 +217,17 @@ async def _run_selenium_fallback(
                     except Exception:
                         continue
 
+                # Extract Google-assigned category
+                google_category = None
+                for sel in [".DkEaL"]:
+                    try:
+                        elem = driver.find_element(By.CSS_SELECTOR, sel)
+                        if elem.text.strip():
+                            google_category = elem.text.strip()
+                            break
+                    except Exception:
+                        continue
+
                 # Scroll reviews panel
                 for _ in range(5):
                     driver.execute_script("""
@@ -264,6 +282,7 @@ async def _run_selenium_fallback(
                         "place_name": place_name,
                         "search_query": place_name,
                         "overall_rating": overall_rating,
+                        "google_category": google_category,
                         "lat": lat,
                         "lng": lng,
                         "reviews": reviews,

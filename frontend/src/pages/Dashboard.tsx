@@ -9,6 +9,31 @@ import { useInsights, useTopPlaces } from '../hooks/useInsights'
 import { usePlaceReviews, usePlaces } from '../hooks/usePlaces'
 import { useReviews } from '../hooks/useReviews'
 
+// ── Zone hooks ────────────────────────────────────────────────────────────
+interface ZoneSummary {
+  zone: string
+  label: string
+  place_count: number
+  review_count: number
+  analyzed_count: number
+  high_count: number
+  medium_count: number
+  low_count: number
+  top_category: string | null
+}
+
+function useZones() {
+  return useQuery<ZoneSummary[]>({
+    queryKey: ['zones'],
+    queryFn: async () => {
+      const res = await fetch('/api/insights/zones')
+      if (!res.ok) return []
+      return res.json()
+    },
+    staleTime: 1000 * 60 * 5,
+  })
+}
+
 // ── LDA hook ──────────────────────────────────────────────────────────────
 interface LdaTopic {
   id: number
@@ -58,6 +83,7 @@ export default function Dashboard() {
   const { data: topPlaces } = useTopPlaces(5)
   const { data: places = [] } = usePlaces()
   const { data: ldaData } = useLdaTopics()
+  const { data: zones = [] } = useZones()
 
   // รีวิวตาม place ที่เลือก หรือ paginated ทั้งหมด
   const { data: placeReviews = [], isLoading: placeReviewsLoading } = usePlaceReviews(
@@ -149,6 +175,58 @@ export default function Dashboard() {
                 <span className="text-red-400 text-sm w-16 text-right">{p.high_count} high</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Zone Comparison */}
+      {zones.length > 0 && (
+        <div className="bg-brand-card rounded-xl p-5 border border-brand-border">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-brand-text font-semibold">Pain Point ตามพื้นที่</h3>
+              <p className="text-brand-subtext text-xs mt-1">
+                เปรียบเทียบปัญหาของแต่ละโซนในพิษณุโลก
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {zones.map((z) => {
+              const total = z.high_count + z.medium_count + z.low_count || 1
+              const highPct = Math.round((z.high_count / total) * 100)
+              return (
+                <div key={z.zone} className="bg-brand-bg rounded-lg p-4 border border-brand-border">
+                  <div className="text-brand-text font-medium text-sm mb-1">{z.label}</div>
+                  <div className="text-brand-subtext text-xs mb-3">
+                    {z.place_count} สถานที่ · {z.analyzed_count} รีวิว
+                  </div>
+
+                  {/* Severity bar */}
+                  <div className="flex h-2 rounded-full overflow-hidden mb-2">
+                    <div className="bg-red-500" style={{ width: `${Math.round((z.high_count / total) * 100)}%` }} />
+                    <div className="bg-yellow-500" style={{ width: `${Math.round((z.medium_count / total) * 100)}%` }} />
+                    <div className="bg-green-500" style={{ width: `${Math.round((z.low_count / total) * 100)}%` }} />
+                  </div>
+
+                  <div className="flex justify-between text-xs text-brand-subtext mb-3">
+                    <span className="text-red-400">{z.high_count} สูง</span>
+                    <span className="text-yellow-400">{z.medium_count} กลาง</span>
+                    <span className="text-green-400">{z.low_count} ต่ำ</span>
+                  </div>
+
+                  {z.top_category && (
+                    <div className="text-xs bg-brand-border text-brand-subtext px-2 py-1 rounded truncate">
+                      🔴 {z.top_category}
+                    </div>
+                  )}
+
+                  {z.analyzed_count === 0 && (
+                    <div className="text-xs text-brand-subtext italic">ยังไม่มีข้อมูล</div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

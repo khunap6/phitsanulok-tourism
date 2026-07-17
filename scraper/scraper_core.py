@@ -273,10 +273,10 @@ async def extract_reviews(page: Page, max_reviews: int = 20) -> list[dict]:
             except Exception:
                 pass
 
-        # Save debug screenshot after clicking reviews tab
-        debug_dir = DATA_DIR / "debug"
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        await page.screenshot(path=str(debug_dir / "after_reviews_tab.png"))
+        # debug screenshot disabled (เปิดได้เมื่อต้องการ debug)
+        # debug_dir = DATA_DIR / "debug"
+        # debug_dir.mkdir(parents=True, exist_ok=True)
+        # await page.screenshot(path=str(debug_dir / "after_reviews_tab.png"))
 
         # Step 2: Sort by Newest — หาจากข้อความ ไม่ใช่ index
         try:
@@ -509,11 +509,24 @@ async def scrape_place(page: Page, place_name: str) -> dict | None:
             except Exception:
                 continue
 
-        print(f"  Found: {actual_name} | Rating: {overall_rating} | Coords: {coords}")
+        # Get Google-assigned category (e.g. "ร้านกาแฟ", "ร้านอาหารไทย")
+        google_category = None
+        for sel in ['.DkEaL', 'button[jsaction*="category"]', '[jsaction*="pane.rating.category"]']:
+            try:
+                elem = await page.query_selector(sel)
+                if elem:
+                    text = (await elem.inner_text()).strip()
+                    if text and len(text) < 60:
+                        google_category = text
+                        break
+            except Exception:
+                continue
 
-        # Save debug screenshot before extracting reviews
-        safe_name = re.sub(r'[^\w]', '_', actual_name)[:20]
-        await debug_page(page, f"before_reviews_{safe_name}")
+        print(f"  Found: {actual_name} | Rating: {overall_rating} | Category: {google_category} | Coords: {coords}")
+
+        # debug screenshot disabled (เปิดได้เมื่อต้องการ debug)
+        # safe_name = re.sub(r'[^\w]', '_', actual_name)[:20]
+        # await debug_page(page, f"before_reviews_{safe_name}")
 
         # Scrape reviews (เพิ่มจาก 30 → 80 รีวิวต่อสถานที่)
         reviews = await extract_reviews(page, max_reviews=80)
@@ -523,6 +536,7 @@ async def scrape_place(page: Page, place_name: str) -> dict | None:
             "place_name": actual_name,
             "search_query": place_name,
             "overall_rating": overall_rating,
+            "google_category": google_category,
             "lat": coords[0] if coords else None,
             "lng": coords[1] if coords else None,
             "reviews": reviews,
@@ -541,8 +555,14 @@ DISCOVER_QUERIES = [
 ]
 
 
-async def run_scraper(places: list[str] = None, headless: bool = True, max_places: int = None, auto_discover: bool = True) -> list[dict]:
-    """Main scraper function."""
+async def run_scraper(
+    places: list[str] = None,
+    headless: bool = True,
+    max_places: int = None,
+    auto_discover: bool = True,
+    discover_query: str | None = None,
+) -> list[dict]:
+    """Main scraper function. discover_query ใช้ระบุ query เดียวสำหรับ zone-based discovery"""
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=headless,
@@ -559,13 +579,14 @@ async def run_scraper(places: list[str] = None, headless: bool = True, max_place
         await context.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });")
         page = await context.new_page()
 
-        # Auto-discover places จากหลาย query
+        # Auto-discover places
         if places is None:
             if auto_discover:
-                per_query = max(10, (max_places or 60) // len(DISCOVER_QUERIES))
+                queries = [discover_query] if discover_query else DISCOVER_QUERIES
+                per_query = max(10, (max_places or 60) // len(queries))
                 all_places: list[str] = []
                 seen: set[str] = set()
-                for query in DISCOVER_QUERIES:
+                for query in queries:
                     found = await discover_places(page, query=query, max_places=per_query)
                     for p_name in found:
                         if p_name not in seen:
