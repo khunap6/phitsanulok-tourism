@@ -1,10 +1,11 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from geoalchemy2 import Geometry
 from sqlalchemy import (
     ARRAY,
     CheckConstraint,
+    Date,
     ForeignKey,
     Integer,
     Numeric,
@@ -34,6 +35,10 @@ class Place(Base):
     )
     zone: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, index=True)
     google_category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    opening_hours: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    price_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    distance_nu_km: Mapped[Optional[float]] = mapped_column(Numeric(6, 3), nullable=True)
+    distance_psru_km: Mapped[Optional[float]] = mapped_column(Numeric(6, 3), nullable=True)
     scraped_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
     updated_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
@@ -57,8 +62,10 @@ class Review(Base):
     )
     rating: Mapped[Optional[int]] = mapped_column(SmallInteger)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    text_clean: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     text_hash: Mapped[Optional[str]] = mapped_column(String(32))
     review_date: Mapped[Optional[str]] = mapped_column(String(100))
+    review_date_approx: Mapped[Optional[date]] = mapped_column(Date, nullable=True, index=True)
     scraped_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )

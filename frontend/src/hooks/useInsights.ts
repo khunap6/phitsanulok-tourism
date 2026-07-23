@@ -2,10 +2,11 @@ import { useQuery } from '@tanstack/react-query'
 import client from '../api/client'
 import type { GeoCollection, InsightSummary } from '../types'
 
-export function useInsights() {
+export function useInsights(painOnly = false) {
   return useQuery<InsightSummary>({
-    queryKey: ['insights'],
-    queryFn: () => client.get('/insights/summary').then(r => r.data),
+    queryKey: ['insights', painOnly],
+    queryFn: () =>
+      client.get('/insights/summary', { params: { pain_only: painOnly } }).then(r => r.data),
     staleTime: 5 * 60 * 1000,
   })
 }

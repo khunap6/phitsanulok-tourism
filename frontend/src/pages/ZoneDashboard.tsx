@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import CategoryDrilldown from '../components/CategoryDrilldown'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,12 +41,12 @@ function useZones() {
   })
 }
 
-function useZoneBreakdown(zone: string | null) {
+function useZoneBreakdown(zone: string | null, painOnly: boolean) {
   return useQuery<PlaceTypeBreakdown[]>({
-    queryKey: ['zone-breakdown', zone],
+    queryKey: ['zone-breakdown', zone, painOnly],
     queryFn: async () => {
       if (!zone) return []
-      const res = await fetch(`/api/insights/zones/${zone}/breakdown`)
+      const res = await fetch(`/api/insights/zones/${zone}/breakdown?pain_only=${painOnly}`)
       if (!res.ok) return []
       return res.json()
     },
@@ -54,12 +55,12 @@ function useZoneBreakdown(zone: string | null) {
   })
 }
 
-function useZonePainPoints(zone: string | null) {
+function useZonePainPoints(zone: string | null, painOnly: boolean) {
   return useQuery<{ category: string; count: number }[]>({
-    queryKey: ['zone-pain-points', zone],
+    queryKey: ['zone-pain-points', zone, painOnly],
     queryFn: async () => {
       if (!zone) return []
-      const res = await fetch(`/api/insights/zones/${zone}/pain-points`)
+      const res = await fetch(`/api/insights/zones/${zone}/pain-points?pain_only=${painOnly}`)
       if (!res.ok) return []
       return res.json()
     },
@@ -179,20 +180,48 @@ function PlaceTypeCard({ group }: { group: PlaceTypeBreakdown }) {
 }
 
 function ZoneDetail({ zone, summary }: { zone: string; summary: ZoneSummary }) {
-  const { data: breakdown = [], isLoading: breakLoading } = useZoneBreakdown(zone)
-  const { data: painPoints = [] } = useZonePainPoints(zone)
+  const [painOnly, setPainOnly] = useState(false)
+  const [drillCategory, setDrillCategory] = useState<string | null>(null)
+  const { data: breakdown = [], isLoading: breakLoading } = useZoneBreakdown(zone, painOnly)
+  const { data: painPoints = [] } = useZonePainPoints(zone, painOnly)
   const meta = ZONE_META[zone] ?? ZONE_META['other']
   const total = summary.high_count + summary.medium_count + summary.low_count || 1
 
   return (
     <div className="space-y-5">
+      {/* Toggle: รวมทั้งหมด / เฉพาะปัญหาจริง */}
+      <div className="flex items-center gap-2">
+        <span className="text-brand-subtext text-sm">มุมมอง:</span>
+        <div className="inline-flex rounded-lg border border-brand-border overflow-hidden">
+          <button
+            onClick={() => setPainOnly(false)}
+            className={`px-3 py-1.5 text-sm transition-colors ${
+              !painOnly ? 'bg-brand-primary text-white' : 'bg-brand-card text-brand-subtext hover:text-brand-text'
+            }`}
+          >
+            รวมทั้งหมด
+          </button>
+          <button
+            onClick={() => setPainOnly(true)}
+            className={`px-3 py-1.5 text-sm transition-colors ${
+              painOnly ? 'bg-red-500 text-white' : 'bg-brand-card text-brand-subtext hover:text-brand-text'
+            }`}
+          >
+            เฉพาะปัญหาจริง
+          </button>
+        </div>
+        <span className="text-brand-subtext text-xs">
+          {painOnly ? 'ตัด "ความคิดเห็นทั่วไป" ออก เหลือเฉพาะปัญหาที่แก้ได้' : 'รวมความเห็นทุกแบบ'}
+        </span>
+      </div>
+
       {/* Zone KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: 'สถานที่ทั้งหมด', value: summary.place_count, sub: 'แห่ง', color: '#3b82f6' },
           { label: 'รีวิวที่วิเคราะห์', value: summary.analyzed_count, sub: `จาก ${summary.review_count}`, color: '#22d3ee' },
           { label: 'ปัญหารุนแรง', value: summary.high_count, sub: `${Math.round((summary.high_count / total) * 100)}% ของทั้งหมด`, color: '#ef4444' },
-          { label: 'ปัญหาหลัก', value: summary.top_category ?? '—', sub: 'หมวดที่พบบ่อยสุด', color: '#f97316' },
+          { label: 'ปัญหาหลัก', value: summary.top_category ?? '—', sub: 'ปัญหาจริงที่พบบ่อยสุด', color: '#f97316' },
         ].map((kpi) => (
           <div key={kpi.label} className="bg-brand-card rounded-xl p-4 border border-brand-border"
                style={{ borderTopColor: kpi.color, borderTopWidth: 2 }}>
@@ -206,7 +235,8 @@ function ZoneDetail({ zone, summary }: { zone: string; summary: ZoneSummary }) {
       {/* Pain point chart */}
       {painPoints.length > 0 && (
         <div className="bg-brand-card rounded-xl p-5 border border-brand-border">
-          <h4 className="text-brand-text font-semibold mb-4">Pain Point ภาพรวมในโซนนี้</h4>
+          <h4 className="text-brand-text font-semibold mb-1">Pain Point ภาพรวมในโซนนี้</h4>
+          <p className="text-brand-subtext text-xs mb-3">👆 คลิกแท่งเพื่อดูว่ามาจากร้านไหนบ้าง</p>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={[...painPoints].sort((a, b) => b.count - a.count)} layout="vertical" margin={{ left: 10, right: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
@@ -216,12 +246,27 @@ function ZoneDetail({ zone, summary }: { zone: string; summary: ZoneSummary }) {
                 contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
                 labelStyle={{ color: '#e2e8f0' }}
                 itemStyle={{ color: '#94a3b8' }}
+                cursor={{ fill: '#33415533' }}
               />
-              <Bar dataKey="count" name="จำนวนรีวิว" radius={[0, 4, 4, 0]}>
+              <Bar
+                dataKey="count"
+                name="จำนวนรีวิว"
+                radius={[0, 4, 4, 0]}
+                cursor="pointer"
+                onClick={(d: any) => {
+                  const c = d?.category ?? d?.payload?.category
+                  setDrillCategory(c === drillCategory ? null : c)
+                }}
+              >
                 {painPoints.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+
+          {/* Drill-down เฉพาะโซนนี้ */}
+          {drillCategory && (
+            <CategoryDrilldown category={drillCategory} zone={zone} onClose={() => setDrillCategory(null)} />
+          )}
         </div>
       )}
 

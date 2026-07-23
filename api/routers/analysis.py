@@ -1,8 +1,6 @@
-import json
-from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +15,8 @@ from api.schemas.analysis import (
 
 router = APIRouter(prefix="/insights", tags=["insights"])
 
-LDA_RESULT_PATH = Path(__file__).parent.parent.parent / "data" / "lda_output" / "lda_result.json"
+# หมวด "ความคิดเห็นทั่วไป" ไม่ใช่ pain point จริง — ตัดออกเมื่อดูโหมด "เฉพาะปัญหา"
+GENERAL_CATEGORY = "ความคิดเห็นทั่วไป (ไม่ระบุปัญหา)"
 
 
 @router.get("/zones")
@@ -33,13 +32,18 @@ async def zone_summary(db: Annotated[AsyncSession, Depends(get_db)]):
                 COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high')   AS high_count,
                 COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'medium') AS medium_count,
                 COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'low')    AS low_count,
-                MODE() WITHIN GROUP (ORDER BY ar.pain_point_category) AS top_category
+                -- ปัญหาหลัก = หมวดที่พบบ่อยสุด (ตัดรีวิวว่าง + ความคิดเห็นทั่วไปออก เอาเฉพาะปัญหาจริง)
+                MODE() WITHIN GROUP (ORDER BY ar.pain_point_category)
+                    FILTER (WHERE r.text_clean <> ''
+                            AND ar.pain_point_category IS NOT NULL
+                            AND ar.pain_point_category <> :general) AS top_category
             FROM places p
             LEFT JOIN reviews r  ON r.place_id = p.id
             LEFT JOIN analyzed_reviews ar ON ar.review_id = r.id
             GROUP BY COALESCE(p.zone, 'other')
             ORDER BY analyzed_count DESC
-        """)
+        """),
+        {"general": GENERAL_CATEGORY},
     )
     rows = result.fetchall()
 
@@ -67,28 +71,39 @@ async def zone_summary(db: Annotated[AsyncSession, Depends(get_db)]):
 
 
 @router.get("/zones/{zone}/pain-points")
-async def zone_pain_points(zone: str, db: Annotated[AsyncSession, Depends(get_db)]):
-    """Pain point categories ของโซนที่เลือก"""
+async def zone_pain_points(
+    zone: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    pain_only: bool = False,
+):
+    """Pain point categories ของโซนที่เลือก (pain_only=true ตัด 'ความคิดเห็นทั่วไป' ออก)"""
+    general_filter = "AND ar.pain_point_category <> :general" if pain_only else ""
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT ar.pain_point_category AS category, COUNT(*) AS count
             FROM analyzed_reviews ar
             JOIN reviews r  ON r.id = ar.review_id
             JOIN places p   ON p.id = r.place_id
             WHERE COALESCE(p.zone, 'other') = :zone
               AND ar.pain_point_category IS NOT NULL
+              AND r.text_clean <> ''          -- ตัดรีวิวที่ให้ดาวอย่างเดียว
+              {general_filter}
             GROUP BY ar.pain_point_category
             ORDER BY count DESC
             LIMIT 10
         """),
-        {"zone": zone},
+        {"zone": zone, "general": GENERAL_CATEGORY},
     )
     return [{"category": r.category, "count": r.count} for r in result.fetchall()]
 
 
 @router.get("/zones/{zone}/breakdown")
-async def zone_breakdown(zone: str, db: Annotated[AsyncSession, Depends(get_db)]):
-    """Pain point แยกตามประเภทสถานที่ภายในโซน (คาเฟ่ / ร้านอาหาร / สถานที่ท่องเที่ยว)"""
+async def zone_breakdown(
+    zone: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    pain_only: bool = False,
+):
+    """Pain point แยกตามประเภทสถานที่ภายในโซน (pain_only=true ตัด 'ความคิดเห็นทั่วไป' ออก)"""
 
     # แผนที่ Google category → ประเภทที่ใช้ในระบบ
     _GOOGLE_CATEGORY_MAP = {
@@ -147,8 +162,9 @@ async def zone_breakdown(zone: str, db: Annotated[AsyncSession, Depends(get_db)]
     places = places_result.fetchall()
 
     # Pain points ต่อสถานที่
+    general_filter = "AND ar.pain_point_category <> :general" if pain_only else ""
     pain_result = await db.execute(
-        text("""
+        text(f"""
             SELECT p.name AS place_name,
                    ar.pain_point_category AS category,
                    COUNT(*) AS cnt
@@ -157,9 +173,11 @@ async def zone_breakdown(zone: str, db: Annotated[AsyncSession, Depends(get_db)]
             JOIN places p  ON p.id = r.place_id
             WHERE COALESCE(p.zone, 'other') = :zone
               AND ar.pain_point_category IS NOT NULL
+              AND r.text_clean <> ''          -- ตัดรีวิวที่ให้ดาวอย่างเดียว
+              {general_filter}
             GROUP BY p.name, ar.pain_point_category
         """),
-        {"zone": zone},
+        {"zone": zone, "general": GENERAL_CATEGORY},
     )
     pain_rows = pain_result.fetchall()
 
@@ -212,20 +230,93 @@ async def zone_breakdown(zone: str, db: Annotated[AsyncSession, Depends(get_db)]
     return result_list
 
 
-@router.get("/lda-topics")
-async def lda_topics():
-    """คืนผลลัพธ์ LDA Topic Modeling จากไฟล์ที่รันไว้"""
-    if not LDA_RESULT_PATH.exists():
-        raise HTTPException(
-            status_code=404,
-            detail="ยังไม่มีผล LDA — รัน: uv run python scripts/topic_model_lda.py ก่อน"
-        )
-    with open(LDA_RESULT_PATH, encoding="utf-8") as f:
-        return json.load(f)
+@router.get("/category-places")
+async def category_places(
+    category: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    zone: str | None = None,
+):
+    """
+    ร้านที่มี pain point หมวดนี้ พร้อมจำนวนแยกตามระดับ (high/medium/low)
+    เรียงตามจำนวนรวมมากสุด — frontend ใช้ sort ตามระดับที่เลือก
+    """
+    filters = ["ar.pain_point_category = :category", "r.text_clean <> ''"]
+    params: dict = {"category": category}
+    if zone:
+        filters.append("COALESCE(p.zone, 'other') = :zone")
+        params["zone"] = zone
+    where = " AND ".join(filters)
+
+    result = await db.execute(
+        text(f"""
+            SELECT p.id AS place_id, p.name AS place_name,
+                   COALESCE(p.zone, 'other') AS zone,
+                   COUNT(*) AS total,
+                   COUNT(*) FILTER (WHERE ar.severity = 'high')   AS high,
+                   COUNT(*) FILTER (WHERE ar.severity = 'medium') AS medium,
+                   COUNT(*) FILTER (WHERE ar.severity = 'low')    AS low
+            FROM analyzed_reviews ar
+            JOIN reviews r ON r.id = ar.review_id
+            JOIN places p  ON p.id = r.place_id
+            WHERE {where}
+            GROUP BY p.id, p.name, p.zone
+            ORDER BY total DESC
+            LIMIT 50
+        """),
+        params,
+    )
+    return [dict(row._mapping) for row in result.fetchall()]
+
+
+@router.get("/category-reviews")
+async def category_reviews(
+    category: str,
+    place_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    severity: str | None = None,
+):
+    """รีวิวจริงของร้านหนึ่ง ในหมวดที่เลือก (กรอง severity ได้)"""
+    filters = [
+        "ar.pain_point_category = :category",
+        "r.place_id = :place_id",
+        "r.text_clean <> ''",
+    ]
+    params: dict = {"category": category, "place_id": place_id}
+    if severity:
+        filters.append("ar.severity = :severity")
+        params["severity"] = severity
+    where = " AND ".join(filters)
+
+    result = await db.execute(
+        text(f"""
+            SELECT r.text_clean AS text, r.rating, ar.severity,
+                   r.review_date_approx AS date
+            FROM analyzed_reviews ar
+            JOIN reviews r ON r.id = ar.review_id
+            WHERE {where}
+            ORDER BY
+                CASE ar.severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+                r.review_date_approx DESC NULLS LAST
+            LIMIT 30
+        """),
+        params,
+    )
+    return [
+        {
+            "text": r.text,
+            "rating": r.rating,
+            "severity": r.severity,
+            "date": r.date.isoformat() if r.date else None,
+        }
+        for r in result.fetchall()
+    ]
 
 
 @router.get("/summary", response_model=InsightResponse)
-async def insights_summary(db: Annotated[AsyncSession, Depends(get_db)]):
+async def insights_summary(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    pain_only: bool = False,
+):
     counts = await db.execute(
         text("""
             SELECT
@@ -239,15 +330,20 @@ async def insights_summary(db: Annotated[AsyncSession, Depends(get_db)]):
         row.total_places, row.total_reviews, row.total_analyzed
     )
 
+    general_filter = "AND ar.pain_point_category <> :general" if pain_only else ""
     cat_result = await db.execute(
-        text("""
-            SELECT pain_point_category AS category, COUNT(*) AS count
-            FROM analyzed_reviews
-            WHERE pain_point_category IS NOT NULL
-            GROUP BY pain_point_category
+        text(f"""
+            SELECT ar.pain_point_category AS category, COUNT(*) AS count
+            FROM analyzed_reviews ar
+            JOIN reviews r ON r.id = ar.review_id
+            WHERE ar.pain_point_category IS NOT NULL
+              AND r.text_clean <> ''          -- ตัดรีวิวที่ให้ดาวอย่างเดียว
+              {general_filter}
+            GROUP BY ar.pain_point_category
             ORDER BY count DESC
             LIMIT 10
-        """)
+        """),
+        {"general": GENERAL_CATEGORY},
     )
     top_categories = [
         {"category": r.category, "count": r.count}
@@ -319,10 +415,12 @@ async def top_problematic_places(
 async def category_counts(db: Annotated[AsyncSession, Depends(get_db)]):
     result = await db.execute(
         text("""
-            SELECT pain_point_category AS category, COUNT(*) AS count
-            FROM analyzed_reviews
-            WHERE pain_point_category IS NOT NULL
-            GROUP BY pain_point_category
+            SELECT ar.pain_point_category AS category, COUNT(*) AS count
+            FROM analyzed_reviews ar
+            JOIN reviews r ON r.id = ar.review_id
+            WHERE ar.pain_point_category IS NOT NULL
+              AND r.text_clean <> ''          -- ตัดรีวิวที่ให้ดาวอย่างเดียว
+            GROUP BY ar.pain_point_category
             ORDER BY count DESC
         """)
     )

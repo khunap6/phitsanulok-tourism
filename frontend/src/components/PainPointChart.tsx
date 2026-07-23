@@ -17,14 +17,18 @@ const COLORS = [
 
 interface Props {
   data: CategoryCount[]
+  onCategoryClick?: (category: string) => void
 }
 
-export default function PainPointChart({ data }: Props) {
+export default function PainPointChart({ data, onCategoryClick }: Props) {
   const sorted = [...data].sort((a, b) => b.count - a.count)
 
   return (
     <div className="bg-brand-card rounded-xl p-5 border border-brand-border">
-      <h3 className="text-brand-text font-semibold mb-4">Pain Point ตามหมวดหมู่</h3>
+      <h3 className="text-brand-text font-semibold mb-1">Pain Point ตามหมวดหมู่</h3>
+      {onCategoryClick && (
+        <p className="text-brand-subtext text-xs mb-3">👆 คลิกแท่งเพื่อดูว่ามาจากร้านไหนบ้าง</p>
+      )}
       <ResponsiveContainer width="100%" height={280}>
         <BarChart data={sorted} layout="vertical" margin={{ left: 10, right: 20 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
@@ -39,8 +43,15 @@ export default function PainPointChart({ data }: Props) {
             contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
             labelStyle={{ color: '#e2e8f0' }}
             itemStyle={{ color: '#94a3b8' }}
+            cursor={{ fill: '#33415533' }}
           />
-          <Bar dataKey="count" name="จำนวนรีวิว" radius={[0, 4, 4, 0]}>
+          <Bar
+            dataKey="count"
+            name="จำนวนรีวิว"
+            radius={[0, 4, 4, 0]}
+            cursor={onCategoryClick ? 'pointer' : undefined}
+            onClick={(d: any) => onCategoryClick?.(d?.category ?? d?.payload?.category)}
+          >
             {sorted.map((_, i) => (
               <Cell key={i} fill={COLORS[i % COLORS.length]} />
             ))}

@@ -25,3 +25,12 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Database backups — commit เฉพาะ seed.sql (ไฟล์ database สำหรับ setup)
+backup/*.sql
+!backup/seed.sql
+
+# Scraper working files / debug (regenerate ได้จากการ scrape)
+data/debug/
+data/*.png
+data/*.json

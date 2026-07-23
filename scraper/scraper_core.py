@@ -21,6 +21,9 @@ from playwright.async_api import async_playwright, Page, TimeoutError as Playwri
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
+# จำนวนรีวิวสูงสุดต่อสถานที่ (ปลด cap จาก 80 → 200 เพื่อเก็บข้อมูลให้มากขึ้น)
+MAX_REVIEWS_PER_PLACE = 200
+
 # Bounding box ของจังหวัดพิษณุโลก (lat/lng)
 PHITSANULOK_BBOX = {
     "lat_min": 16.35,
@@ -234,6 +237,79 @@ async def extract_place_coords(page: Page) -> tuple[float, float] | None:
     return None
 
 
+async def extract_opening_hours(page: Page) -> str | None:
+    """
+    ดึงเวลาเปิด-ปิดจากหน้า Google Maps (best-effort)
+    คืนข้อความดิบ เช่น "เปิด ⋅ ปิด 21:00" หรือตารางเวลาแบบเต็ม
+    """
+    # 1) ปุ่ม/แถบสรุปเวลาทำการ
+    for sel in [
+        '[jsaction*="openhours"]',
+        'button[data-item-id*="oh"]',
+        '[aria-label*="เวลาทำการ"]',
+        '[aria-label*="ชั่วโมงทำการ"]',
+        '[aria-label*="Hours"]',
+        '.t39EBf',
+        '.OqCZI',
+    ]:
+        try:
+            elem = await page.query_selector(sel)
+            if elem:
+                # aria-label มักมีตารางเวลาเต็ม (เช่น "วันจันทร์, 08:00 ถึง 17:00; ...")
+                aria = await elem.get_attribute("aria-label")
+                if aria and len(aria) > 5:
+                    return aria.strip()[:500]
+                txt = (await elem.inner_text()).strip()
+                if txt and len(txt) > 3:
+                    return txt.replace("\n", " ")[:500]
+        except Exception:
+            continue
+    return None
+
+
+async def extract_price_level(page: Page) -> str | None:
+    """
+    ดึงระดับราคาจากหน้า Google Maps (best-effort)
+    คืนค่าเช่น "฿฿", "100–200 ฿", "$$"
+    """
+    for sel in [
+        '[aria-label*="ช่วงราคา"]',
+        '[aria-label*="ราคา"]',
+        '[aria-label*="Price"]',
+        '.mgr77e',
+        'span.mgr77e',
+    ]:
+        try:
+            elem = await page.query_selector(sel)
+            if elem:
+                aria = await elem.get_attribute("aria-label")
+                if aria and ("฿" in aria or "$" in aria or "ราคา" in aria or "Price" in aria):
+                    return aria.strip()[:50]
+                txt = (await elem.inner_text()).strip()
+                if txt and ("฿" in txt or "$" in txt):
+                    return txt[:50]
+        except Exception:
+            continue
+
+    # fallback: หา span ที่มีสัญลักษณ์ ฿ / $ ล้วนๆ
+    try:
+        price = await page.evaluate("""
+            () => {
+                const spans = document.querySelectorAll('span');
+                for (const s of spans) {
+                    const t = (s.innerText || '').trim();
+                    if (/^[฿$]{1,4}$/.test(t)) return t;
+                }
+                return null;
+            }
+        """)
+        if price:
+            return price
+    except Exception:
+        pass
+    return None
+
+
 async def debug_page(page: Page, label: str = "debug"):
     """Save screenshot + HTML dump for debugging."""
     debug_dir = DATA_DIR / "debug"
@@ -307,8 +383,11 @@ async def extract_reviews(page: Page, max_reviews: int = 20) -> list[dict]:
         except Exception:
             pass
 
-        # Step 3: Scroll to load more reviews (เพิ่มจาก 8 → 20 รอบ)
-        await scroll_reviews(page, times=20)
+        # Step 3: Scroll to load more reviews
+        # ปรับจำนวนรอบ scroll ตาม max_reviews (ยิ่งเก็บมาก ยิ่งต้อง scroll มาก)
+        # Google โหลดรีวิวประมาณ 8-10 อันต่อการ scroll หนึ่งครั้ง
+        scroll_times = max(20, min(60, max_reviews // 4))
+        await scroll_reviews(page, times=scroll_times)
 
         # Step 4: Extract reviews via JavaScript
         # Match ONLY exact "N ดาว" patterns (e.g. "1 ดาว", "2 ดาว") to avoid
@@ -522,14 +601,18 @@ async def scrape_place(page: Page, place_name: str) -> dict | None:
             except Exception:
                 continue
 
-        print(f"  Found: {actual_name} | Rating: {overall_rating} | Category: {google_category} | Coords: {coords}")
+        # Get opening hours + price level (best-effort — None ถ้าหน้าไม่แสดง)
+        opening_hours = await extract_opening_hours(page)
+        price_level = await extract_price_level(page)
+
+        print(f"  Found: {actual_name} | Rating: {overall_rating} | Category: {google_category} | Price: {price_level} | Coords: {coords}")
 
         # debug screenshot disabled (เปิดได้เมื่อต้องการ debug)
         # safe_name = re.sub(r'[^\w]', '_', actual_name)[:20]
         # await debug_page(page, f"before_reviews_{safe_name}")
 
-        # Scrape reviews (เพิ่มจาก 30 → 80 รีวิวต่อสถานที่)
-        reviews = await extract_reviews(page, max_reviews=80)
+        # Scrape reviews (ปลด cap — เก็บมากที่สุดที่ Google โหลดให้)
+        reviews = await extract_reviews(page, max_reviews=MAX_REVIEWS_PER_PLACE)
         print(f"  Collected {len(reviews)} reviews")
 
         return {
@@ -537,6 +620,8 @@ async def scrape_place(page: Page, place_name: str) -> dict | None:
             "search_query": place_name,
             "overall_rating": overall_rating,
             "google_category": google_category,
+            "opening_hours": opening_hours,
+            "price_level": price_level,
             "lat": coords[0] if coords else None,
             "lng": coords[1] if coords else None,
             "reviews": reviews,

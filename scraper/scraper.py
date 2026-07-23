@@ -14,11 +14,14 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import ScrapeJob
+from nlp.text_cleaner import clean_review_text
+from scraper.date_parser import parse_relative_date
 from scraper.scraper_core import (
     PHITSANULOK_PLACES_FALLBACK,
     is_in_phitsanulok,
     run_scraper,
 )
+from scraper.zones import assign_zone, distance_to_campus_km
 
 
 # ---------------------------------------------------------------------------
@@ -70,17 +73,32 @@ async def save_to_db(results: list[dict], session: AsyncSession) -> tuple[int, i
             rating = None
 
         google_category = result.get("google_category")
+        opening_hours = result.get("opening_hours")
+        price_level = result.get("price_level")
+
+        # คำนวณ zone + ระยะทางไปมหาวิทยาลัยจาก GPS
+        zone = assign_zone(lat, lng)
+        dist_nu, dist_psru = distance_to_campus_km(lat, lng)
 
         # Upsert place — with or without coordinates
-        # COALESCE ป้องกันไม่ให้ refresh ที่ไม่ได้ category มาทับของเดิมด้วย NULL
+        # COALESCE ป้องกันไม่ให้ refresh ที่ไม่ได้ค่ามาทับของเดิมด้วย NULL
         if lat is not None and lng is not None:
             place_row = await session.execute(
                 text("""
-                    INSERT INTO places (name, search_query, overall_rating, google_category, location, scraped_at)
-                    VALUES (:name, :search_query, :rating, :google_category, ST_MakePoint(:lng, :lat), NOW())
+                    INSERT INTO places (name, search_query, overall_rating, google_category,
+                                        opening_hours, price_level, zone,
+                                        distance_nu_km, distance_psru_km, location, scraped_at)
+                    VALUES (:name, :search_query, :rating, :google_category,
+                            :opening_hours, :price_level, :zone,
+                            :dist_nu, :dist_psru, ST_MakePoint(:lng, :lat), NOW())
                     ON CONFLICT (name) DO UPDATE SET
                         overall_rating   = EXCLUDED.overall_rating,
                         google_category  = COALESCE(EXCLUDED.google_category, places.google_category),
+                        opening_hours    = COALESCE(EXCLUDED.opening_hours, places.opening_hours),
+                        price_level      = COALESCE(EXCLUDED.price_level, places.price_level),
+                        zone             = EXCLUDED.zone,
+                        distance_nu_km   = EXCLUDED.distance_nu_km,
+                        distance_psru_km = EXCLUDED.distance_psru_km,
                         location         = EXCLUDED.location,
                         scraped_at       = EXCLUDED.scraped_at
                     RETURNING id
@@ -90,6 +108,11 @@ async def save_to_db(results: list[dict], session: AsyncSession) -> tuple[int, i
                     "search_query": result.get("search_query"),
                     "rating": rating,
                     "google_category": google_category,
+                    "opening_hours": opening_hours,
+                    "price_level": price_level,
+                    "zone": zone,
+                    "dist_nu": dist_nu,
+                    "dist_psru": dist_psru,
                     "lng": lng,
                     "lat": lat,
                 },
@@ -97,11 +120,15 @@ async def save_to_db(results: list[dict], session: AsyncSession) -> tuple[int, i
         else:
             place_row = await session.execute(
                 text("""
-                    INSERT INTO places (name, search_query, overall_rating, google_category, scraped_at)
-                    VALUES (:name, :search_query, :rating, :google_category, NOW())
+                    INSERT INTO places (name, search_query, overall_rating, google_category,
+                                        opening_hours, price_level, scraped_at)
+                    VALUES (:name, :search_query, :rating, :google_category,
+                            :opening_hours, :price_level, NOW())
                     ON CONFLICT (name) DO UPDATE SET
                         overall_rating   = EXCLUDED.overall_rating,
                         google_category  = COALESCE(EXCLUDED.google_category, places.google_category),
+                        opening_hours    = COALESCE(EXCLUDED.opening_hours, places.opening_hours),
+                        price_level      = COALESCE(EXCLUDED.price_level, places.price_level),
                         scraped_at       = EXCLUDED.scraped_at
                     RETURNING id
                 """),
@@ -110,6 +137,8 @@ async def save_to_db(results: list[dict], session: AsyncSession) -> tuple[int, i
                     "search_query": result.get("search_query"),
                     "rating": rating,
                     "google_category": google_category,
+                    "opening_hours": opening_hours,
+                    "price_level": price_level,
                 },
             )
 
@@ -124,18 +153,25 @@ async def save_to_db(results: list[dict], session: AsyncSession) -> tuple[int, i
 
             text_hash = hashlib.md5(text_content.encode("utf-8")).hexdigest()
 
+            # แปลง relative date → วันที่โดยประมาณ (ณ เวลาที่ scrape)
+            review_date_approx = parse_relative_date(review.get("date"))
+            # ทำความสะอาด text → เก็บใน text_clean
+            text_clean = clean_review_text(text_content)
+
             rv = await session.execute(
                 text("""
-                    INSERT INTO reviews (place_id, rating, text, text_hash, review_date)
-                    VALUES (:place_id, :rating, :text, :text_hash, :review_date)
+                    INSERT INTO reviews (place_id, rating, text, text_clean, text_hash, review_date, review_date_approx)
+                    VALUES (:place_id, :rating, :text, :text_clean, :text_hash, :review_date, :review_date_approx)
                     ON CONFLICT (place_id, text_hash) DO NOTHING
                 """),
                 {
                     "place_id": place_id,
                     "rating": review.get("rating"),
                     "text": text_content[:1000],
+                    "text_clean": text_clean[:1000],
                     "text_hash": text_hash,
                     "review_date": review.get("date"),
+                    "review_date_approx": review_date_approx,
                 },
             )
             if rv.rowcount > 0:

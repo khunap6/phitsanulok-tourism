@@ -39,8 +39,12 @@ chcp 65001 > $null
 # uv run python scripts\discover_by_zone.py --zone rajabhat         # เฉพาะ ม.ราชภัฏ
 # uv run python scripts\discover_by_zone.py --zone city_center      # เฉพาะตัวเมือง
 
-# ── TOPIC MODELING (LDA) ─────────────────────────────────────
-# uv run python scripts\topic_model_lda.py   # ค้นหาหมวดหมู่อัตโนมัติ
+# ── CLASSIFY "อื่นๆ" ด้วย AI (Claude Haiku 4.5) ──────────────
+# ต้องตั้ง ANTHROPIC_API_KEY ใน .env ก่อน (เอา key จาก console.anthropic.com)
+# uv run python scripts\classify_other_llm.py --limit 40   # ทดสอบ 40 อันก่อน
+# uv run python scripts\classify_other_llm.py              # จัดหมวดทั้งหมด
+
+# ── TEST TOOLS ───────────────────────────────────────────────
 # uv run python scripts\test_discover.py     # ทดสอบ selector ของ Google Maps
 
 # ── GOOGLE CATEGORY (ทดสอบ + backfill ข้อมูลเดิม) ─────────────

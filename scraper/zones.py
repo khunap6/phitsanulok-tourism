@@ -105,6 +105,23 @@ def assign_zone(lat: float | None, lng: float | None) -> str:
     return best_zone
 
 
+# จุดศูนย์กลางของแต่ละมหาวิทยาลัย (สำหรับคำนวณระยะทาง)
+NU_CENTER = (16.7442, 100.1956)          # มหาวิทยาลัยนเรศวร
+PSRU_CENTER = (16.8299369, 100.2075576)  # ราชภัฏพิบูลสงคราม (ทะเลแก้ว)
+
+
+def distance_to_campus_km(lat: float | None, lng: float | None) -> tuple[float | None, float | None]:
+    """
+    คำนวณระยะทาง (กิโลเมตร) จากพิกัดไปยัง ม.นเรศวร และ ม.ราชภัฏ
+    คืน (distance_nu_km, distance_psru_km) — None ถ้าไม่มีพิกัด
+    """
+    if lat is None or lng is None:
+        return None, None
+    d_nu = round(_haversine_km(lat, lng, NU_CENTER[0], NU_CENTER[1]), 3)
+    d_psru = round(_haversine_km(lat, lng, PSRU_CENTER[0], PSRU_CENTER[1]), 3)
+    return d_nu, d_psru
+
+
 def get_zone_label(zone: str) -> str:
     """คืนชื่อภาษาไทยของโซน"""
     return ZONE_LABELS.get(zone, "อื่นๆ")

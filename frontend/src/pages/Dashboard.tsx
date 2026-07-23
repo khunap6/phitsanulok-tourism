@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import CategoryDrilldown from '../components/CategoryDrilldown'
 import KPICard from '../components/KPICard'
 import PainPointChart from '../components/PainPointChart'
 import PlaceSelector from '../components/PlaceSelector'
@@ -34,33 +35,6 @@ function useZones() {
   })
 }
 
-// ── LDA hook ──────────────────────────────────────────────────────────────
-interface LdaTopic {
-  id: number
-  label: string
-  keywords: string[]
-  review_count: number
-  percent: number
-}
-interface LdaResult {
-  num_topics: number
-  total_reviews: number
-  topics: LdaTopic[]
-}
-
-function useLdaTopics() {
-  return useQuery<LdaResult>({
-    queryKey: ['lda-topics'],
-    queryFn: async () => {
-      const res = await fetch('/api/insights/lda-topics')
-      if (!res.ok) return null
-      return res.json()
-    },
-    retry: false,
-    staleTime: 1000 * 60 * 10,
-  })
-}
-
 const ALL_CATEGORIES = [
   'การเดินทางและที่จอดรถ',
   'ความสะอาดและสิ่งแวดล้อม',
@@ -78,11 +52,12 @@ export default function Dashboard() {
   const [selectedPlace, setSelectedPlace] = useState<number | null>(null)
   const [filterSeverity, setFilterSeverity] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
+  const [painOnly, setPainOnly] = useState(false)
+  const [drillCategory, setDrillCategory] = useState<string | null>(null)
 
-  const { data: insights, isLoading: insightsLoading } = useInsights()
+  const { data: insights, isLoading: insightsLoading } = useInsights(painOnly)
   const { data: topPlaces } = useTopPlaces(5)
   const { data: places = [] } = usePlaces()
-  const { data: ldaData } = useLdaTopics()
   const { data: zones = [] } = useZones()
 
   // รีวิวตาม place ที่เลือก หรือ paginated ทั้งหมด
@@ -99,7 +74,10 @@ export default function Dashboard() {
   const reviews = selectedPlace ? placeReviews : (allReviews?.items ?? [])
   const reviewsLoading = selectedPlace ? placeReviewsLoading : allReviewsLoading
 
-  const topCategory = insights?.top_pain_point_categories?.[0]?.category ?? '—'
+  // "ปัญหาหลัก" = ปัญหาจริงตัวแรก (ข้ามความคิดเห็นทั่วไป/อื่นๆ) เสมอ ไม่ว่าจะกดปุ่มไหน
+  const NON_PROBLEM = ['ความคิดเห็นทั่วไป (ไม่ระบุปัญหา)', 'อื่นๆ']
+  const topCategory =
+    insights?.top_pain_point_categories?.find(c => !NON_PROBLEM.includes(c.category))?.category ?? '—'
 
   return (
     <div className="min-h-screen bg-brand-bg p-6 space-y-6">
@@ -141,11 +119,40 @@ export default function Dashboard() {
         />
       </div>
 
+      {/* Toggle: รวมทั้งหมด / เฉพาะปัญหาจริง */}
+      <div className="flex items-center gap-2">
+        <span className="text-brand-subtext text-sm">มุมมองกราฟ Pain Point:</span>
+        <div className="inline-flex rounded-lg border border-brand-border overflow-hidden">
+          <button
+            onClick={() => setPainOnly(false)}
+            className={`px-3 py-1.5 text-sm transition-colors ${
+              !painOnly ? 'bg-brand-primary text-white' : 'bg-brand-card text-brand-subtext hover:text-brand-text'
+            }`}
+          >
+            รวมทั้งหมด
+          </button>
+          <button
+            onClick={() => setPainOnly(true)}
+            className={`px-3 py-1.5 text-sm transition-colors ${
+              painOnly ? 'bg-red-500 text-white' : 'bg-brand-card text-brand-subtext hover:text-brand-text'
+            }`}
+          >
+            เฉพาะปัญหาจริง
+          </button>
+        </div>
+        <span className="text-brand-subtext text-xs">
+          {painOnly ? 'ตัด "ความคิดเห็นทั่วไป" ออก เหลือเฉพาะปัญหาที่แก้ได้' : 'รวมความเห็นทุกแบบ'}
+        </span>
+      </div>
+
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
           {insights?.top_pain_point_categories && (
-            <PainPointChart data={insights.top_pain_point_categories} />
+            <PainPointChart
+              data={insights.top_pain_point_categories}
+              onCategoryClick={(c) => setDrillCategory(c === drillCategory ? null : c)}
+            />
           )}
         </div>
         <div>
@@ -154,6 +161,11 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Drill-down: ร้านที่มีปัญหาหมวดที่คลิก */}
+      {drillCategory && (
+        <CategoryDrilldown category={drillCategory} onClose={() => setDrillCategory(null)} />
+      )}
 
       {/* Top problematic places */}
       {topPlaces && topPlaces.length > 0 && (
@@ -227,66 +239,6 @@ export default function Dashboard() {
                 </div>
               )
             })}
-          </div>
-        </div>
-      )}
-
-      {/* LDA Topic Modeling */}
-      {ldaData && ldaData.topics && (
-        <div className="bg-brand-card rounded-xl p-5 border border-brand-border">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-brand-text font-semibold">
-                หมวดหมู่ Pain Point (LDA Topic Modeling)
-              </h3>
-              <p className="text-brand-subtext text-xs mt-1">
-                ค้นพบอัตโนมัติจาก {ldaData.total_reviews.toLocaleString()} รีวิว
-                · {ldaData.num_topics} หมวด
-              </p>
-            </div>
-            <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-1 rounded-full">
-              AI-Generated
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {[...ldaData.topics]
-              .sort((a, b) => b.review_count - a.review_count)
-              .map((topic) => (
-                <div
-                  key={topic.id}
-                  className="bg-brand-bg rounded-lg p-3 border border-brand-border"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-brand-text text-sm font-medium truncate flex-1">
-                      {topic.label}
-                    </span>
-                    <span className="text-brand-subtext text-xs ml-2 shrink-0">
-                      {topic.percent}%
-                    </span>
-                  </div>
-
-                  {/* Progress bar */}
-                  <div className="w-full bg-brand-border rounded-full h-1.5 mb-2">
-                    <div
-                      className="h-1.5 rounded-full bg-blue-500"
-                      style={{ width: `${Math.min(100, topic.percent * 2)}%` }}
-                    />
-                  </div>
-
-                  {/* Keywords */}
-                  <div className="flex flex-wrap gap-1">
-                    {topic.keywords.slice(0, 5).map((kw) => (
-                      <span
-                        key={kw}
-                        className="text-xs bg-brand-border text-brand-subtext px-1.5 py-0.5 rounded"
-                      >
-                        {kw}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
           </div>
         </div>
       )}
