@@ -35,6 +35,7 @@ class Place(Base):
     )
     zone: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, index=True)
     google_category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    business_status: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     opening_hours: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     price_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     distance_nu_km: Mapped[Optional[float]] = mapped_column(Numeric(6, 3), nullable=True)

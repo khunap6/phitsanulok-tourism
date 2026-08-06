@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import CategoryDrilldown from '../components/CategoryDrilldown'
 import KPICard from '../components/KPICard'
 import PainPointChart from '../components/PainPointChart'
+import StatusBadge, { STATUS_OPTIONS } from '../components/StatusBadge'
 import PlaceSelector from '../components/PlaceSelector'
 import ReviewList from '../components/ReviewList'
 import SeverityPie from '../components/SeverityPie'
@@ -53,10 +54,11 @@ export default function Dashboard() {
   const [filterSeverity, setFilterSeverity] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
   const [painOnly, setPainOnly] = useState(false)
+  const [bizStatus, setBizStatus] = useState('operational')
   const [drillCategory, setDrillCategory] = useState<string | null>(null)
 
-  const { data: insights, isLoading: insightsLoading } = useInsights(painOnly)
-  const { data: topPlaces } = useTopPlaces(5)
+  const { data: insights, isLoading: insightsLoading } = useInsights(painOnly, bizStatus)
+  const { data: topPlaces } = useTopPlaces(5, bizStatus)
   const { data: places = [] } = usePlaces()
   const { data: zones = [] } = useZones()
 
@@ -82,14 +84,39 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-brand-bg p-6 space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-brand-text">
-          Pain Point Dashboard — การท่องเที่ยวพิษณุโลก
-        </h1>
-        <p className="text-brand-subtext text-sm mt-1">
-          วิเคราะห์จากรีวิว Google Maps · มหาวิทยาลัยนเรศวร
-        </p>
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-brand-text">
+            Pain Point Dashboard — การท่องเที่ยวพิษณุโลก
+          </h1>
+          <p className="text-brand-subtext text-sm mt-1">
+            วิเคราะห์จากรีวิว Google Maps · มหาวิทยาลัยนเรศวร
+          </p>
+        </div>
+        {/* สถานะร้าน: เปิด / ปิด / ทั้งหมด */}
+        <div className="flex items-center gap-2">
+          <span className="text-brand-subtext text-sm">สถานะร้าน:</span>
+          <div className="inline-flex rounded-lg border border-brand-border overflow-hidden">
+            {STATUS_OPTIONS.map((s) => (
+              <button
+                key={s.key}
+                onClick={() => { setBizStatus(s.key); setDrillCategory(null) }}
+                className={`px-3 py-1.5 text-sm transition-colors ${
+                  bizStatus === s.key ? 'text-white' : 'bg-brand-card text-brand-subtext hover:text-brand-text'
+                }`}
+                style={bizStatus === s.key ? { background: s.color } : {}}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
+      {bizStatus === 'closed' && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-2 text-sm text-red-300">
+          🔴 กำลังดูเฉพาะ<b>ร้านที่ปิด</b> — วิเคราะห์รีวิวเพื่อหาว่าอาจปิดเพราะเหตุใด (คลิกกราฟเพื่อเจาะดูรีวิว)
+        </div>
+      )}
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -164,7 +191,7 @@ export default function Dashboard() {
 
       {/* Drill-down: ร้านที่มีปัญหาหมวดที่คลิก */}
       {drillCategory && (
-        <CategoryDrilldown category={drillCategory} onClose={() => setDrillCategory(null)} />
+        <CategoryDrilldown category={drillCategory} status={bizStatus} onClose={() => setDrillCategory(null)} />
       )}
 
       {/* Top problematic places */}
@@ -172,7 +199,7 @@ export default function Dashboard() {
         <div className="bg-brand-card rounded-xl p-5 border border-brand-border">
           <h3 className="text-brand-text font-semibold mb-4">สถานที่ที่มีปัญหามากสุด (Top 5)</h3>
           <div className="space-y-2">
-            {topPlaces.map((p: { id: number; name: string; high_count: number; review_count: number }, i: number) => (
+            {topPlaces.map((p: { id: number; name: string; high_count: number; review_count: number; business_status?: string }, i: number) => (
               <div key={p.id} className="flex items-center gap-3">
                 <span className="text-brand-subtext w-5 text-sm">{i + 1}.</span>
                 <div className="flex-1 bg-brand-bg rounded-full h-5 overflow-hidden">
@@ -184,6 +211,7 @@ export default function Dashboard() {
                   />
                 </div>
                 <span className="text-brand-text text-sm w-40 truncate">{p.name}</span>
+                <StatusBadge status={p.business_status} />
                 <span className="text-red-400 text-sm w-16 text-right">{p.high_count} high</span>
               </div>
             ))}

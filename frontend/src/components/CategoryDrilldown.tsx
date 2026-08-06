@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import StatusBadge from './StatusBadge'
 
 // ─── Types ────────────────────────────────────────────────────────────────
 interface PlaceRow {
   place_id: number
   place_name: string
   zone: string
+  business_status?: string
   total: number
   high: number
   medium: number
@@ -19,13 +21,14 @@ interface ReviewRow {
 }
 
 // ─── Hooks ────────────────────────────────────────────────────────────────
-function usePlacesForCategory(category: string, zone?: string) {
+function usePlacesForCategory(category: string, zone?: string, status = 'operational') {
   return useQuery<PlaceRow[]>({
-    queryKey: ['cat-places', category, zone ?? 'all'],
+    queryKey: ['cat-places', category, zone ?? 'all', status],
     queryFn: async () => {
       const url = new URL('/api/insights/category-places', window.location.origin)
       url.searchParams.set('category', category)
       if (zone) url.searchParams.set('zone', zone)
+      url.searchParams.set('status', status)
       const res = await fetch(url.toString())
       if (!res.ok) return []
       return res.json()
@@ -92,11 +95,11 @@ function ReviewsList({ category, placeId, severity }: { category: string; placeI
 
 // ─── Main drill-down ─────────────────────────────────────────────────────────
 export default function CategoryDrilldown({
-  category, zone, onClose,
-}: { category: string; zone?: string; onClose: () => void }) {
+  category, zone, status = 'operational', onClose,
+}: { category: string; zone?: string; status?: string; onClose: () => void }) {
   const [severity, setSeverity] = useState('')
   const [expanded, setExpanded] = useState<number | null>(null)
-  const { data: places = [], isLoading } = usePlacesForCategory(category, zone)
+  const { data: places = [], isLoading } = usePlacesForCategory(category, zone, status)
 
   // เรียง + กรอง ตามระดับที่เลือก
   const sevKey = (severity || 'total') as keyof PlaceRow
@@ -159,6 +162,7 @@ export default function CategoryDrilldown({
                     <div className="flex items-center gap-2">
                       <span className="text-brand-text text-sm truncate">{p.place_name}</span>
                       <span className="text-brand-subtext text-xs shrink-0">· {ZONE_LABEL[p.zone] ?? p.zone}</span>
+                      <StatusBadge status={p.business_status} />
                     </div>
                     {/* mini severity bar (เมื่อดู "ทั้งหมด") */}
                     {!severity && (

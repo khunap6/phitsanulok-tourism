@@ -20,8 +20,14 @@ chcp 65001 > $null
 # uv run python scripts\discover_20.py       # 20 สถานที่
 # uv run python scripts\discover_50.py       # 50 สถานที่ (~1 ชม.)
 
-# ── REFRESH (ดึงรีวิวเพิ่มจากสถานที่เดิม) ───────────────────
-# uv run python scripts\refresh_all.py       # ทุกสถานที่
+# ── REFRESH (เก็บข้อมูลที่ขาด + รีวิวเพิ่มจากร้านเดิม) ────────
+# uv run python scripts\refresh_all.py --limit 40   # แมนนวล ทีละ 40 ร้าน (รันซ้ำเอง)
+# uv run python scripts\refresh_all.py              # ทุกร้านรวดเดียว (เสี่ยงโดนบล็อก)
+
+# ── AUTO REFRESH (อัตโนมัติ คำสั่งเดียว วนจนครบ + analyze + classify) ─
+# uv run python scripts\auto_refresh.py             # เต็มรูปแบบ (แนะนำ — เดินจากเครื่องได้)
+# uv run python scripts\auto_refresh.py --limit 40 --wait 15
+# uv run python scripts\auto_refresh.py --no-followup   # ไม่ต่อ analyze/classify
 
 # ── ANALYZE (วิเคราะห์ NLP) ──────────────────────────────────
 # uv run python scripts\analyze.py           # วิเคราะห์จนหมด
@@ -33,7 +39,7 @@ chcp 65001 > $null
 # uv run python scripts\run_all.py           # ปรับ MAX_PLACES ใน run_all.py ก่อน
 
 # ── ZONE-BASED DISCOVERY (ค้นหาแบบแยกพื้นที่) ────────────────
-# uv run python scripts\assign_zones.py                              # ติด zone ให้ข้อมูลเดิม
+# uv run python scripts\assign_zones.py                             # ติด zone ให้ข้อมูลเดิม
 # uv run python scripts\discover_by_zone.py                         # scrape ทุกโซน
 # uv run python scripts\discover_by_zone.py --zone naresuan         # เฉพาะ ม.นเรศวร
 # uv run python scripts\discover_by_zone.py --zone rajabhat         # เฉพาะ ม.ราชภัฏ
@@ -53,21 +59,29 @@ chcp 65001 > $null
 # uv run python scripts\backfill_category.py              # backfill ทุกแห่งที่ยังเป็น NULL
 # uv run python scripts\backfill_category.py --visible    # เปิด browser ให้เห็น (debug)
 
-# ── BACKUP DATABASE ──────────────────────────────────────────
-# สร้างโฟลเดอร์ backup (ทำครั้งเดียวพอ)
-# New-Item -ItemType Directory -Force -Path "backup"
+# ── RESCRAPE ข้อมูลร้าน (เวลาทำการใหม่ + สถานะร้าน + ราคา, ไม่เก็บรีวิว) ─
+# อัปเดตข้อมูลร้านเดิมให้ตรงโค้ดปัจจุบัน (เวลาทำการทั้งสัปดาห์แบบใหม่) — เร็ว ไม่แตะคิวรีวิว
+# uv run python scripts\rescrape_places.py --limit 10   # ทดสอบ 10 ร้านก่อน
+# uv run python scripts\rescrape_places.py              # เฉพาะร้านที่เวลายังเป็นฟอร์แมตเก่า/ว่าง (resume ได้)
+# uv run python scripts\rescrape_places.py --all        # บังคับ rescrape ทุกร้าน
+# uv run python scripts\rescrape_places.py --visible    # เปิด browser ให้เห็น (debug)
 
-# Backup ฐานข้อมูล PostgreSQL → ไฟล์ .sql
+# ── เวลาทำการครบ 7 วัน ผ่าน Google Places API (ทางการ, เชื่อถือได้) ────
+# ต้องใส่ GOOGLE_PLACES_API_KEY ใน .env + เปิด Places API/billing ใน Google Cloud
+# uv run python scripts\fetch_hours_api.py             # DRY-RUN: นับร้าน + ประเมินค่าใช้จ่าย (ไม่ยิง API)
+# uv run python scripts\fetch_hours_api.py --limit 5   # ทดสอบ 5 ร้านแรก (ยิงจริง)
+# uv run python scripts\fetch_hours_api.py --all       # ยิงทุกร้านที่เวลายังไม่ครบ
+# uv run python scripts\fetch_hours_api.py --all --force  # ยิงทุกร้าน (รวมที่ครบแล้ว)
+
+# ── BACKUP / SEED DATABASE (สำหรับ git) ──────────────────────
+# อัพเดต seed.sql ก่อน commit เข้า git (มีทั้ง schema + ข้อมูล)
+# pg_dump -U postgres -d phitsanulok_tourism -f "backup\seed.sql"
+
+# Backup ปกติ (timestamp) — ไม่ขึ้น git เพราะ .gitignore กันไว้
 # pg_dump -U postgres -d phitsanulok_tourism -f "backup\db_backup.sql"
 
-# Backup ไฟล์ JSON และผล LDA ทั้งหมด
-# xcopy "data" "backup\data" /E /I /Y
-
-# ตรวจสอบว่า backup สำเร็จ (ดูขนาดไฟล์)
-# dir backup
-
-# ── RESTORE DATABASE (ใช้เมื่อต้องการย้อนกลับ) ───────────────
-# psql -U postgres -d phitsanulok_tourism -f "backup\db_backup.sql"
+# ── RESTORE DATABASE (หลัง clone / ย้อนกลับ) ─────────────────
+# psql -U postgres -d phitsanulok_tourism -f "backup\seed.sql"
 
 # ── RUN SERVERS (เปิดเว็บ) ───────────────────────────────────
 # [Terminal 1] Backend API:

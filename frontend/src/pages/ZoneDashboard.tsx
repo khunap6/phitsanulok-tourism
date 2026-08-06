@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import CategoryDrilldown from '../components/CategoryDrilldown'
+import { STATUS_OPTIONS } from '../components/StatusBadge'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,12 +42,12 @@ function useZones() {
   })
 }
 
-function useZoneBreakdown(zone: string | null, painOnly: boolean) {
+function useZoneBreakdown(zone: string | null, painOnly: boolean, status: string) {
   return useQuery<PlaceTypeBreakdown[]>({
-    queryKey: ['zone-breakdown', zone, painOnly],
+    queryKey: ['zone-breakdown', zone, painOnly, status],
     queryFn: async () => {
       if (!zone) return []
-      const res = await fetch(`/api/insights/zones/${zone}/breakdown?pain_only=${painOnly}`)
+      const res = await fetch(`/api/insights/zones/${zone}/breakdown?pain_only=${painOnly}&status=${status}`)
       if (!res.ok) return []
       return res.json()
     },
@@ -55,12 +56,12 @@ function useZoneBreakdown(zone: string | null, painOnly: boolean) {
   })
 }
 
-function useZonePainPoints(zone: string | null, painOnly: boolean) {
+function useZonePainPoints(zone: string | null, painOnly: boolean, status: string) {
   return useQuery<{ category: string; count: number }[]>({
-    queryKey: ['zone-pain-points', zone, painOnly],
+    queryKey: ['zone-pain-points', zone, painOnly, status],
     queryFn: async () => {
       if (!zone) return []
-      const res = await fetch(`/api/insights/zones/${zone}/pain-points?pain_only=${painOnly}`)
+      const res = await fetch(`/api/insights/zones/${zone}/pain-points?pain_only=${painOnly}&status=${status}`)
       if (!res.ok) return []
       return res.json()
     },
@@ -181,9 +182,10 @@ function PlaceTypeCard({ group }: { group: PlaceTypeBreakdown }) {
 
 function ZoneDetail({ zone, summary }: { zone: string; summary: ZoneSummary }) {
   const [painOnly, setPainOnly] = useState(false)
+  const [bizStatus, setBizStatus] = useState('operational')
   const [drillCategory, setDrillCategory] = useState<string | null>(null)
-  const { data: breakdown = [], isLoading: breakLoading } = useZoneBreakdown(zone, painOnly)
-  const { data: painPoints = [] } = useZonePainPoints(zone, painOnly)
+  const { data: breakdown = [], isLoading: breakLoading } = useZoneBreakdown(zone, painOnly, bizStatus)
+  const { data: painPoints = [] } = useZonePainPoints(zone, painOnly, bizStatus)
   const meta = ZONE_META[zone] ?? ZONE_META['other']
   const total = summary.high_count + summary.medium_count + summary.low_count || 1
 
@@ -213,6 +215,28 @@ function ZoneDetail({ zone, summary }: { zone: string; summary: ZoneSummary }) {
         <span className="text-brand-subtext text-xs">
           {painOnly ? 'ตัด "ความคิดเห็นทั่วไป" ออก เหลือเฉพาะปัญหาที่แก้ได้' : 'รวมความเห็นทุกแบบ'}
         </span>
+      </div>
+
+      {/* สถานะร้าน: เปิด / ปิด / ทั้งหมด */}
+      <div className="flex items-center gap-2">
+        <span className="text-brand-subtext text-sm">สถานะร้าน:</span>
+        <div className="inline-flex rounded-lg border border-brand-border overflow-hidden">
+          {STATUS_OPTIONS.map((s) => (
+            <button
+              key={s.key}
+              onClick={() => { setBizStatus(s.key); setDrillCategory(null) }}
+              className={`px-3 py-1.5 text-sm transition-colors ${
+                bizStatus === s.key ? 'text-white' : 'bg-brand-card text-brand-subtext hover:text-brand-text'
+              }`}
+              style={bizStatus === s.key ? { background: s.color } : {}}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+        {bizStatus === 'closed' && (
+          <span className="text-red-300 text-xs">🔴 ดูเฉพาะร้านที่ปิด — หาว่าอาจปิดเพราะอะไร</span>
+        )}
       </div>
 
       {/* Zone KPIs */}
@@ -265,7 +289,7 @@ function ZoneDetail({ zone, summary }: { zone: string; summary: ZoneSummary }) {
 
           {/* Drill-down เฉพาะโซนนี้ */}
           {drillCategory && (
-            <CategoryDrilldown category={drillCategory} zone={zone} onClose={() => setDrillCategory(null)} />
+            <CategoryDrilldown category={drillCategory} zone={zone} status={bizStatus} onClose={() => setDrillCategory(null)} />
           )}
         </div>
       )}

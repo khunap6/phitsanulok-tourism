@@ -21,8 +21,10 @@ from playwright.async_api import async_playwright, Page, TimeoutError as Playwri
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
-# จำนวนรีวิวสูงสุดต่อสถานที่ (ปลด cap จาก 80 → 200 เพื่อเก็บข้อมูลให้มากขึ้น)
+# จำนวนรีวิวสูงสุดต่อสถานที่ (ตอน refresh — เก็บให้มากที่สุด)
 MAX_REVIEWS_PER_PLACE = 200
+# ตอน discover ร้านใหม่ — เก็บรีวิวน้อยๆ ให้เร็ว (auto_refresh จะดึงรีวิวเต็มทีหลัง)
+DISCOVER_MAX_REVIEWS = 5
 
 # Bounding box ของจังหวัดพิษณุโลก (lat/lng)
 PHITSANULOK_BBOX = {
@@ -237,34 +239,99 @@ async def extract_place_coords(page: Page) -> tuple[float, float] | None:
     return None
 
 
+# ── เวลาทำการทั้งสัปดาห์ ────────────────────────────────────────────────
+_DAY_ORDER = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"]
+_DAY_ABBR = {"จันทร์": "จ", "อังคาร": "อ", "พุธ": "พ", "พฤหัสบดี": "พฤ",
+             "ศุกร์": "ศ", "เสาร์": "ส", "อาทิตย์": "อา"}
+_HOURS_NOISE = ("รูปภาพ", "ผู้รีวิว", "ช่วงราคา", "รายงาน", "ต่อคน")
+_PUA_RE = re.compile("[" + chr(0xE000) + "-" + chr(0xF8FF) + "]")
+# ช่วงเวลา 1 ช่วง เช่น "9:30 ถึง 14:30" / "6:00–20:00" / "6:00-20:00"
+_TIME_RANGE_RE = re.compile(r"(\d{1,2}:\d{2})\s*(?:ถึง|[-–—])\s*(\d{1,2}:\d{2})")
+
+
+def _day_hours(rest: str, raw: str) -> str:
+    """แปลงข้อความเวลาของ 1 วัน → สตริงสั้น รองรับหลายช่วง (เช้า+เย็น) และกรณีปิด/24 ชม."""
+    if "24" in rest and ("ชั่วโมง" in raw or "ตลอด" in raw):
+        return "24 ชม."
+    ranges = _TIME_RANGE_RE.findall(rest)
+    if ranges:
+        return ", ".join(f"{a}-{b}" for a, b in ranges)
+    return "ปิด"  # ไม่มีช่วงเวลา = ปิดวันนั้น (เช่น "ปิดทำการ")
+
+
+def _parse_weekly_hours(raw_list: list[str]) -> str | None:
+    """
+    แปลง aria-label/แถวตารางของแต่ละวัน → สตริงเวลาทำการทั้งสัปดาห์
+    เช่น "ทุกวัน 6:00-20:00" หรือ "จ 8:00-17:00 | ส 9:30-14:30, 17:00-2:30"
+    """
+    found: dict[str, str] = {}
+    for raw in raw_list:
+        if not raw or any(n in raw for n in _HOURS_NOISE):
+            continue
+        for day in _DAY_ORDER:
+            if day in raw:
+                rest = _PUA_RE.sub(" ", raw.split(day, 1)[1])
+                found[day] = _day_hours(rest, raw)
+                break
+
+    if not found:
+        return None
+    times = set(found.values())
+    if len(found) == 7 and len(times) == 1:
+        return f"ทุกวัน {next(iter(times))}"
+    return " | ".join(f"{_DAY_ABBR[d]} {found[d]}" for d in _DAY_ORDER if d in found)
+
+
 async def extract_opening_hours(page: Page) -> str | None:
     """
-    ดึงเวลาเปิด-ปิดจากหน้า Google Maps (best-effort)
-    คืนข้อความดิบ เช่น "เปิด ⋅ ปิด 21:00" หรือตารางเวลาแบบเต็ม
+    ดึงตารางเวลาทำการทั้งสัปดาห์จาก Google Maps (คลิกเปิดตารางก่อน แล้วอ่านทีละวัน)
+    คืนสตริงเช่น "ทุกวัน 06:00-20:00" หรือ "จ 08:00-17:00 | ..." หรือ None ถ้าไม่มีข้อมูล
     """
-    # 1) ปุ่ม/แถบสรุปเวลาทำการ
-    for sel in [
-        '[jsaction*="openhours"]',
-        'button[data-item-id*="oh"]',
-        '[aria-label*="เวลาทำการ"]',
-        '[aria-label*="ชั่วโมงทำการ"]',
-        '[aria-label*="Hours"]',
-        '.t39EBf',
-        '.OqCZI',
-    ]:
+    # 1) คลิกเปิดตารางเวลาทำการ (ปุ่มสรุป)
+    for sel in ['[jsaction*="openhours"]', 'button[aria-label*="เวลาทำการ"]']:
         try:
-            elem = await page.query_selector(sel)
-            if elem:
-                # aria-label มักมีตารางเวลาเต็ม (เช่น "วันจันทร์, 08:00 ถึง 17:00; ...")
-                aria = await elem.get_attribute("aria-label")
-                if aria and len(aria) > 5:
-                    return aria.strip()[:500]
-                txt = (await elem.inner_text()).strip()
-                if txt and len(txt) > 3:
-                    return txt.replace("\n", " ")[:500]
+            btn = page.locator(sel).first
+            if await btn.count() > 0:
+                await btn.click(timeout=3000)
+                await asyncio.sleep(0.7)
+                break
         except Exception:
             continue
-    return None
+
+    # 2) อ่านเวลาแต่ละวัน — ลอง 3 แหล่งตามลำดับความน่าเชื่อถือ:
+    #    (a) ปุ่ม "คัดลอกเวลาเปิดทำการ" 1 ปุ่ม/วัน
+    #    (b) ตาราง <tr> ในกล่องที่กางออก
+    #    (c) .t39EBf ที่รวมทุกวันไว้ คั่นด้วยอักขระ PUA (เช่น "วันเสาร์6:00–20:00วันอาทิตย์...")
+    try:
+        raw_list = await page.evaluate("""
+            () => {
+                const out = [];
+                document.querySelectorAll('[aria-label*="คัดลอกเวลา"]').forEach(el => {
+                    const a = el.getAttribute('aria-label') || '';
+                    if (a.includes('วัน')) out.push(a);
+                });
+                if (out.length === 0) {
+                    document.querySelectorAll('table tr').forEach(tr => {
+                        const t = (tr.innerText || '').replace(/\\s+/g, ' ').trim();
+                        if (t.includes('วัน') && t.length < 60) out.push(t);
+                    });
+                }
+                if (out.length === 0) {
+                    const el = document.querySelector('.t39EBf');
+                    if (el) {
+                        (el.innerText || '').split(/[\\ue000-\\uf8ff\\n]/).forEach(p => {
+                            p = p.trim();
+                            if (p.includes('วัน') && p.length < 40) out.push(p);
+                        });
+                    }
+                }
+                return out;
+            }
+        """)
+    except Exception:
+        raw_list = []
+
+    return _parse_weekly_hours(raw_list or [])
 
 
 async def extract_price_level(page: Page) -> str | None:
@@ -308,6 +375,34 @@ async def extract_price_level(page: Page) -> str | None:
     except Exception:
         pass
     return None
+
+
+async def extract_business_status(page: Page) -> str:
+    """
+    ตรวจสถานะร้านจากหน้า Google Maps
+    คืน 'operational' (เปิดปกติ) / 'closed_temporarily' / 'closed_permanently'
+    """
+    try:
+        status = await page.evaluate("""
+            () => {
+                const els = document.querySelectorAll('span, div');
+                for (const e of els) {
+                    const t = (e.innerText || '').trim();
+                    if (t.length > 0 && t.length < 30) {
+                        if (t.includes('ปิดถาวร') || t.includes('ปิดกิจการ') ||
+                            t.toLowerCase().includes('permanently closed'))
+                            return 'closed_permanently';
+                        if (t.includes('ปิดชั่วคราว') ||
+                            t.toLowerCase().includes('temporarily closed'))
+                            return 'closed_temporarily';
+                    }
+                }
+                return 'operational';
+            }
+        """)
+        return status or "operational"
+    except Exception:
+        return "operational"
 
 
 async def debug_page(page: Page, label: str = "debug"):
@@ -384,9 +479,9 @@ async def extract_reviews(page: Page, max_reviews: int = 20) -> list[dict]:
             pass
 
         # Step 3: Scroll to load more reviews
-        # ปรับจำนวนรอบ scroll ตาม max_reviews (ยิ่งเก็บมาก ยิ่งต้อง scroll มาก)
+        # ปรับจำนวนรอบ scroll ตาม max_reviews (รีวิวน้อย = scroll น้อย = เร็ว)
         # Google โหลดรีวิวประมาณ 8-10 อันต่อการ scroll หนึ่งครั้ง
-        scroll_times = max(20, min(60, max_reviews // 4))
+        scroll_times = max(2, min(60, max_reviews // 4))
         await scroll_reviews(page, times=scroll_times)
 
         # Step 4: Extract reviews via JavaScript
@@ -531,8 +626,8 @@ async def wait_for_place_loaded(page: Page, timeout: int = 20000) -> bool:
     return False
 
 
-async def scrape_place(page: Page, place_name: str) -> dict | None:
-    """Search for a place and scrape its reviews."""
+async def scrape_place(page: Page, place_name: str, max_reviews: int = MAX_REVIEWS_PER_PLACE) -> dict | None:
+    """Search for a place and scrape its reviews. max_reviews ต่ำ = เร็ว (ใช้ตอน discover)"""
     print(f"\n  Searching: {place_name}")
 
     try:
@@ -601,19 +696,24 @@ async def scrape_place(page: Page, place_name: str) -> dict | None:
             except Exception:
                 continue
 
-        # Get opening hours + price level (best-effort — None ถ้าหน้าไม่แสดง)
+        # Get opening hours + price level + สถานะร้าน (best-effort)
         opening_hours = await extract_opening_hours(page)
         price_level = await extract_price_level(page)
+        business_status = await extract_business_status(page)
 
-        print(f"  Found: {actual_name} | Rating: {overall_rating} | Category: {google_category} | Price: {price_level} | Coords: {coords}")
+        print(f"  Found: {actual_name} | Rating: {overall_rating} | Category: {google_category} | Status: {business_status} | Coords: {coords}")
 
         # debug screenshot disabled (เปิดได้เมื่อต้องการ debug)
         # safe_name = re.sub(r'[^\w]', '_', actual_name)[:20]
         # await debug_page(page, f"before_reviews_{safe_name}")
 
-        # Scrape reviews (ปลด cap — เก็บมากที่สุดที่ Google โหลดให้)
-        reviews = await extract_reviews(page, max_reviews=MAX_REVIEWS_PER_PLACE)
-        print(f"  Collected {len(reviews)} reviews")
+        # Scrape reviews — ข้ามถ้า max_reviews <= 0 (โหมด discover เร็ว)
+        if max_reviews > 0:
+            reviews = await extract_reviews(page, max_reviews=max_reviews)
+            print(f"  Collected {len(reviews)} reviews")
+        else:
+            reviews = []
+            print(f"  Skipped reviews (discover mode)")
 
         return {
             "place_name": actual_name,
@@ -622,6 +722,7 @@ async def scrape_place(page: Page, place_name: str) -> dict | None:
             "google_category": google_category,
             "opening_hours": opening_hours,
             "price_level": price_level,
+            "business_status": business_status,
             "lat": coords[0] if coords else None,
             "lng": coords[1] if coords else None,
             "reviews": reviews,
@@ -646,8 +747,9 @@ async def run_scraper(
     max_places: int = None,
     auto_discover: bool = True,
     discover_query: str | None = None,
+    max_reviews: int = MAX_REVIEWS_PER_PLACE,
 ) -> list[dict]:
-    """Main scraper function. discover_query ใช้ระบุ query เดียวสำหรับ zone-based discovery"""
+    """Main scraper function. max_reviews ต่ำ = เก็บร้านเร็ว (โหมด discover)"""
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=headless,
@@ -688,7 +790,7 @@ async def run_scraper(
         results = []
         for i, place in enumerate(places):
             print(f"\n[{i+1}/{len(places)}] Processing...")
-            result = await scrape_place(page, place)
+            result = await scrape_place(page, place, max_reviews=max_reviews)
             if result:
                 # กรองเฉพาะสถานที่ในพิษณุโลก
                 if not is_in_phitsanulok(result.get("lat"), result.get("lng")):

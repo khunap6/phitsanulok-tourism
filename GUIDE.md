@@ -120,56 +120,165 @@ phitsanulok-tourism/
 
 | รายการ | เวอร์ชัน | หมายเหตุ |
 |---|---|---|
-| Python | 3.12+ | จัดการด้วย `uv` |
-| PostgreSQL | 16.x | + PostGIS extension |
-| Google Chrome | ล่าสุด | สำหรับ Playwright / Selenium |
+| Python | 3.12+ | จัดการด้วย `uv` (ติดตั้งด้านล่าง) |
+| PostgreSQL | 16.x | ต้องมี **PostGIS extension** ด้วย |
 | Node.js | 18+ | สำหรับ React frontend |
-| RAM | 4 GB+ | WangchanBERTa ต้องการ ~2 GB |
+| Google Chrome | ล่าสุด | สำหรับ Playwright (browser จะติดตั้งอัตโนมัติในขั้นที่ 6) |
+| Git | ล่าสุด | สำหรับ clone repo |
+| RAM | 4 GB+ | WangchanBERTa ต้องการ ~2 GB (ถ้าใช้ Claude API แทนก็ไม่ต้อง) |
 
-### ขั้นตอน
+### API Keys ที่ต้องเตรียม
 
-**1. Clone และติดตั้ง Python dependencies**
+โปรเจกต์นี้ใช้ API 3 ตัว — ใส่ในไฟล์ `.env` ก่อนรัน:
+
+| Key | ใช้ทำอะไร | ขอที่ไหน |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | วิเคราะห์รีวิว NLP (Claude Haiku) | [console.anthropic.com](https://console.anthropic.com) |
+| `VITE_GOOGLE_MAPS_KEY` | แสดงแผนที่หน้าเว็บ — ต้องเปิด **Maps JavaScript API** ใน Google Cloud | [console.cloud.google.com](https://console.cloud.google.com) |
+| `GOOGLE_PLACES_API_KEY` | สคริปต์ `fetch_hours_api.py` ดึงเวลาทำการ 7 วัน — ต้องเปิด **Places API** | เดียวกับข้างบน (ใช้คนละคีย์แนะนำ) |
+
+> 💡 Google ให้เครดิตฟรี **$200/เดือน** และเทรียล **~฿10,000** พอเหลือ ๆ สำหรับงานนี้
+
+---
+
+### ขั้นตอนติดตั้ง
+
+**1. ติดตั้ง `uv` (Python package manager)**
+
+```powershell
+# Windows (PowerShell)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**2. Clone repo**
 
 ```bash
 git clone https://github.com/<username>/phitsanulok-tourism.git
 cd phitsanulok-tourism
-uv sync
 ```
 
-**2. สร้าง Database**
-
-```sql
--- ใน pgAdmin หรือ psql
-CREATE DATABASE phitsanulok_tourism;
-```
+> ถ้าเป็น **private repo**: `git clone https://<username>@github.com/...` แล้วใส่ **Personal Access Token** เป็นรหัสผ่าน (GitHub → Settings → Developer settings → Personal access tokens)
 
 **3. ตั้งค่า `.env`**
 
-```env
-DATABASE_URL=postgresql+asyncpg://postgres:PASSWORD@localhost:5432/phitsanulok_tourism
-SYNC_DATABASE_URL=postgresql://postgres:PASSWORD@localhost:5432/phitsanulok_tourism
-ANTHROPIC_API_KEY=your_key_here        # optional — ใช้ Claude สำหรับ NLP fallback
-VITE_GOOGLE_MAPS_KEY=your_key_here     # สำหรับแผนที่ใน frontend
+```bash
+# Windows
+copy .env.example .env
+
+# macOS / Linux
+cp .env.example .env
 ```
 
-**4. Run Database Migration**
+เปิดไฟล์ `.env` แล้วใส่ค่า:
+- `DATABASE_URL` และ `SYNC_DATABASE_URL` — เปลี่ยน `password` เป็นรหัส PostgreSQL ของเครื่อง
+- API keys 3 ตัว (ดูตาราง "API Keys" ด้านบน) — key ไหนไม่มีปล่อยว่างได้ ฟีเจอร์ที่ต้องใช้จะปิดตัวเองแบบ graceful
+
+**4. สร้าง Database + เปิด PostGIS**
+
+```powershell
+# Windows (PowerShell) — ปรับ path ให้ตรงเวอร์ชัน PostgreSQL ที่ติดตั้ง
+$env:PGPASSWORD="postgres"
+& "D:\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE DATABASE phitsanulok_tourism;"
+& "D:\PostgreSQL\16\bin\psql.exe" -U postgres -d phitsanulok_tourism -c "CREATE EXTENSION postgis;"
+```
 
 ```bash
-uv run alembic upgrade head
+# macOS / Linux
+createdb -U postgres phitsanulok_tourism
+psql -U postgres -d phitsanulok_tourism -c "CREATE EXTENSION postgis;"
 ```
 
-**5. ติดตั้ง Playwright Browser**
+> ⚠️ Windows: ถ้าคำสั่ง `psql` ขึ้น "not recognized" แปลว่า PostgreSQL ยังไม่อยู่ใน PATH — ใช้ full path ตามตัวอย่าง (`D:\PostgreSQL\16\bin\...`) หรือเพิ่ม `C:\Program Files\PostgreSQL\16\bin` เข้า PATH
+
+**5. เตรียมข้อมูลใน Database — เลือก 1 ใน 2 แบบ**
+
+**แบบ A — Restore ข้อมูลพร้อมใช้ (แนะนำ)** ⭐ — ได้ทั้ง schema + ข้อมูลจริง ~300 ร้าน 24k รีวิว วิเคราะห์เสร็จแล้ว พร้อมเปิดใช้งานเลย
+
+```powershell
+# Windows (PowerShell)
+$env:PGPASSWORD="postgres"
+& "D:\PostgreSQL\16\bin\psql.exe" -U postgres -d phitsanulok_tourism -f backup\seed.sql
+```
 
 ```bash
-uv run playwright install chromium
+# macOS / Linux
+psql -U postgres -d phitsanulok_tourism -f backup/seed.sql
 ```
 
-**6. ติดตั้ง Frontend dependencies**
+> ไฟล์ `backup/seed.sql` มี schema + ข้อมูลครบ (dump จาก `pg_dump`) — **ไม่ต้องรัน migration หรือ scrape ใหม่**
+
+**แบบ B — เริ่มจาก database ว่าง** (ถ้าอยาก scrape ข้อมูลเองใหม่)
+
+```bash
+uv run alembic upgrade head    # สร้างตารางเปล่าตาม schema
+# แล้วค่อย scrape (ดูขั้น "เก็บข้อมูลครั้งแรก" ด้านล่าง)
+```
+
+**6. ติดตั้ง Python dependencies + Playwright browser**
+
+```bash
+uv sync                              # ติดตั้ง Python packages ทั้งหมด
+uv run playwright install chromium   # ติดตั้ง Chromium สำหรับ scraper
+```
+
+**7. ติดตั้ง Frontend dependencies**
 
 ```bash
 cd frontend
 npm install
+cd ..
 ```
+
+---
+
+### ทดสอบว่าติดตั้งสำเร็จ
+
+เปิด 2 terminal:
+
+**Terminal 1 — Backend API:**
+```bash
+uv run uvicorn api.main:app --reload --port 8000
+```
+→ เปิด http://localhost:8000/docs ควรเห็นหน้า Swagger
+
+**Terminal 2 — Frontend:**
+```bash
+cd frontend
+npm run dev
+```
+→ เปิด http://localhost:5173 ควรเห็นหน้า Dashboard พร้อมข้อมูล ✅
+
+---
+
+### Checklist ตอนติดตั้ง
+
+- [ ] Python 3.12+, uv, Node 18+, PostgreSQL 16+PostGIS, Git ครบ
+- [ ] `.env` ใส่ API keys ครบ (อย่างน้อย `ANTHROPIC_API_KEY` + `VITE_GOOGLE_MAPS_KEY`)
+- [ ] Database `phitsanulok_tourism` มี + เปิด PostGIS extension แล้ว
+- [ ] Load `backup/seed.sql` เข้า DB แล้ว (แบบ A)
+- [ ] `uv sync` + `uv run playwright install chromium` เสร็จ
+- [ ] `npm install` ใน `frontend/` เสร็จ
+- [ ] Backend (8000) + Frontend (5173) รันได้พร้อมกัน
+
+---
+
+### สำหรับผู้พัฒนา — อัปเดต `seed.sql` ก่อน push
+
+ถ้ามีข้อมูลใหม่ที่อยาก share ผ่าน git ให้เครื่องอื่น clone:
+
+```powershell
+# Windows
+$env:PGPASSWORD="postgres"
+& "D:\PostgreSQL\16\bin\pg_dump.exe" -U postgres -d phitsanulok_tourism -f "backup\seed.sql"
+git add backup/seed.sql
+git commit -m "update seed data"
+git push
+```
+
+> ✅ `.gitignore` ตั้งไว้ให้ commit เฉพาะ `backup/seed.sql` ไฟล์เดียว — backup อื่น ๆ (`db_backup_*.sql`) จะไม่ขึ้น git โดยอัตโนมัติ
 
 ---
 

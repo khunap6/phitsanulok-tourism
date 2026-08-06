@@ -176,13 +176,18 @@ async def run_analysis(
                         if j >= len(batch):
                             break
                         review = batch[j]
+                        cr = cr or {}
+                        # ใช้ (x or default) กัน None: ถ้า Claude คืน null field
+                        # .get(key, default) จะคืน None (ไม่ใช่ default) → slice พัง
+                        kw = cr.get("keywords")
+                        kw = kw[:10] if isinstance(kw, list) else []
                         analyzed_rows.append({
                             "review_id": review["id"],
-                            "sentiment": cr.get("sentiment", "neutral"),
-                            "pain_point_category": cr.get("pain_point_category", "อื่นๆ"),
-                            "pain_point_thai": cr.get("pain_point_thai", "")[:200],
-                            "severity": cr.get("severity", "medium"),
-                            "keywords": cr.get("keywords", [])[:10],
+                            "sentiment": cr.get("sentiment") or "neutral",
+                            "pain_point_category": cr.get("pain_point_category") or "อื่นๆ",
+                            "pain_point_thai": (cr.get("pain_point_thai") or "")[:200],
+                            "severity": cr.get("severity") or "medium",
+                            "keywords": kw,
                             "model_used": "claude-haiku-4-5-20251001",
                         })
                 else:

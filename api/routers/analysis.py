@@ -18,6 +18,42 @@ router = APIRouter(prefix="/insights", tags=["insights"])
 # หมวด "ความคิดเห็นทั่วไป" ไม่ใช่ pain point จริง — ตัดออกเมื่อดูโหมด "เฉพาะปัญหา"
 GENERAL_CATEGORY = "ความคิดเห็นทั่วไป (ไม่ระบุปัญหา)"
 
+# หมวดที่ "ไม่ใช่ปัญหา" — ไม่นับเป็น pain point ไม่ว่ากรณีใด
+NON_PROBLEM_CATEGORIES = [GENERAL_CATEGORY, "อื่นๆ", "ไม่มี"]
+# literal สำหรับ NOT IN (...) — ค่าเป็น constant ของเราเอง ปลอดภัยจาก injection
+_NONPROBLEM_IN = ", ".join("'" + c.replace("'", "''") + "'" for c in NON_PROBLEM_CATEGORIES)
+
+# นิยาม "pain point" = รีวิวเชิงลบ (คำบ่น) เท่านั้น — ไม่นับคำชม/ความเห็นทั่วไป
+NEGATIVE_ONLY = "ar.sentiment = 'negative'"
+
+
+def pain_filter(pain_only: bool, alias: str = "ar") -> str:
+    """
+    โหมด "เฉพาะปัญหา" (pain_only=True):
+      - เอาเฉพาะรีวิว sentiment=negative (คำบ่นจริง ไม่ใช่คำชม)
+      - ตัดหมวดที่ไม่ใช่ปัญหา (ความคิดเห็นทั่วไป/อื่นๆ/ไม่มี)
+    โหมดปกติ (pain_only=False): ไม่กรอง (ดูทุกรีวิวทุกอารมณ์)
+    """
+    if not pain_only:
+        return ""
+    return (f"AND {alias}.sentiment = 'negative' "
+            f"AND {alias}.pain_point_category NOT IN ({_NONPROBLEM_IN})")
+
+
+def status_filter(status: str, alias: str = "p") -> str:
+    """
+    คืน SQL fragment กรองสถานะร้าน
+      operational (default) = เฉพาะร้านที่เปิด
+      closed                = เฉพาะร้านที่ปิด (ถาวร + ชั่วคราว)
+      all                   = ทุกร้าน
+    """
+    if status == "closed":
+        return (f"AND COALESCE({alias}.business_status,'operational') "
+                f"IN ('closed_permanently','closed_temporarily')")
+    if status == "all":
+        return ""
+    return f"AND COALESCE({alias}.business_status,'operational') = 'operational'"
+
 
 @router.get("/zones")
 async def zone_summary(db: Annotated[AsyncSession, Depends(get_db)]):
@@ -29,14 +65,16 @@ async def zone_summary(db: Annotated[AsyncSession, Depends(get_db)]):
                 COUNT(DISTINCT p.id)                 AS place_count,
                 COUNT(DISTINCT r.id)                 AS review_count,
                 COUNT(DISTINCT ar.id)                AS analyzed_count,
-                COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high')   AS high_count,
-                COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'medium') AS medium_count,
-                COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'low')    AS low_count,
-                -- ปัญหาหลัก = หมวดที่พบบ่อยสุด (ตัดรีวิวว่าง + ความคิดเห็นทั่วไปออก เอาเฉพาะปัญหาจริง)
+                -- นับระดับความรุนแรง เฉพาะรีวิวเชิงลบ (คำบ่นจริง)
+                COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high'   AND ar.sentiment='negative') AS high_count,
+                COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'medium' AND ar.sentiment='negative') AS medium_count,
+                COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'low'    AND ar.sentiment='negative') AS low_count,
+                -- ปัญหาหลัก = หมวดคำบ่นที่พบบ่อยสุด (เฉพาะรีวิวเชิงลบ + ตัดหมวดที่ไม่ใช่ปัญหา)
                 MODE() WITHIN GROUP (ORDER BY ar.pain_point_category)
                     FILTER (WHERE r.text_clean <> ''
+                            AND ar.sentiment = 'negative'
                             AND ar.pain_point_category IS NOT NULL
-                            AND ar.pain_point_category <> :general) AS top_category
+                            AND ar.pain_point_category NOT IN (""" + _NONPROBLEM_IN + """)) AS top_category
             FROM places p
             LEFT JOIN reviews r  ON r.place_id = p.id
             LEFT JOIN analyzed_reviews ar ON ar.review_id = r.id
@@ -75,9 +113,11 @@ async def zone_pain_points(
     zone: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     pain_only: bool = False,
+    status: str = "operational",
 ):
-    """Pain point categories ของโซนที่เลือก (pain_only=true ตัด 'ความคิดเห็นทั่วไป' ออก)"""
-    general_filter = "AND ar.pain_point_category <> :general" if pain_only else ""
+    """Pain point categories ของโซน (status=operational/closed/all)"""
+    general_filter = pain_filter(pain_only)
+    biz_filter = status_filter(status)
     result = await db.execute(
         text(f"""
             SELECT ar.pain_point_category AS category, COUNT(*) AS count
@@ -88,6 +128,7 @@ async def zone_pain_points(
               AND ar.pain_point_category IS NOT NULL
               AND r.text_clean <> ''          -- ตัดรีวิวที่ให้ดาวอย่างเดียว
               {general_filter}
+              {biz_filter}
             GROUP BY ar.pain_point_category
             ORDER BY count DESC
             LIMIT 10
@@ -102,8 +143,9 @@ async def zone_breakdown(
     zone: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     pain_only: bool = False,
+    status: str = "operational",
 ):
-    """Pain point แยกตามประเภทสถานที่ภายในโซน (pain_only=true ตัด 'ความคิดเห็นทั่วไป' ออก)"""
+    """Pain point แยกตามประเภทสถานที่ภายในโซน (status=operational/closed/all)"""
 
     # แผนที่ Google category → ประเภทที่ใช้ในระบบ
     _GOOGLE_CATEGORY_MAP = {
@@ -142,18 +184,20 @@ async def zone_breakdown(
             return 'สถานที่ท่องเที่ยว'
         return 'ทั่วไป'
 
-    # ดึงสถานที่ + รีวิวในโซนนี้
+    # ดึงสถานที่ + รีวิวในโซนนี้ (กรองตามสถานะร้าน)
+    biz_filter = status_filter(status)
     places_result = await db.execute(
-        text("""
+        text(f"""
             SELECT p.id, p.name, p.google_category,
                    COUNT(DISTINCT r.id)  AS review_count,
-                   COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high')   AS high_count,
-                   COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'medium') AS medium_count,
-                   COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'low')    AS low_count
+                   COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high'   AND ar.sentiment='negative') AS high_count,
+                   COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'medium' AND ar.sentiment='negative') AS medium_count,
+                   COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'low'    AND ar.sentiment='negative') AS low_count
             FROM places p
             LEFT JOIN reviews r  ON r.place_id = p.id
             LEFT JOIN analyzed_reviews ar ON ar.review_id = r.id
             WHERE COALESCE(p.zone, 'other') = :zone
+              {biz_filter}
             GROUP BY p.id, p.name, p.google_category
             ORDER BY high_count DESC
         """),
@@ -162,7 +206,7 @@ async def zone_breakdown(
     places = places_result.fetchall()
 
     # Pain points ต่อสถานที่
-    general_filter = "AND ar.pain_point_category <> :general" if pain_only else ""
+    general_filter = pain_filter(pain_only)
     pain_result = await db.execute(
         text(f"""
             SELECT p.name AS place_name,
@@ -175,6 +219,7 @@ async def zone_breakdown(
               AND ar.pain_point_category IS NOT NULL
               AND r.text_clean <> ''          -- ตัดรีวิวที่ให้ดาวอย่างเดียว
               {general_filter}
+              {biz_filter}
             GROUP BY p.name, ar.pain_point_category
         """),
         {"zone": zone, "general": GENERAL_CATEGORY},
@@ -235,22 +280,26 @@ async def category_places(
     category: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     zone: str | None = None,
+    status: str = "operational",
 ):
     """
-    ร้านที่มี pain point หมวดนี้ พร้อมจำนวนแยกตามระดับ (high/medium/low)
+    ร้านที่มี pain point หมวดนี้ พร้อมจำนวนแยกตามระดับ + สถานะร้าน
     เรียงตามจำนวนรวมมากสุด — frontend ใช้ sort ตามระดับที่เลือก
     """
-    filters = ["ar.pain_point_category = :category", "r.text_clean <> ''"]
+    # เฉพาะรีวิวเชิงลบ = ร้านที่มี "ปัญหา" หมวดนี้จริง (ไม่ใช่ร้านที่ถูกชมเรื่องนี้)
+    filters = ["ar.pain_point_category = :category", "r.text_clean <> ''", NEGATIVE_ONLY]
     params: dict = {"category": category}
     if zone:
         filters.append("COALESCE(p.zone, 'other') = :zone")
         params["zone"] = zone
     where = " AND ".join(filters)
+    biz_filter = status_filter(status)
 
     result = await db.execute(
         text(f"""
             SELECT p.id AS place_id, p.name AS place_name,
                    COALESCE(p.zone, 'other') AS zone,
+                   COALESCE(p.business_status, 'operational') AS business_status,
                    COUNT(*) AS total,
                    COUNT(*) FILTER (WHERE ar.severity = 'high')   AS high,
                    COUNT(*) FILTER (WHERE ar.severity = 'medium') AS medium,
@@ -259,7 +308,8 @@ async def category_places(
             JOIN reviews r ON r.id = ar.review_id
             JOIN places p  ON p.id = r.place_id
             WHERE {where}
-            GROUP BY p.id, p.name, p.zone
+              {biz_filter}
+            GROUP BY p.id, p.name, p.zone, p.business_status
             ORDER BY total DESC
             LIMIT 50
         """),
@@ -280,6 +330,7 @@ async def category_reviews(
         "ar.pain_point_category = :category",
         "r.place_id = :place_id",
         "r.text_clean <> ''",
+        NEGATIVE_ONLY,          # เฉพาะรีวิวคำบ่น (ไม่โชว์คำชม)
     ]
     params: dict = {"category": category, "place_id": place_id}
     if severity:
@@ -316,6 +367,7 @@ async def category_reviews(
 async def insights_summary(
     db: Annotated[AsyncSession, Depends(get_db)],
     pain_only: bool = False,
+    status: str = "operational",
 ):
     counts = await db.execute(
         text("""
@@ -330,15 +382,18 @@ async def insights_summary(
         row.total_places, row.total_reviews, row.total_analyzed
     )
 
-    general_filter = "AND ar.pain_point_category <> :general" if pain_only else ""
+    general_filter = pain_filter(pain_only)
+    biz_filter = status_filter(status)
     cat_result = await db.execute(
         text(f"""
             SELECT ar.pain_point_category AS category, COUNT(*) AS count
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
+            JOIN places p  ON p.id = r.place_id
             WHERE ar.pain_point_category IS NOT NULL
               AND r.text_clean <> ''          -- ตัดรีวิวที่ให้ดาวอย่างเดียว
               {general_filter}
+              {biz_filter}
             GROUP BY ar.pain_point_category
             ORDER BY count DESC
             LIMIT 10
@@ -350,11 +405,12 @@ async def insights_summary(
         for r in cat_result.fetchall()
     ]
 
+    # การกระจายระดับความรุนแรง — เฉพาะรีวิวเชิงลบ (คำบ่นจริง)
     sev_result = await db.execute(
         text("""
             SELECT severity, COUNT(*) AS count
             FROM analyzed_reviews
-            WHERE severity IS NOT NULL
+            WHERE severity IS NOT NULL AND sentiment = 'negative'
             GROUP BY severity
         """)
     )
@@ -363,7 +419,7 @@ async def insights_summary(
     worst_result = await db.execute(
         text("""
             SELECT p.name AS place_name,
-                   COUNT(*) FILTER (WHERE ar.severity = 'high') AS high_count
+                   COUNT(*) FILTER (WHERE ar.severity = 'high' AND ar.sentiment='negative') AS high_count
             FROM places p
             JOIN reviews r  ON r.place_id = p.id
             JOIN analyzed_reviews ar ON ar.review_id = r.id
@@ -391,18 +447,23 @@ async def insights_summary(
 async def top_problematic_places(
     db: Annotated[AsyncSession, Depends(get_db)],
     limit: int = 10,
+    status: str = "operational",
 ):
+    biz_filter = status_filter(status)
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT p.id, p.name,
                    p.overall_rating,
+                   COALESCE(p.business_status, 'operational') AS business_status,
                    COUNT(DISTINCT r.id)                                          AS review_count,
-                   COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high')    AS high_count,
-                   COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'medium')  AS medium_count
+                   COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high'   AND ar.sentiment='negative') AS high_count,
+                   COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'medium' AND ar.sentiment='negative') AS medium_count
             FROM places p
             JOIN reviews r  ON r.place_id = p.id
             JOIN analyzed_reviews ar ON ar.review_id = r.id
-            GROUP BY p.id, p.name, p.overall_rating
+            WHERE TRUE
+              {biz_filter}
+            GROUP BY p.id, p.name, p.overall_rating, p.business_status
             ORDER BY high_count DESC, medium_count DESC
             LIMIT :lim
         """),

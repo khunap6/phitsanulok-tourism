@@ -15,7 +15,7 @@ load_dotenv()
 from sqlalchemy import text
 from db.database import AsyncSessionLocal
 from scraper.scraper import save_to_db
-from scraper.scraper_core import run_scraper, PHITSANULOK_BBOX
+from scraper.scraper_core import run_scraper, PHITSANULOK_BBOX, DISCOVER_MAX_REVIEWS
 from scraper.zones import ZONES, assign_zone, all_zone_queries
 
 
@@ -38,6 +38,7 @@ async def discover_zone(session, zone_key: str, max_per_query: int = 20):
                 max_places=max_per_query,
                 auto_discover=True,
                 discover_query=query,
+                max_reviews=DISCOVER_MAX_REVIEWS,   # เก็บร้านเร็ว รีวิวเต็มค่อยดึงด้วย auto_refresh
             )
             # กรองเฉพาะที่ตรงโซน
             zone_results = []
@@ -65,9 +66,9 @@ async def discover_zone(session, zone_key: str, max_per_query: int = 20):
 
 
 async def save_to_db_with_zone(results: list[dict], session) -> tuple[int, int]:
-    """บันทึกลง DB พร้อมอัพเดต zone"""
+    """บันทึกลง DB พร้อมอัพเดต zone (full_scrape=False → auto_refresh ดึงรีวิวเต็มต่อ)"""
     from scraper.scraper import save_to_db
-    places_count, reviews_new = await save_to_db(results, session)
+    places_count, reviews_new = await save_to_db(results, session, full_scrape=False)
 
     # อัพเดต zone สำหรับสถานที่ที่ scrape มาได้
     for r in results:

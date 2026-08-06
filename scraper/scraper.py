@@ -17,6 +17,8 @@ from db.models import ScrapeJob
 from nlp.text_cleaner import clean_review_text
 from scraper.date_parser import parse_relative_date
 from scraper.scraper_core import (
+    DISCOVER_MAX_REVIEWS,
+    MAX_REVIEWS_PER_PLACE,
     PHITSANULOK_PLACES_FALLBACK,
     is_in_phitsanulok,
     run_scraper,
@@ -48,13 +50,21 @@ async def load_places_to_refresh(session: AsyncSession) -> list[str]:
     return [row[0] for row in result.fetchall()]
 
 
-async def save_to_db(results: list[dict], session: AsyncSession) -> tuple[int, int]:
+async def save_to_db(
+    results: list[dict],
+    session: AsyncSession,
+    full_scrape: bool = True,
+) -> tuple[int, int]:
     """
     Upsert places + insert reviews (skip duplicates via text_hash).
+    full_scrape=False (โหมด discover) → เก็บ scraped_at เป็น NULL เพื่อให้ auto_refresh
+    ดึงรีวิวเต็มทีหลัง (NULLS FIRST ในคิว refresh)
     Returns (places_upserted, reviews_inserted_new).
     """
     places_count = 0
     reviews_new = 0
+    # NOW() = scrape เต็มแล้ว | NULL = แค่ discover ยังต้อง refresh รีวิวต่อ
+    scraped_expr = "NOW()" if full_scrape else "NULL"
 
     for result in results:
         if not result:
@@ -75,6 +85,7 @@ async def save_to_db(results: list[dict], session: AsyncSession) -> tuple[int, i
         google_category = result.get("google_category")
         opening_hours = result.get("opening_hours")
         price_level = result.get("price_level")
+        business_status = result.get("business_status", "operational")
 
         # คำนวณ zone + ระยะทางไปมหาวิทยาลัยจาก GPS
         zone = assign_zone(lat, lng)
@@ -84,23 +95,24 @@ async def save_to_db(results: list[dict], session: AsyncSession) -> tuple[int, i
         # COALESCE ป้องกันไม่ให้ refresh ที่ไม่ได้ค่ามาทับของเดิมด้วย NULL
         if lat is not None and lng is not None:
             place_row = await session.execute(
-                text("""
+                text(f"""
                     INSERT INTO places (name, search_query, overall_rating, google_category,
-                                        opening_hours, price_level, zone,
+                                        opening_hours, price_level, business_status, zone,
                                         distance_nu_km, distance_psru_km, location, scraped_at)
                     VALUES (:name, :search_query, :rating, :google_category,
-                            :opening_hours, :price_level, :zone,
-                            :dist_nu, :dist_psru, ST_MakePoint(:lng, :lat), NOW())
+                            :opening_hours, :price_level, :business_status, :zone,
+                            :dist_nu, :dist_psru, ST_MakePoint(:lng, :lat), {scraped_expr})
                     ON CONFLICT (name) DO UPDATE SET
                         overall_rating   = EXCLUDED.overall_rating,
                         google_category  = COALESCE(EXCLUDED.google_category, places.google_category),
                         opening_hours    = COALESCE(EXCLUDED.opening_hours, places.opening_hours),
                         price_level      = COALESCE(EXCLUDED.price_level, places.price_level),
+                        business_status  = EXCLUDED.business_status,
                         zone             = EXCLUDED.zone,
                         distance_nu_km   = EXCLUDED.distance_nu_km,
                         distance_psru_km = EXCLUDED.distance_psru_km,
                         location         = EXCLUDED.location,
-                        scraped_at       = EXCLUDED.scraped_at
+                        scraped_at       = COALESCE(EXCLUDED.scraped_at, places.scraped_at)
                     RETURNING id
                 """),
                 {
@@ -110,6 +122,7 @@ async def save_to_db(results: list[dict], session: AsyncSession) -> tuple[int, i
                     "google_category": google_category,
                     "opening_hours": opening_hours,
                     "price_level": price_level,
+                    "business_status": business_status,
                     "zone": zone,
                     "dist_nu": dist_nu,
                     "dist_psru": dist_psru,
@@ -119,17 +132,18 @@ async def save_to_db(results: list[dict], session: AsyncSession) -> tuple[int, i
             )
         else:
             place_row = await session.execute(
-                text("""
+                text(f"""
                     INSERT INTO places (name, search_query, overall_rating, google_category,
-                                        opening_hours, price_level, scraped_at)
+                                        opening_hours, price_level, business_status, scraped_at)
                     VALUES (:name, :search_query, :rating, :google_category,
-                            :opening_hours, :price_level, NOW())
+                            :opening_hours, :price_level, :business_status, {scraped_expr})
                     ON CONFLICT (name) DO UPDATE SET
                         overall_rating   = EXCLUDED.overall_rating,
                         google_category  = COALESCE(EXCLUDED.google_category, places.google_category),
                         opening_hours    = COALESCE(EXCLUDED.opening_hours, places.opening_hours),
                         price_level      = COALESCE(EXCLUDED.price_level, places.price_level),
-                        scraped_at       = EXCLUDED.scraped_at
+                        business_status  = EXCLUDED.business_status,
+                        scraped_at       = COALESCE(EXCLUDED.scraped_at, places.scraped_at)
                     RETURNING id
                 """),
                 {
@@ -139,6 +153,7 @@ async def save_to_db(results: list[dict], session: AsyncSession) -> tuple[int, i
                     "google_category": google_category,
                     "opening_hours": opening_hours,
                     "price_level": price_level,
+                    "business_status": business_status,
                 },
             )
 
@@ -353,6 +368,7 @@ async def _run_with_fallback(
     headless: bool,
     max_places: int | None,
     auto_discover: bool,
+    max_reviews: int = MAX_REVIEWS_PER_PLACE,
 ) -> list[dict]:
     """Try Playwright up to 3 times. On repeated failure, use Selenium fallback."""
     last_exc = None
@@ -363,6 +379,7 @@ async def _run_with_fallback(
                 headless=headless,
                 max_places=max_places,
                 auto_discover=auto_discover,
+                max_reviews=max_reviews,
             )
         except Exception as e:
             last_exc = e
@@ -403,17 +420,19 @@ async def run_discover(
     try:
         existing = set(await load_existing_places(session))
 
+        # discover = เก็บร้านเร็ว (รีวิวน้อย) + scraped_at NULL ให้ auto_refresh ดึงรีวิวต่อ
         results = await _run_with_fallback(
             places=None,
             headless=headless,
             max_places=max_places,
             auto_discover=True,
+            max_reviews=DISCOVER_MAX_REVIEWS,
         )
 
         # บันทึกทุกสถานที่ (UPSERT จัดการ duplicate เอง)
         # ไม่กรองล่วงหน้า เพราะชื่อจาก Google Maps อาจต่างจาก DB เล็กน้อย
         valid_results = [r for r in results if r]
-        places_count, reviews_new = await save_to_db(valid_results, session)
+        places_count, reviews_new = await save_to_db(valid_results, session, full_scrape=False)
         duration = round(time() - t0, 1)
 
         await session.execute(
