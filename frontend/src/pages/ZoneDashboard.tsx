@@ -1,8 +1,13 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import CategoryDrilldown from '../components/CategoryDrilldown'
+import DateRangeSelector, { ALL_TIME, type DateRange } from '../components/DateRangeSelector'
+import KPICard from '../components/KPICard'
+import PainPointChart from '../components/PainPointChart'
+import PositiveHighlights from '../components/PositiveHighlights'
 import { STATUS_OPTIONS } from '../components/StatusBadge'
+import TrendingPanel from '../components/TrendingPanel'
+import type { ViewMode } from '../hooks/useInsights'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,11 +35,19 @@ interface PlaceTypeBreakdown {
 
 // ─── Hooks ────────────────────────────────────────────────────────────────────
 
-function useZones() {
+// เติม date params ให้ URL ถ้ามี dateRange
+function withDate(url: URL, dr?: DateRange): URL {
+  if (dr?.from) url.searchParams.set('date_from', dr.from)
+  if (dr?.to) url.searchParams.set('date_to', dr.to)
+  return url
+}
+
+function useZones(dr?: DateRange) {
   return useQuery<ZoneSummary[]>({
-    queryKey: ['zones'],
+    queryKey: ['zones', dr?.label ?? 'all'],
     queryFn: async () => {
-      const res = await fetch('/api/insights/zones')
+      const url = withDate(new URL('/api/insights/zones', window.location.origin), dr)
+      const res = await fetch(url.toString())
       if (!res.ok) return []
       return res.json()
     },
@@ -42,12 +55,18 @@ function useZones() {
   })
 }
 
-function useZoneBreakdown(zone: string | null, painOnly: boolean, status: string) {
+function useZoneBreakdown(zone: string | null, viewMode: ViewMode, status: string, dr?: DateRange) {
   return useQuery<PlaceTypeBreakdown[]>({
-    queryKey: ['zone-breakdown', zone, painOnly, status],
+    queryKey: ['zone-breakdown', zone, viewMode, status, dr?.label ?? 'all'],
     queryFn: async () => {
       if (!zone) return []
-      const res = await fetch(`/api/insights/zones/${zone}/breakdown?pain_only=${painOnly}&status=${status}`)
+      const url = withDate(
+        new URL(`/api/insights/zones/${zone}/breakdown`, window.location.origin),
+        dr,
+      )
+      url.searchParams.set('view_mode', viewMode)
+      url.searchParams.set('status', status)
+      const res = await fetch(url.toString())
       if (!res.ok) return []
       return res.json()
     },
@@ -56,12 +75,18 @@ function useZoneBreakdown(zone: string | null, painOnly: boolean, status: string
   })
 }
 
-function useZonePainPoints(zone: string | null, painOnly: boolean, status: string) {
+function useZonePainPoints(zone: string | null, viewMode: ViewMode, status: string, dr?: DateRange) {
   return useQuery<{ category: string; count: number }[]>({
-    queryKey: ['zone-pain-points', zone, painOnly, status],
+    queryKey: ['zone-pain-points', zone, viewMode, status, dr?.label ?? 'all'],
     queryFn: async () => {
       if (!zone) return []
-      const res = await fetch(`/api/insights/zones/${zone}/pain-points?pain_only=${painOnly}&status=${status}`)
+      const url = withDate(
+        new URL(`/api/insights/zones/${zone}/pain-points`, window.location.origin),
+        dr,
+      )
+      url.searchParams.set('view_mode', viewMode)
+      url.searchParams.set('status', status)
+      const res = await fetch(url.toString())
       if (!res.ok) return []
       return res.json()
     },
@@ -122,10 +147,10 @@ function PlaceTypeCard({ group }: { group: PlaceTypeBreakdown }) {
 
       {/* Severity bar */}
       <SeverityBar high={group.high_total} medium={group.medium_total} low={group.low_total} />
-      <div className="flex gap-3 text-xs text-brand-subtext">
-        <span className="text-red-400">🔴 {group.high_total} รุนแรง</span>
-        <span className="text-yellow-400">🟡 {group.medium_total} ปานกลาง</span>
-        <span className="text-green-400">🟢 {group.low_total} เล็กน้อย</span>
+      <div className="flex flex-wrap gap-3 text-xs text-brand-subtext">
+        <span className="text-red-400">🔥 สูง {group.high_total}</span>
+        <span className="text-yellow-400">⚠️ กลาง {group.medium_total}</span>
+        <span className="text-green-400">💬 ต่ำ {group.low_total}</span>
       </div>
 
       {/* Top pain points */}
@@ -166,7 +191,7 @@ function PlaceTypeCard({ group }: { group: PlaceTypeBreakdown }) {
             {group.top_places.slice(0, 3).map((place) => (
               <div key={place.name} className="flex items-center justify-between text-xs">
                 <span className="text-brand-text truncate flex-1">{place.name}</span>
-                <span className="text-red-400 ml-2 shrink-0">{place.high_count} high</span>
+                <span className="text-red-400 ml-2 shrink-0">🔥 {place.high_count} สูง</span>
               </div>
             ))}
           </div>
@@ -180,40 +205,47 @@ function PlaceTypeCard({ group }: { group: PlaceTypeBreakdown }) {
   )
 }
 
-function ZoneDetail({ zone, summary }: { zone: string; summary: ZoneSummary }) {
-  const [painOnly, setPainOnly] = useState(false)
+function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneSummary; dateRange: DateRange }) {
+  const [viewMode, setViewMode] = useState<ViewMode>('complaints')
   const [bizStatus, setBizStatus] = useState('operational')
   const [drillCategory, setDrillCategory] = useState<string | null>(null)
-  const { data: breakdown = [], isLoading: breakLoading } = useZoneBreakdown(zone, painOnly, bizStatus)
-  const { data: painPoints = [] } = useZonePainPoints(zone, painOnly, bizStatus)
-  const meta = ZONE_META[zone] ?? ZONE_META['other']
-  const total = summary.high_count + summary.medium_count + summary.low_count || 1
+  const { data: breakdown = [], isLoading: breakLoading } = useZoneBreakdown(zone, viewMode, bizStatus, dateRange)
+  const { data: painPoints = [] } = useZonePainPoints(zone, viewMode, bizStatus, dateRange)
+
+  // รวม top places จากทุกประเภทสถานที่ใน zone → เอา 3 ร้านที่เสี่ยงสูงสุดโชว์บน KPI card
+  const topRiskPlaces = breakdown
+    .flatMap((g) => g.top_places)
+    .filter((p) => p.high_count > 0)
+    .sort((a, b) => b.high_count - a.high_count)
+    .slice(0, 3)
 
   return (
     <div className="space-y-5">
-      {/* Toggle: รวมทั้งหมด / เฉพาะปัญหาจริง */}
-      <div className="flex items-center gap-2">
+      {/* View mode toggle — 3 โหมด (คุมกราฟ + drill-down ให้ตรงกัน) */}
+      <div className="flex items-center gap-2 flex-wrap">
         <span className="text-brand-subtext text-sm">มุมมอง:</span>
         <div className="inline-flex rounded-lg border border-brand-border overflow-hidden">
-          <button
-            onClick={() => setPainOnly(false)}
-            className={`px-3 py-1.5 text-sm transition-colors ${
-              !painOnly ? 'bg-brand-primary text-white' : 'bg-brand-card text-brand-subtext hover:text-brand-text'
-            }`}
-          >
-            รวมทั้งหมด
-          </button>
-          <button
-            onClick={() => setPainOnly(true)}
-            className={`px-3 py-1.5 text-sm transition-colors ${
-              painOnly ? 'bg-red-500 text-white' : 'bg-brand-card text-brand-subtext hover:text-brand-text'
-            }`}
-          >
-            เฉพาะปัญหาจริง
-          </button>
+          {[
+            { key: 'complaints', label: '🔴 คำบ่น', color: '#ef4444' },
+            { key: 'praise',     label: '⭐ คำชม',  color: '#22c55e' },
+            { key: 'all',        label: '📊 ทั้งหมด', color: '#3b82f6' },
+          ].map((m) => (
+            <button
+              key={m.key}
+              onClick={() => { setViewMode(m.key as ViewMode); setDrillCategory(null) }}
+              className={`px-3 py-1.5 text-sm transition-colors ${
+                viewMode === m.key ? 'text-white' : 'bg-brand-card text-brand-subtext hover:text-brand-text'
+              }`}
+              style={viewMode === m.key ? { background: m.color } : {}}
+            >
+              {m.label}
+            </button>
+          ))}
         </div>
         <span className="text-brand-subtext text-xs">
-          {painOnly ? 'ตัด "ความคิดเห็นทั่วไป" ออก เหลือเฉพาะปัญหาที่แก้ได้' : 'รวมความเห็นทุกแบบ'}
+          {viewMode === 'complaints' && 'รีวิวเชิงลบเท่านั้น'}
+          {viewMode === 'praise'     && 'รีวิวเชิงบวกเท่านั้น'}
+          {viewMode === 'all'        && 'รวมทุกรีวิว ทุกอารมณ์'}
         </span>
       </div>
 
@@ -241,58 +273,67 @@ function ZoneDetail({ zone, summary }: { zone: string; summary: ZoneSummary }) {
 
       {/* Zone KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { label: 'สถานที่ทั้งหมด', value: summary.place_count, sub: 'แห่ง', color: '#3b82f6' },
-          { label: 'รีวิวที่วิเคราะห์', value: summary.analyzed_count, sub: `จาก ${summary.review_count}`, color: '#22d3ee' },
-          { label: 'ปัญหารุนแรง', value: summary.high_count, sub: `${Math.round((summary.high_count / total) * 100)}% ของทั้งหมด`, color: '#ef4444' },
-          { label: 'ปัญหาหลัก', value: summary.top_category ?? '—', sub: 'ปัญหาจริงที่พบบ่อยสุด', color: '#f97316' },
-        ].map((kpi) => (
-          <div key={kpi.label} className="bg-brand-card rounded-xl p-4 border border-brand-border"
-               style={{ borderTopColor: kpi.color, borderTopWidth: 2 }}>
-            <div className="text-brand-subtext text-xs mb-1">{kpi.label}</div>
-            <div className="text-brand-text font-bold text-xl truncate">{kpi.value}</div>
-            <div className="text-brand-subtext text-xs mt-0.5">{kpi.sub}</div>
-          </div>
-        ))}
+        <KPICard
+          title="สถานที่ทั้งหมด"
+          value={summary.place_count}
+          subtitle="แห่งในโซนนี้"
+          accentColor="#3b82f6"
+        />
+        <KPICard
+          title="รีวิวที่วิเคราะห์"
+          value={summary.analyzed_count}
+          subtitle={`จากทั้งหมด ${summary.review_count} รีวิว`}
+          accentColor="#22d3ee"
+        />
+        <KPICard
+          title="ปัญหาระดับสูง"
+          value={summary.high_count}
+          unit="คอมเมนต์"
+          accentColor="#ef4444"
+          breakdown={{
+            high: summary.high_count,
+            medium: summary.medium_count,
+            low: summary.low_count,
+          }}
+          riskPlaces={topRiskPlaces}
+        />
+        <KPICard
+          title="ปัญหาหลัก"
+          value={summary.top_category ?? '—'}
+          subtitle="หมวดคำบ่นที่พบบ่อยสุด"
+          accentColor="#f97316"
+        />
       </div>
 
-      {/* Pain point chart */}
-      {painPoints.length > 0 && (
-        <div className="bg-brand-card rounded-xl p-5 border border-brand-border">
-          <h4 className="text-brand-text font-semibold mb-1">Pain Point ภาพรวมในโซนนี้</h4>
-          <p className="text-brand-subtext text-xs mb-3">👆 คลิกแท่งเพื่อดูว่ามาจากร้านไหนบ้าง</p>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={[...painPoints].sort((a, b) => b.count - a.count)} layout="vertical" margin={{ left: 10, right: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
-              <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-              <YAxis type="category" dataKey="category" width={170} tick={{ fill: '#94a3b8', fontSize: 11 }} />
-              <Tooltip
-                contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
-                labelStyle={{ color: '#e2e8f0' }}
-                itemStyle={{ color: '#94a3b8' }}
-                cursor={{ fill: '#33415533' }}
-              />
-              <Bar
-                dataKey="count"
-                name="จำนวนรีวิว"
-                radius={[0, 4, 4, 0]}
-                cursor="pointer"
-                onClick={(d: any) => {
-                  const c = d?.category ?? d?.payload?.category
-                  setDrillCategory(c === drillCategory ? null : c)
-                }}
-              >
-                {painPoints.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+      {/* กราฟหลัก + Positive highlights — title/panel เปลี่ยนตาม viewMode */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {painPoints.length > 0 && (
+          <div>
+            <PainPointChart
+              data={painPoints}
+              title={
+                viewMode === 'praise'
+                  ? `⭐ จุดเด่นใน${summary.label}`
+                  : viewMode === 'all'
+                  ? `📊 หมวดที่พูดถึงใน${summary.label}`
+                  : `🔴 Pain Point ใน${summary.label}`
+              }
+              onCategoryClick={(c) => setDrillCategory(c === drillCategory ? null : c)}
+            />
+          </div>
+        )}
+        {viewMode !== 'praise' && (
+          <PositiveHighlights zone={zone} zoneLabel={summary.label} status={bizStatus} dateRange={dateRange} />
+        )}
+      </div>
 
-          {/* Drill-down เฉพาะโซนนี้ */}
-          {drillCategory && (
-            <CategoryDrilldown category={drillCategory} zone={zone} status={bizStatus} onClose={() => setDrillCategory(null)} />
-          )}
-        </div>
+      {/* Drill-down เฉพาะโซนนี้ */}
+      {drillCategory && (
+        <CategoryDrilldown category={drillCategory} zone={zone} status={bizStatus} viewMode={viewMode} dateRange={dateRange} onClose={() => setDrillCategory(null)} />
       )}
+
+      {/* แนวโน้มปัญหาของโซนนี้ */}
+      <TrendingPanel zone={zone} zoneLabel={summary.label} />
 
       {/* Place type breakdown */}
       <div>
@@ -319,7 +360,8 @@ function ZoneDetail({ zone, summary }: { zone: string; summary: ZoneSummary }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ZoneDashboard() {
-  const { data: zones = [], isLoading } = useZones()
+  const [dateRange, setDateRange] = useState<DateRange>(ALL_TIME)
+  const { data: zones = [], isLoading } = useZones(dateRange)
   const [activeZone, setActiveZone] = useState<string | null>(null)
 
   const sortedZones = [...zones].sort(
@@ -346,6 +388,11 @@ export default function ZoneDashboard() {
         <p className="text-brand-subtext text-sm mt-1">
           เปรียบเทียบ pain point ของแต่ละโซนในพิษณุโลก — คาเฟ่, ร้านอาหาร, สถานที่ท่องเที่ยว
         </p>
+      </div>
+
+      {/* Date range filter (share ตลอดทุกโซน) */}
+      <div className="bg-brand-card rounded-xl p-3 border border-brand-border">
+        <DateRangeSelector value={dateRange} onChange={setDateRange} />
       </div>
 
       {/* Zone selector cards */}
@@ -375,7 +422,7 @@ export default function ZoneDashboard() {
               </div>
               <SeverityBar high={z.high_count} medium={z.medium_count} low={z.low_count} />
               <div className="flex justify-between text-xs mt-1.5">
-                <span className="text-red-400">{z.high_count} สูง</span>
+                <span className="text-red-400">🔥 {z.high_count} สูง</span>
                 {z.top_category && (
                   <span className="text-brand-subtext truncate ml-1 max-w-[100px]">{z.top_category}</span>
                 )}
@@ -399,8 +446,8 @@ export default function ZoneDashboard() {
                   <th className="text-left pb-2">โซน</th>
                   <th className="text-right pb-2">สถานที่</th>
                   <th className="text-right pb-2">รีวิว</th>
-                  <th className="text-right pb-2">ปัญหาสูง</th>
-                  <th className="text-left pb-2 pl-4">Severity</th>
+                  <th className="text-right pb-2">สูง</th>
+                  <th className="text-left pb-2 pl-4">สัดส่วนความรุนแรง</th>
                   <th className="text-left pb-2 pl-4">ปัญหาหลัก</th>
                 </tr>
               </thead>
@@ -452,7 +499,7 @@ export default function ZoneDashboard() {
               ← กลับภาพรวม
             </button>
           </div>
-          <ZoneDetail zone={currentZone.zone} summary={currentZone} />
+          <ZoneDetail zone={currentZone.zone} summary={currentZone} dateRange={dateRange} />
         </div>
       )}
     </div>

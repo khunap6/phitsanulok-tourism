@@ -41,6 +41,10 @@ class Place(Base):
     distance_nu_km: Mapped[Optional[float]] = mapped_column(Numeric(6, 3), nullable=True)
     distance_psru_km: Mapped[Optional[float]] = mapped_column(Numeric(6, 3), nullable=True)
     scraped_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+    # ── ค่าอ้างอิงสำหรับ incremental scan ──
+    last_review_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    last_scan_new_reviews: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    consecutive_no_change: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     updated_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
@@ -95,6 +99,55 @@ class AnalyzedReview(Base):
     model_used: Mapped[Optional[str]] = mapped_column(String(50))
 
     review: Mapped["Review"] = relationship(back_populates="analysis")
+
+
+class StatSnapshot(Base):
+    """ภาพนิ่งของสถิติ ณ เวลาหนึ่ง — ใช้เทียบย้อนหลังว่าอะไรเปลี่ยนไป"""
+    __tablename__ = "stat_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    taken_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+    period_label: Mapped[Optional[str]] = mapped_column(String(30))
+    total_places: Mapped[Optional[int]] = mapped_column(Integer)
+    total_reviews: Mapped[Optional[int]] = mapped_column(Integer)
+    total_analyzed: Mapped[Optional[int]] = mapped_column(Integer)
+    note: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class SnapshotCategory(Base):
+    """สถิติระดับหมวด — zone=NULL คือภาพรวมทั้งจังหวัด"""
+    __tablename__ = "snapshot_categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("stat_snapshots.id", ondelete="CASCADE"), nullable=False
+    )
+    zone: Mapped[Optional[str]] = mapped_column(String(30))
+    category: Mapped[str] = mapped_column(String(100), nullable=False)
+    complaint_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    praise_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    high_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    medium_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    low_count: Mapped[int] = mapped_column(Integer, server_default="0")
+
+
+class SnapshotPlace(Base):
+    """สถิติระดับร้าน × หมวด — ตอบว่าปัญหาเพิ่มทั้งภาพรวมหรือกระจุกที่ร้านเดียว"""
+    __tablename__ = "snapshot_places"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("stat_snapshots.id", ondelete="CASCADE"), nullable=False
+    )
+    place_id: Mapped[int] = mapped_column(
+        ForeignKey("places.id", ondelete="CASCADE"), nullable=False
+    )
+    category: Mapped[str] = mapped_column(String(100), nullable=False)
+    complaint_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    praise_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    high_count: Mapped[int] = mapped_column(Integer, server_default="0")
 
 
 class ScrapeJob(Base):

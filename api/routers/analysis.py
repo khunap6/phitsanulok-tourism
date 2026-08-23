@@ -27,17 +27,59 @@ _NONPROBLEM_IN = ", ".join("'" + c.replace("'", "''") + "'" for c in NON_PROBLEM
 NEGATIVE_ONLY = "ar.sentiment = 'negative'"
 
 
+def _parse_iso_date(s: str | None):
+    """แปลง 'YYYY-MM-DD' → date; asyncpg ไม่รับ str ต้องเป็น date จริง"""
+    if not s:
+        return None
+    from datetime import date
+    try:
+        y, m, d = s.split("-")
+        return date(int(y), int(m), int(d))
+    except (ValueError, AttributeError):
+        return None
+
+
+def date_filter(date_from: str | None, date_to: str | None, alias: str = "r") -> tuple[str, dict]:
+    """
+    คืน (SQL fragment, dict params) กรองรีวิวตามช่วงเวลา
+      date_from / date_to = 'YYYY-MM-DD' หรือ None
+    - ถ้าไม่ส่งทั้งคู่ = ไม่กรอง (ทำงานเหมือนเดิม)
+    - รีวิวที่ไม่มี review_date_approx จะถูกตัดออกเมื่อกรอง (ตามหลักการ)
+    """
+    conds = []
+    params: dict = {}
+    df = _parse_iso_date(date_from)
+    dt = _parse_iso_date(date_to)
+    if df:
+        conds.append(f"{alias}.review_date_approx >= :date_from")
+        params["date_from"] = df
+    if dt:
+        conds.append(f"{alias}.review_date_approx <= :date_to")
+        params["date_to"] = dt
+    return ("AND " + " AND ".join(conds) if conds else ""), params
+
+
+def sentiment_filter(view_mode: str, alias: str = "ar") -> str:
+    """
+    โหมดมุมมอง (3 ทาง):
+      'complaints' → รีวิวเชิงลบ (คำบ่นจริง) + ตัดหมวดที่ไม่ใช่ปัญหา
+      'praise'     → รีวิวเชิงบวก (คำชม)   + ตัดหมวดที่ไม่ใช่ปัญหา
+      'all' หรืออื่น → ไม่กรอง (ดูทุกรีวิวทุกอารมณ์ทุกหมวด)
+    ตัด "ความคิดเห็นทั่วไป/อื่นๆ/ไม่มี" ทั้งในโหมด complaints+praise
+    เพื่อให้เห็นหมวดที่มีสาระ (ปัญหา/จุดแข็ง)
+    """
+    if view_mode == "complaints":
+        return (f"AND {alias}.sentiment = 'negative' "
+                f"AND {alias}.pain_point_category NOT IN ({_NONPROBLEM_IN})")
+    if view_mode == "praise":
+        return (f"AND {alias}.sentiment = 'positive' "
+                f"AND {alias}.pain_point_category NOT IN ({_NONPROBLEM_IN})")
+    return ""
+
+
+# alias เดิม — เผื่อยังมี code ตรงไหนเรียกอยู่ (จะย้ายทั้งหมดใน commit นี้)
 def pain_filter(pain_only: bool, alias: str = "ar") -> str:
-    """
-    โหมด "เฉพาะปัญหา" (pain_only=True):
-      - เอาเฉพาะรีวิว sentiment=negative (คำบ่นจริง ไม่ใช่คำชม)
-      - ตัดหมวดที่ไม่ใช่ปัญหา (ความคิดเห็นทั่วไป/อื่นๆ/ไม่มี)
-    โหมดปกติ (pain_only=False): ไม่กรอง (ดูทุกรีวิวทุกอารมณ์)
-    """
-    if not pain_only:
-        return ""
-    return (f"AND {alias}.sentiment = 'negative' "
-            f"AND {alias}.pain_point_category NOT IN ({_NONPROBLEM_IN})")
+    return sentiment_filter("complaints" if pain_only else "all", alias)
 
 
 def status_filter(status: str, alias: str = "p") -> str:
@@ -56,32 +98,37 @@ def status_filter(status: str, alias: str = "p") -> str:
 
 
 @router.get("/zones")
-async def zone_summary(db: Annotated[AsyncSession, Depends(get_db)]):
-    """สรุป pain point แยกตามโซนพื้นที่"""
+async def zone_summary(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    date_from: str | None = None,
+    date_to: str | None = None,
+):
+    """สรุป pain point แยกตามโซนพื้นที่ (กรองช่วงเวลาได้)"""
+    date_sql, date_params = date_filter(date_from, date_to)
+    # เมื่อกรองวันที่ ใช้ INNER JOIN reviews (คนไม่มี date จะหลุด) — ตามหลักการ
+    join_kind = "JOIN" if date_sql else "LEFT JOIN"
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT
                 COALESCE(p.zone, 'other')           AS zone,
                 COUNT(DISTINCT p.id)                 AS place_count,
                 COUNT(DISTINCT r.id)                 AS review_count,
                 COUNT(DISTINCT ar.id)                AS analyzed_count,
-                -- นับระดับความรุนแรง เฉพาะรีวิวเชิงลบ (คำบ่นจริง)
                 COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high'   AND ar.sentiment='negative') AS high_count,
                 COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'medium' AND ar.sentiment='negative') AS medium_count,
                 COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'low'    AND ar.sentiment='negative') AS low_count,
-                -- ปัญหาหลัก = หมวดคำบ่นที่พบบ่อยสุด (เฉพาะรีวิวเชิงลบ + ตัดหมวดที่ไม่ใช่ปัญหา)
                 MODE() WITHIN GROUP (ORDER BY ar.pain_point_category)
                     FILTER (WHERE r.text_clean <> ''
                             AND ar.sentiment = 'negative'
                             AND ar.pain_point_category IS NOT NULL
-                            AND ar.pain_point_category NOT IN (""" + _NONPROBLEM_IN + """)) AS top_category
+                            AND ar.pain_point_category NOT IN ({_NONPROBLEM_IN})) AS top_category
             FROM places p
-            LEFT JOIN reviews r  ON r.place_id = p.id
+            {join_kind} reviews r  ON r.place_id = p.id {date_sql}
             LEFT JOIN analyzed_reviews ar ON ar.review_id = r.id
             GROUP BY COALESCE(p.zone, 'other')
             ORDER BY analyzed_count DESC
         """),
-        {"general": GENERAL_CATEGORY},
+        {"general": GENERAL_CATEGORY, **date_params},
     )
     rows = result.fetchall()
 
@@ -112,12 +159,15 @@ async def zone_summary(db: Annotated[AsyncSession, Depends(get_db)]):
 async def zone_pain_points(
     zone: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    pain_only: bool = False,
+    view_mode: str = "complaints",
     status: str = "operational",
+    date_from: str | None = None,
+    date_to: str | None = None,
 ):
-    """Pain point categories ของโซน (status=operational/closed/all)"""
-    general_filter = pain_filter(pain_only)
+    """Pain point categories ของโซน (view_mode: complaints/praise/all)"""
+    general_filter = sentiment_filter(view_mode)
     biz_filter = status_filter(status)
+    date_sql, date_params = date_filter(date_from, date_to)
     result = await db.execute(
         text(f"""
             SELECT ar.pain_point_category AS category, COUNT(*) AS count
@@ -126,14 +176,15 @@ async def zone_pain_points(
             JOIN places p   ON p.id = r.place_id
             WHERE COALESCE(p.zone, 'other') = :zone
               AND ar.pain_point_category IS NOT NULL
-              AND r.text_clean <> ''          -- ตัดรีวิวที่ให้ดาวอย่างเดียว
+              AND r.text_clean <> ''
               {general_filter}
               {biz_filter}
+              {date_sql}
             GROUP BY ar.pain_point_category
             ORDER BY count DESC
             LIMIT 10
         """),
-        {"zone": zone, "general": GENERAL_CATEGORY},
+        {"zone": zone, "general": GENERAL_CATEGORY, **date_params},
     )
     return [{"category": r.category, "count": r.count} for r in result.fetchall()]
 
@@ -142,10 +193,12 @@ async def zone_pain_points(
 async def zone_breakdown(
     zone: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    pain_only: bool = False,
+    view_mode: str = "complaints",
     status: str = "operational",
+    date_from: str | None = None,
+    date_to: str | None = None,
 ):
-    """Pain point แยกตามประเภทสถานที่ภายในโซน (status=operational/closed/all)"""
+    """Pain point แยกตามประเภทสถานที่ภายในโซน (view_mode: complaints/praise/all)"""
 
     # แผนที่ Google category → ประเภทที่ใช้ในระบบ
     _GOOGLE_CATEGORY_MAP = {
@@ -184,8 +237,11 @@ async def zone_breakdown(
             return 'สถานที่ท่องเที่ยว'
         return 'ทั่วไป'
 
-    # ดึงสถานที่ + รีวิวในโซนนี้ (กรองตามสถานะร้าน)
+    # ดึงสถานที่ + รีวิวในโซนนี้ (กรองตามสถานะร้าน + ช่วงเวลา)
     biz_filter = status_filter(status)
+    date_sql, date_params = date_filter(date_from, date_to)
+    # เมื่อกรองวันที่ ใช้ INNER JOIN เพื่อตัดรีวิวไม่มี date
+    join_kind = "JOIN" if date_sql else "LEFT JOIN"
     places_result = await db.execute(
         text(f"""
             SELECT p.id, p.name, p.google_category,
@@ -194,19 +250,19 @@ async def zone_breakdown(
                    COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'medium' AND ar.sentiment='negative') AS medium_count,
                    COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'low'    AND ar.sentiment='negative') AS low_count
             FROM places p
-            LEFT JOIN reviews r  ON r.place_id = p.id
+            {join_kind} reviews r  ON r.place_id = p.id {date_sql}
             LEFT JOIN analyzed_reviews ar ON ar.review_id = r.id
             WHERE COALESCE(p.zone, 'other') = :zone
               {biz_filter}
             GROUP BY p.id, p.name, p.google_category
             ORDER BY high_count DESC
         """),
-        {"zone": zone},
+        {"zone": zone, **date_params},
     )
     places = places_result.fetchall()
 
     # Pain points ต่อสถานที่
-    general_filter = pain_filter(pain_only)
+    general_filter = sentiment_filter(view_mode)
     pain_result = await db.execute(
         text(f"""
             SELECT p.name AS place_name,
@@ -217,12 +273,13 @@ async def zone_breakdown(
             JOIN places p  ON p.id = r.place_id
             WHERE COALESCE(p.zone, 'other') = :zone
               AND ar.pain_point_category IS NOT NULL
-              AND r.text_clean <> ''          -- ตัดรีวิวที่ให้ดาวอย่างเดียว
+              AND r.text_clean <> ''
               {general_filter}
               {biz_filter}
+              {date_sql}
             GROUP BY p.name, ar.pain_point_category
         """),
-        {"zone": zone, "general": GENERAL_CATEGORY},
+        {"zone": zone, "general": GENERAL_CATEGORY, **date_params},
     )
     pain_rows = pain_result.fetchall()
 
@@ -281,19 +338,25 @@ async def category_places(
     db: Annotated[AsyncSession, Depends(get_db)],
     zone: str | None = None,
     status: str = "operational",
+    view_mode: str = "complaints",
+    date_from: str | None = None,
+    date_to: str | None = None,
 ):
-    """
-    ร้านที่มี pain point หมวดนี้ พร้อมจำนวนแยกตามระดับ + สถานะร้าน
-    เรียงตามจำนวนรวมมากสุด — frontend ใช้ sort ตามระดับที่เลือก
-    """
-    # เฉพาะรีวิวเชิงลบ = ร้านที่มี "ปัญหา" หมวดนี้จริง (ไม่ใช่ร้านที่ถูกชมเรื่องนี้)
-    filters = ["ar.pain_point_category = :category", "r.text_clean <> ''", NEGATIVE_ONLY]
+    """ร้านในหมวดนี้ (view_mode: complaints=ร้านที่ถูกบ่น / praise=ร้านที่ถูกชม / all=ทั้งหมด)"""
+    filters = ["ar.pain_point_category = :category", "r.text_clean <> ''"]
+    # กรอง sentiment ตาม view_mode (complaints=negative, praise=positive, all=ไม่กรอง)
+    if view_mode == "complaints":
+        filters.append("ar.sentiment = 'negative'")
+    elif view_mode == "praise":
+        filters.append("ar.sentiment = 'positive'")
     params: dict = {"category": category}
     if zone:
         filters.append("COALESCE(p.zone, 'other') = :zone")
         params["zone"] = zone
     where = " AND ".join(filters)
     biz_filter = status_filter(status)
+    date_sql, date_params = date_filter(date_from, date_to)
+    params.update(date_params)
 
     result = await db.execute(
         text(f"""
@@ -301,14 +364,21 @@ async def category_places(
                    COALESCE(p.zone, 'other') AS zone,
                    COALESCE(p.business_status, 'operational') AS business_status,
                    COUNT(*) AS total,
+                   -- ระดับความรุนแรง (ใช้ในโหมด complaints)
                    COUNT(*) FILTER (WHERE ar.severity = 'high')   AS high,
                    COUNT(*) FILTER (WHERE ar.severity = 'medium') AS medium,
-                   COUNT(*) FILTER (WHERE ar.severity = 'low')    AS low
+                   COUNT(*) FILTER (WHERE ar.severity = 'low')    AS low,
+                   -- ประเภทความรู้สึก (ใช้ในโหมด all ที่รีวิวปนกันทุกแบบ)
+                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative') AS neg,
+                   COUNT(*) FILTER (WHERE ar.sentiment = 'positive') AS pos,
+                   COUNT(*) FILTER (WHERE ar.sentiment NOT IN ('negative','positive')
+                                       OR ar.sentiment IS NULL)      AS neu
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
             JOIN places p  ON p.id = r.place_id
             WHERE {where}
               {biz_filter}
+              {date_sql}
             GROUP BY p.id, p.name, p.zone, p.business_status
             ORDER BY total DESC
             LIMIT 50
@@ -324,23 +394,46 @@ async def category_reviews(
     place_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     severity: str | None = None,
+    sentiment: str | None = None,
+    view_mode: str = "complaints",
+    date_from: str | None = None,
+    date_to: str | None = None,
 ):
-    """รีวิวจริงของร้านหนึ่ง ในหมวดที่เลือก (กรอง severity ได้)"""
+    """
+    รีวิวจริงของร้าน+หมวด
+      view_mode : complaints=คำบ่น / praise=คำชม / all=ทั้งหมด
+      severity  : กรองระดับความรุนแรง (ใช้ในโหมด complaints)
+      sentiment : กรองประเภทความรู้สึก (ใช้ในโหมด all)
+    """
     filters = [
         "ar.pain_point_category = :category",
         "r.place_id = :place_id",
         "r.text_clean <> ''",
-        NEGATIVE_ONLY,          # เฉพาะรีวิวคำบ่น (ไม่โชว์คำชม)
     ]
+    if view_mode == "complaints":
+        filters.append("ar.sentiment = 'negative'")
+    elif view_mode == "praise":
+        filters.append("ar.sentiment = 'positive'")
     params: dict = {"category": category, "place_id": place_id}
     if severity:
         filters.append("ar.severity = :severity")
         params["severity"] = severity
+    if sentiment == "neutral":
+        # "กลางๆ" = ไม่ใช่ทั้งลบและบวก (รวม neutral/mixed/NULL)
+        filters.append("(ar.sentiment NOT IN ('negative','positive') OR ar.sentiment IS NULL)")
+    elif sentiment in ("negative", "positive"):
+        filters.append("ar.sentiment = :sentiment")
+        params["sentiment"] = sentiment
+    date_sql, date_params = date_filter(date_from, date_to)
+    if date_sql:
+        # date_filter คืน "AND ..." — เอา "AND " ออก แล้ว append เข้า filters
+        filters.append(date_sql.removeprefix("AND ").strip())
+        params.update(date_params)
     where = " AND ".join(filters)
 
     result = await db.execute(
         text(f"""
-            SELECT r.text_clean AS text, r.rating, ar.severity,
+            SELECT r.text_clean AS text, r.rating, ar.severity, ar.sentiment,
                    r.review_date_approx AS date
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
@@ -357,6 +450,7 @@ async def category_reviews(
             "text": r.text,
             "rating": r.rating,
             "severity": r.severity,
+            "sentiment": r.sentiment,
             "date": r.date.isoformat() if r.date else None,
         }
         for r in result.fetchall()
@@ -366,23 +460,32 @@ async def category_reviews(
 @router.get("/summary", response_model=InsightResponse)
 async def insights_summary(
     db: Annotated[AsyncSession, Depends(get_db)],
-    pain_only: bool = False,
+    view_mode: str = "complaints",
     status: str = "operational",
+    date_from: str | None = None,
+    date_to: str | None = None,
 ):
+    """สรุปภาพรวม + top categories + severity + worst places (view_mode: complaints/praise/all)"""
+    date_sql, date_params = date_filter(date_from, date_to)
+
+    # นับรีวิว/วิเคราะห์ตามช่วงเวลาที่เลือก (places = ทั้งหมด — ไม่แปรตามเวลา)
     counts = await db.execute(
-        text("""
+        text(f"""
             SELECT
-                (SELECT COUNT(*) FROM places)          AS total_places,
-                (SELECT COUNT(*) FROM reviews)         AS total_reviews,
-                (SELECT COUNT(*) FROM analyzed_reviews) AS total_analyzed
-        """)
+                (SELECT COUNT(*) FROM places) AS total_places,
+                (SELECT COUNT(*) FROM reviews r WHERE TRUE {date_sql}) AS total_reviews,
+                (SELECT COUNT(*) FROM analyzed_reviews ar
+                    JOIN reviews r ON r.id = ar.review_id
+                    WHERE TRUE {date_sql}) AS total_analyzed
+        """),
+        date_params,
     )
     row = counts.fetchone()
     total_places, total_reviews, total_analyzed = (
         row.total_places, row.total_reviews, row.total_analyzed
     )
 
-    general_filter = pain_filter(pain_only)
+    general_filter = sentiment_filter(view_mode)
     biz_filter = status_filter(status)
     cat_result = await db.execute(
         text(f"""
@@ -391,42 +494,48 @@ async def insights_summary(
             JOIN reviews r ON r.id = ar.review_id
             JOIN places p  ON p.id = r.place_id
             WHERE ar.pain_point_category IS NOT NULL
-              AND r.text_clean <> ''          -- ตัดรีวิวที่ให้ดาวอย่างเดียว
+              AND r.text_clean <> ''
               {general_filter}
               {biz_filter}
+              {date_sql}
             GROUP BY ar.pain_point_category
             ORDER BY count DESC
             LIMIT 10
         """),
-        {"general": GENERAL_CATEGORY},
+        {"general": GENERAL_CATEGORY, **date_params},
     )
     top_categories = [
         {"category": r.category, "count": r.count}
         for r in cat_result.fetchall()
     ]
 
-    # การกระจายระดับความรุนแรง — เฉพาะรีวิวเชิงลบ (คำบ่นจริง)
+    # การกระจายระดับความรุนแรง — เฉพาะรีวิวเชิงลบ + ในช่วงเวลาที่เลือก
     sev_result = await db.execute(
-        text("""
-            SELECT severity, COUNT(*) AS count
-            FROM analyzed_reviews
-            WHERE severity IS NOT NULL AND sentiment = 'negative'
-            GROUP BY severity
-        """)
+        text(f"""
+            SELECT ar.severity, COUNT(*) AS count
+            FROM analyzed_reviews ar
+            JOIN reviews r ON r.id = ar.review_id
+            WHERE ar.severity IS NOT NULL AND ar.sentiment = 'negative'
+              {date_sql}
+            GROUP BY ar.severity
+        """),
+        date_params,
     )
     severity_dist = {r.severity: r.count for r in sev_result.fetchall()}
 
     worst_result = await db.execute(
-        text("""
+        text(f"""
             SELECT p.name AS place_name,
                    COUNT(*) FILTER (WHERE ar.severity = 'high' AND ar.sentiment='negative') AS high_count
             FROM places p
             JOIN reviews r  ON r.place_id = p.id
             JOIN analyzed_reviews ar ON ar.review_id = r.id
+            WHERE TRUE {date_sql}
             GROUP BY p.id, p.name
             ORDER BY high_count DESC
             LIMIT 10
-        """)
+        """),
+        date_params,
     )
     worst_places = [
         {"place_name": r.place_name, "high_count": r.high_count}
@@ -448,8 +557,11 @@ async def top_problematic_places(
     db: Annotated[AsyncSession, Depends(get_db)],
     limit: int = 10,
     status: str = "operational",
+    date_from: str | None = None,
+    date_to: str | None = None,
 ):
     biz_filter = status_filter(status)
+    date_sql, date_params = date_filter(date_from, date_to)
     result = await db.execute(
         text(f"""
             SELECT p.id, p.name,
@@ -463,13 +575,365 @@ async def top_problematic_places(
             JOIN analyzed_reviews ar ON ar.review_id = r.id
             WHERE TRUE
               {biz_filter}
+              {date_sql}
             GROUP BY p.id, p.name, p.overall_rating, p.business_status
             ORDER BY high_count DESC, medium_count DESC
             LIMIT :lim
         """),
-        {"lim": limit},
+        {"lim": limit, **date_params},
     )
     return [dict(row._mapping) for row in result.fetchall()]
+
+
+@router.get("/positive-highlights")
+async def positive_highlights(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    zone: str | None = None,
+    limit: int = 5,
+    status: str = "operational",
+    date_from: str | None = None,
+    date_to: str | None = None,
+):
+    """จุดเด่น = หมวดที่มีคำชม (positive) มากที่สุด (กรองช่วงเวลาได้)"""
+    filters = [
+        "ar.sentiment = 'positive'",
+        "r.text_clean <> ''",
+        "ar.pain_point_category IS NOT NULL",
+        f"ar.pain_point_category NOT IN ({_NONPROBLEM_IN})",
+    ]
+    params: dict = {"lim": limit}
+    if zone:
+        filters.append("COALESCE(p.zone, 'other') = :zone")
+        params["zone"] = zone
+    date_sql, date_params = date_filter(date_from, date_to)
+    if date_sql:
+        filters.append(date_sql.removeprefix("AND ").strip())
+        params.update(date_params)
+    where = " AND ".join(filters)
+    biz_filter = status_filter(status)
+
+    result = await db.execute(
+        text(f"""
+            SELECT ar.pain_point_category AS category, COUNT(*) AS count
+            FROM analyzed_reviews ar
+            JOIN reviews r ON r.id = ar.review_id
+            JOIN places p  ON p.id = r.place_id
+            WHERE {where}
+              {biz_filter}
+            GROUP BY ar.pain_point_category
+            ORDER BY count DESC
+            LIMIT :lim
+        """),
+        params,
+    )
+    return [{"category": r.category, "count": r.count} for r in result.fetchall()]
+
+
+@router.get("/snapshots")
+async def list_snapshots(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 20,
+):
+    """รายการ snapshot สถิติที่เก็บไว้ (ใหม่ → เก่า)"""
+    result = await db.execute(
+        text("""
+            SELECT id, taken_at, period_label, total_places, total_reviews, total_analyzed, note
+            FROM stat_snapshots
+            ORDER BY taken_at DESC
+            LIMIT :lim
+        """),
+        {"lim": limit},
+    )
+    return [
+        {
+            "id": r.id,
+            "taken_at": r.taken_at.isoformat() if r.taken_at else None,
+            "period_label": r.period_label,
+            "total_places": r.total_places,
+            "total_reviews": r.total_reviews,
+            "total_analyzed": r.total_analyzed,
+            "note": r.note,
+        }
+        for r in result.fetchall()
+    ]
+
+
+@router.get("/snapshot-compare")
+async def compare_snapshots(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    from_id: int | None = None,
+    to_id: int | None = None,
+    zone: str | None = None,
+    min_delta: int = 1,
+):
+    """
+    เทียบ snapshot 2 ช่วง → บอกว่าปัญหาหมวดไหนเพิ่มขึ้น และ "เพิ่มแบบไหน"
+
+    spread = 'concentrated' → เพิ่มกระจุกที่ร้านเดียว (ปัญหาเฉพาะร้าน)
+             'widespread'   → เพิ่มกระจายหลายร้าน  (ปัญหาเชิงพื้นที่/ภาพรวม)
+
+    ไม่ระบุ from_id/to_id → ใช้ snapshot ล่าสุด 2 อันอัตโนมัติ
+    """
+    # เลือก snapshot อัตโนมัติถ้าไม่ระบุ
+    if from_id is None or to_id is None:
+        r = await db.execute(
+            text("SELECT id FROM stat_snapshots ORDER BY taken_at DESC LIMIT 2")
+        )
+        ids = [x[0] for x in r.fetchall()]
+        if len(ids) < 2:
+            return {"error": "ต้องมี snapshot อย่างน้อย 2 ครั้งถึงจะเทียบได้",
+                    "snapshots_available": len(ids), "categories": []}
+        to_id, from_id = ids[0], ids[1]
+
+    meta = await db.execute(
+        text("""SELECT id, taken_at, period_label FROM stat_snapshots WHERE id IN (:a, :b)"""),
+        {"a": from_id, "b": to_id},
+    )
+    info = {
+        x.id: {"id": x.id, "label": x.period_label,
+               "taken_at": x.taken_at.isoformat() if x.taken_at else None}
+        for x in meta.fetchall()
+    }
+
+    # ── 1) ผลต่างระดับหมวด ──
+    zone_cond = "zone = :zone" if zone else "zone IS NULL"
+    params: dict = {"from": from_id, "to": to_id}
+    if zone:
+        params["zone"] = zone
+
+    cat_rows = await db.execute(
+        text(f"""
+            SELECT COALESCE(a.category, b.category)     AS category,
+                   COALESCE(b.complaint_count, 0)       AS before_count,
+                   COALESCE(a.complaint_count, 0)       AS after_count,
+                   COALESCE(a.high_count, 0)            AS after_high
+            FROM      (SELECT category, complaint_count, high_count FROM snapshot_categories
+                       WHERE snapshot_id = :to   AND {zone_cond}) a
+            FULL JOIN (SELECT category, complaint_count FROM snapshot_categories
+                       WHERE snapshot_id = :from AND {zone_cond}) b
+              ON a.category = b.category
+            WHERE COALESCE(a.category, b.category) NOT IN ({_NONPROBLEM_IN})
+        """),
+        params,
+    )
+
+    # ── 2) ผลต่างระดับร้าน (ใช้ตัดสินว่ากระจุกหรือกระจาย) ──
+    place_rows = await db.execute(
+        text("""
+            SELECT COALESCE(a.category, b.category) AS category,
+                   p.name AS place_name,
+                   COALESCE(a.complaint_count, 0) - COALESCE(b.complaint_count, 0) AS delta
+            FROM      (SELECT place_id, category, complaint_count FROM snapshot_places
+                       WHERE snapshot_id = :to) a
+            FULL JOIN (SELECT place_id, category, complaint_count FROM snapshot_places
+                       WHERE snapshot_id = :from) b
+              ON a.place_id = b.place_id AND a.category = b.category
+            JOIN places p ON p.id = COALESCE(a.place_id, b.place_id)
+            WHERE COALESCE(a.complaint_count, 0) > COALESCE(b.complaint_count, 0)
+        """),
+        {"from": from_id, "to": to_id},
+    )
+
+    # จัดกลุ่มผลต่างรายร้านตามหมวด
+    by_cat: dict[str, list[dict]] = {}
+    for r in place_rows.fetchall():
+        by_cat.setdefault(r.category, []).append({"place_name": r.place_name, "delta": r.delta})
+
+    out = []
+    for r in cat_rows.fetchall():
+        delta = r.after_count - r.before_count
+        if delta < min_delta:
+            continue
+        places = sorted(by_cat.get(r.category, []), key=lambda x: x["delta"], reverse=True)
+        total_place_delta = sum(p["delta"] for p in places) or 1
+        top = places[0] if places else None
+        # "กระจุกตัว" = ปัญหามาจากร้านเดียวจริงๆ
+        #   - มีร้านเดียวที่เพิ่ม → กระจุกแน่นอน
+        #   - หลายร้านเพิ่ม แต่ร้านนำกินสัดส่วน ≥60% → ยังถือว่ากระจุก
+        # (ไม่ใช้ ≥50% เฉยๆ เพราะกรณี 2 ร้าน ร้านละ 1 จะถูกตัดสินผิดว่ากระจุก)
+        if len(places) == 1:
+            concentrated = True
+        elif top and total_place_delta > 0:
+            concentrated = top["delta"] / total_place_delta >= 0.6
+        else:
+            concentrated = False
+        out.append({
+            "category": r.category,
+            "before": r.before_count,
+            "after": r.after_count,
+            "delta": delta,
+            "pct_change": round(delta / r.before_count * 100, 1) if r.before_count else None,
+            "high_count": r.after_high,
+            "spread": "concentrated" if concentrated else "widespread",
+            "places_increased": len(places),
+            "top_places": places[:3],
+        })
+
+    out.sort(key=lambda x: x["delta"], reverse=True)
+    return {
+        "from": info.get(from_id),
+        "to": info.get(to_id),
+        "zone": zone,
+        "categories": out,
+    }
+
+
+@router.get("/trending")
+async def trending_problems(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    period: str = "month",
+    buckets: int = 6,
+    top: int = 5,
+    zone: str | None = None,
+):
+    """
+    Top N ปัญหาแยกตามช่วงเวลา (สัปดาห์/เดือน) — นับจาก "วันที่เขียนรีวิว"
+
+    ต่างจาก snapshot ตรงที่อันนี้ดูว่า *นักท่องเที่ยวบ่นเรื่องอะไรในช่วงนั้น*
+    ส่วน snapshot ดูว่า *เราเก็บข้อมูลเพิ่มได้เท่าไหร่*
+
+    หมายเหตุ: ตัด "ช่วงปัจจุบันที่ยังไม่จบ" ออกเสมอ เพราะข้อมูลยังไม่ครบ
+    จะทำให้แท่งสุดท้ายต่ำผิดปกติและดูเหมือนปัญหาลดฮวบ
+    """
+    unit = "week" if period == "week" else "month"
+    params: dict = {"buckets": buckets, "top": top}
+    zone_sql = ""
+    if zone:
+        zone_sql = "AND COALESCE(p.zone,'other') = :zone"
+        params["zone"] = zone
+
+    # 1) หา top N หมวดในช่วงที่สนใจ (ใช้เป็นแถวของตาราง)
+    top_rows = await db.execute(
+        text(f"""
+            SELECT ar.pain_point_category AS category, COUNT(*) AS total
+            FROM analyzed_reviews ar
+            JOIN reviews r ON r.id = ar.review_id
+            JOIN places  p ON p.id = r.place_id
+            WHERE ar.sentiment = 'negative'
+              AND r.text_clean <> ''
+              AND r.review_date_approx IS NOT NULL
+              AND r.review_date_approx <  DATE_TRUNC('{unit}', NOW())
+              AND r.review_date_approx >= DATE_TRUNC('{unit}', NOW()) - :buckets * INTERVAL '1 {unit}'
+              AND ar.pain_point_category NOT IN ({_NONPROBLEM_IN})
+              {zone_sql}
+            GROUP BY ar.pain_point_category
+            ORDER BY total DESC
+            LIMIT :top
+        """),
+        params,
+    )
+    top_categories = [r.category for r in top_rows.fetchall()]
+    if not top_categories:
+        return {"period": unit, "categories": [], "buckets": []}
+
+    # 2) นับแต่ละหมวดแยกตามช่วงเวลา
+    params["cats"] = top_categories
+    cell_rows = await db.execute(
+        text(f"""
+            SELECT DATE_TRUNC('{unit}', r.review_date_approx)::date AS bucket,
+                   ar.pain_point_category AS category,
+                   COUNT(*) AS count
+            FROM analyzed_reviews ar
+            JOIN reviews r ON r.id = ar.review_id
+            JOIN places  p ON p.id = r.place_id
+            WHERE ar.sentiment = 'negative'
+              AND r.text_clean <> ''
+              AND r.review_date_approx IS NOT NULL
+              AND r.review_date_approx <  DATE_TRUNC('{unit}', NOW())
+              AND r.review_date_approx >= DATE_TRUNC('{unit}', NOW()) - :buckets * INTERVAL '1 {unit}'
+              AND ar.pain_point_category = ANY(:cats)
+              {zone_sql}
+            GROUP BY 1, 2
+            ORDER BY 1
+        """),
+        params,
+    )
+
+    grid: dict[str, dict[str, int]] = {}
+    for r in cell_rows.fetchall():
+        key = r.bucket.isoformat()
+        grid.setdefault(key, {})[r.category] = r.count
+
+    bucket_list = sorted(grid.keys())
+    return {
+        "period": unit,
+        "categories": top_categories,
+        "buckets": [
+            {
+                "bucket": b,
+                "counts": {c: grid[b].get(c, 0) for c in top_categories},
+                "total": sum(grid[b].get(c, 0) for c in top_categories),
+            }
+            for b in bucket_list
+        ],
+    }
+
+
+@router.get("/alerts")
+async def problem_alerts(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    min_delta: int = 2,
+):
+    """
+    รายการแจ้งเตือน (สำหรับไอคอนกระดิ่ง) — สร้างจากการเทียบ snapshot ล่าสุด 2 ครั้ง
+
+    ประเภทแจ้งเตือน:
+      new_category → หมวดปัญหาที่ไม่เคยมีมาก่อน (ปัญหาใหม่เกิดขึ้น)
+      spike        → ปัญหาเพิ่มกระจุกที่ร้านเดียว (ร้านนั้นมีเรื่อง)
+      increase     → ปัญหาเพิ่มกระจายหลายร้าน (ปัญหาเชิงพื้นที่)
+    """
+    r = await db.execute(text("SELECT id FROM stat_snapshots ORDER BY taken_at DESC LIMIT 2"))
+    ids = [x[0] for x in r.fetchall()]
+    if len(ids) < 2:
+        return {"unread_count": 0, "alerts": [],
+                "message": "ต้องมี snapshot อย่างน้อย 2 ครั้งถึงจะเทียบได้"}
+    to_id, from_id = ids[0], ids[1]
+
+    cmp_data = await compare_snapshots(db, from_id=from_id, to_id=to_id, min_delta=min_delta)
+
+    alerts = []
+    for c in cmp_data.get("categories", []):
+        is_new = c["before"] == 0 and c["after"] > 0
+        concentrated = c["spread"] == "concentrated"
+        top = c["top_places"][0] if c["top_places"] else None
+
+        if is_new:
+            a_type, level = "new_category", "high"
+            title = f"ปัญหาใหม่: {c['category']}"
+            detail = f"เพิ่งพบครั้งแรก {c['after']} คอมเมนต์"
+        elif concentrated and top:
+            a_type = "spike"
+            level = "high" if c["delta"] >= 5 else "medium"
+            title = f"{c['category']} เพิ่มขึ้น {c['delta']} คอมเมนต์"
+            detail = f"กระจุกที่ร้านเดียว — {top['place_name']} (+{top['delta']})"
+        else:
+            a_type = "increase"
+            level = "medium" if c["delta"] >= 5 else "low"
+            title = f"{c['category']} เพิ่มขึ้น {c['delta']} คอมเมนต์"
+            detail = f"กระจายใน {c['places_increased']} ร้าน — เป็นปัญหาภาพรวม"
+
+        alerts.append({
+            "id": f"{a_type}:{c['category']}",
+            "type": a_type,
+            "level": level,
+            "title": title,
+            "detail": detail,
+            "category": c["category"],
+            "delta": c["delta"],
+            "pct_change": c["pct_change"],
+            "spread": c["spread"],
+            "places_increased": c["places_increased"],
+            "top_places": c["top_places"],
+        })
+
+    order = {"high": 0, "medium": 1, "low": 2}
+    alerts.sort(key=lambda a: (order[a["level"]], -a["delta"]))
+    return {
+        "unread_count": len(alerts),
+        "from": cmp_data.get("from"),
+        "to": cmp_data.get("to"),
+        "alerts": alerts,
+    }
 
 
 @router.get("/categories", response_model=list[CategoryCount])

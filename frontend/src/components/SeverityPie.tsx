@@ -1,15 +1,16 @@
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 
+// ข้อมูลที่เข้ามาเป็นรีวิวเชิงลบ (คำบ่น) แล้ว → แบ่งตามความหนักของปัญหา
 const SEVERITY_COLORS: Record<string, string> = {
-  high: '#ef4444',
-  medium: '#f97316',
-  low: '#eab308',
+  high: '#ef4444',   // แดง = สูง
+  medium: '#eab308', // เหลือง = กลาง
+  low: '#22c55e',    // เขียว = ต่ำ
 }
 
 const SEVERITY_LABELS: Record<string, string> = {
-  high: 'รุนแรงมาก',
-  medium: 'ปานกลาง',
-  low: 'เล็กน้อย',
+  high: 'สูง',
+  medium: 'กลาง',
+  low: 'ต่ำ',
 }
 
 interface Props {
@@ -25,7 +26,8 @@ export default function SeverityPie({ data }: Props) {
 
   return (
     <div className="bg-brand-card rounded-xl p-5 border border-brand-border">
-      <h3 className="text-brand-text font-semibold mb-4">ระดับความรุนแรง</h3>
+      <h3 className="text-brand-text font-semibold mb-1">ระดับความรุนแรง</h3>
+      <p className="text-brand-subtext text-xs mb-3">จากรีวิวเชิงลบ (คำบ่น) ทั้งหมด</p>
       <ResponsiveContainer width="100%" height={240}>
         <PieChart>
           <Pie

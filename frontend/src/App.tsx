@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { Link, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom'
+import NotificationBell from './components/NotificationBell'
 import Dashboard from './pages/Dashboard'
 import MapView from './pages/MapView'
 import ZoneDashboard from './pages/ZoneDashboard'
@@ -38,6 +39,10 @@ function Layout() {
         <NavLink to="/" label="ภาพรวม" />
         <NavLink to="/zones" label="วิเคราะห์ตามโซน" />
         <NavLink to="/map" label="แผนที่" />
+        {/* กระดิ่งแจ้งเตือน — ชิดขวาสุด */}
+        <div className="ml-auto">
+          <NotificationBell />
+        </div>
       </nav>
       <Routes>
         <Route path="/" element={<Dashboard />} />

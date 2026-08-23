@@ -34,3 +34,11 @@ backup/*.sql
 data/debug/
 data/*.png
 data/*.json
+
+# รายงานที่สร้างขึ้น (ไม่ต้อง commit)
+data/reports/
+
+# โมเดล WangchanBERTa ที่ฝึกเอง (ใหญ่ 800 MB — ฝึกใหม่ได้ด้วย nlp/train/train.py)
+models/
+logs/
+*.bak

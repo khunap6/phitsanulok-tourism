@@ -15,14 +15,29 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 $env:PYTHONIOENCODING = "utf-8"
 chcp 65001 > $null
 
-# ── DISCOVER (หาสถานที่ใหม่) ─────────────────────────────────
+# ── DISCOVER (หาสถานที่ใหม่อย่างเดียว — ไม่ดึงรีวิว, เร็ว+เสี่ยงบล็อกน้อย) ──
+# เก็บแค่ ชื่อ/พิกัด/หมวดหมู่/เวลาทำการ/สถานะร้าน — รีวิวมาจาก refresh ทีหลัง
 # uv run python scripts\discover_5.py        # ทดสอบ 5 สถานที่
 # uv run python scripts\discover_20.py       # 20 สถานที่
-# uv run python scripts\discover_50.py       # 50 สถานที่ (~1 ชม.)
+# uv run python scripts\discover_50.py       # 50 สถานที่
 
 # ── REFRESH (เก็บข้อมูลที่ขาด + รีวิวเพิ่มจากร้านเดิม) ────────
+# ⚡ ตั้งแต่ v2 เป็น INCREMENTAL: หยุด scroll ทันทีที่เจอรีวิวเดิม (เร็วขึ้นมาก)
+#    - ร้านใหม่ / ยังไม่เคยเก็บ  → scan เต็ม
+#    - ร้านเดิมที่ไม่มีรีวิวใหม่  → หยุดหลัง scroll ไม่กี่รอบ (ประหยัด ~90%)
+#    - ร้านที่นิ่งหลายรอบ        → ถูกเว้นรอบนานขึ้นเอง (7 → 14 → 30 วัน)
 # uv run python scripts\refresh_all.py --limit 40   # แมนนวล ทีละ 40 ร้าน (รันซ้ำเอง)
 # uv run python scripts\refresh_all.py              # ทุกร้านรวดเดียว (เสี่ยงโดนบล็อก)
+
+# ── ทดสอบ logic incremental (offline ไม่ต่อเน็ต ไม่โดนบล็อก) ──
+# uv run python scripts\test_incremental.py
+
+# ── SNAPSHOT สถิติ (ฐานของระบบแจ้งเตือน + เทียบย้อนหลัง) ─────
+# auto_refresh จะเก็บให้อัตโนมัติหลัง analyze อยู่แล้ว — คำสั่งนี้ไว้เก็บเอง
+# uv run python scripts\take_snapshot.py                     # เก็บ ณ ตอนนี้
+# uv run python scripts\take_snapshot.py --label 2026-W34    # ตั้งชื่อช่วง
+# uv run python scripts\take_snapshot.py --as-of 2026-06-30  # ย้อนอดีต (นับรีวิวถึงวันนั้น)
+# uv run python scripts\take_snapshot.py --list              # ดูรายการที่เก็บไว้
 
 # ── AUTO REFRESH (อัตโนมัติ คำสั่งเดียว วนจนครบ + analyze + classify) ─
 # uv run python scripts\auto_refresh.py             # เต็มรูปแบบ (แนะนำ — เดินจากเครื่องได้)
@@ -30,7 +45,27 @@ chcp 65001 > $null
 # uv run python scripts\auto_refresh.py --no-followup   # ไม่ต่อ analyze/classify
 
 # ── ANALYZE (วิเคราะห์ NLP) ──────────────────────────────────
-# uv run python scripts\analyze.py           # วิเคราะห์จนหมด
+# uv run python scripts\analyze.py           # วิเคราะห์รีวิวใหม่ที่ยังไม่วิเคราะห์ (ใช้ WangchanBERTa fine-tuned)
+
+# ── RE-ANALYZE ทั้งระบบด้วย WangchanBERTa (โมเดล fine-tune เอง, รันบน GPU) ──
+# วิเคราะห์ "ทุกรีวิว" ใหม่ (เขียนทับของเดิม) — ใช้เมื่อฝึกโมเดลใหม่/ปรับปรุงโมเดล
+# ผลของ Claude (claude_category/claude_sentiment) เก็บไว้เทียบ ไม่ถูกแตะ
+# ⚠️ backup ก่อนเสมอ (ดูส่วน BACKUP ด้านล่าง)
+# uv run python scripts\reanalyze_all.py            # ดูก่อนว่าจะทำกี่รีวิว (ไม่แตะข้อมูล)
+# uv run python scripts\reanalyze_all.py --apply    # วิเคราะห์ใหม่จริง (~2-5 นาทีบน GPU)
+#
+# หลัง re-analyze เสร็จ อย่าลืมอัปเดต snapshot + สร้างรายงานใหม่:
+# uv run python scripts\take_snapshot.py --label ปัจจุบัน
+# uv run python scripts\generate_report.py
+
+# ── ฝึกโมเดล WangchanBERTa เอง (Knowledge Distillation จากป้ายของ Claude) ──
+# uv run python scripts\label_training_data.py           # ดูว่าต้องติดป้ายเพิ่มกี่รีวิว (ใช้ Claude API)
+# uv run python scripts\label_training_data.py --apply   # ติดป้ายเพิ่ม (เสียเงิน ~$0.5)
+# uv run python nlp\train\prepare_data.py --task category   # เตรียมชุดข้อมูลฝึก
+# uv run python nlp\train\prepare_data.py --task sentiment
+# uv run python nlp\train\train.py --task category --epochs 10   # ฝึก (GPU ~6 นาที / CPU ~50 นาที)
+# uv run python nlp\train\train.py --task sentiment --epochs 10
+# uv run python nlp\train\compare_models.py --task category      # เทียบผลกับระบบเดิม
 
 # ── CHECK DB (ดูสถานะ Database) ──────────────────────────────
 # uv run python scripts\check_db.py
@@ -90,3 +125,20 @@ chcp 65001 > $null
 # [Terminal 2] Frontend:
 # cd frontend ; npm run dev
 # เปิด http://localhost:5173
+
+# ── REPORT รายเดือน (PDF / Word / HTML) ──────────────────────
+# กดจากหน้าเว็บได้ที่การ์ด "รายงานประจำเดือน" หรือใช้คำสั่ง:
+# uv run python scripts\generate_report.py                    # เดือนล่าสุด, ได้ทั้ง PDF+Word
+# uv run python scripts\generate_report.py --month 2026-06    # ระบุเดือน
+# uv run python scripts\generate_report.py --format pdf       # เอาแค่ PDF
+# uv run python scripts\generate_report.py --format docx      # เอาแค่ Word
+# ไฟล์ออกที่ data
+eports
+
+# -- DEDUP: ล้างรีวิวซ้ำ + กันซ้ำในอนาคต --------------------
+# สาเหตุเดิม: hash คำนวณจากข้อความดิบที่มีวันที่ติดมา ("7 เดือนที่แล้ว")
+# พอ scrape รอบใหม่วันที่เลื่อน -> hash เปลี่ยน -> บันทึกซ้ำ (เคยซ้ำ 3,453 แถว)
+# แก้แล้วโดยเปลี่ยนไป hash จาก text_clean (ตัดวันที่ออกแล้ว)
+# uv run python scripts\dedup_reviews.py          # ดูก่อนว่ามีซ้ำเท่าไหร่ (ไม่ลบ)
+# uv run python scripts\dedup_reviews.py --apply  # ลบจริง (backup ก่อน!)
+# uv run python scripts	est_dedup.py             # เทสต์ว่าระบบกันซ้ำยังทำงาน

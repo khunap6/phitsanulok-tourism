@@ -21,6 +21,7 @@ from scraper.scraper_core import (
     MAX_REVIEWS_PER_PLACE,
     PHITSANULOK_PLACES_FALLBACK,
     is_in_phitsanulok,
+    review_text_hash,
     run_scraper,
 )
 from scraper.zones import assign_zone, distance_to_campus_km
@@ -39,15 +40,86 @@ async def load_existing_places(session: AsyncSession) -> list[str]:
 
 
 async def load_places_to_refresh(session: AsyncSession) -> list[str]:
-    """Load places not scraped in last 7 days, oldest first (incremental logic)."""
+    """
+    หาร้านที่ถึงคิว scan — ใช้ adaptive cooldown ตามประวัติการเปลี่ยนแปลง
+
+      ร้านที่มีรีวิวใหม่ล่าสุด        → เว้น 7 วัน   (คนรีวิวบ่อย ต้องตามใกล้ชิด)
+      ไม่มีรีวิวใหม่ 1 ครั้งติด       → เว้น 7 วัน
+      ไม่มีรีวิวใหม่ 2 ครั้งติด       → เว้น 14 วัน
+      ไม่มีรีวิวใหม่ 3 ครั้งขึ้นไป    → เว้น 30 วัน  (ร้านนิ่ง ไม่ต้องตามบ่อย)
+
+    ร้านที่ยังไม่เคย scan (scraped_at NULL) มาก่อนเสมอ
+    """
     result = await session.execute(
         text("""
             SELECT name FROM places
-            WHERE scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days'
+            WHERE scraped_at IS NULL
+               OR scraped_at < NOW() - (
+                    CASE
+                        WHEN COALESCE(consecutive_no_change, 0) >= 3 THEN INTERVAL '30 days'
+                        WHEN COALESCE(consecutive_no_change, 0) = 2  THEN INTERVAL '14 days'
+                        ELSE INTERVAL '7 days'
+                    END
+                  )
             ORDER BY scraped_at ASC NULLS FIRST
         """)
     )
     return [row[0] for row in result.fetchall()]
+
+
+async def load_known_hashes(session: AsyncSession, place_names: list[str]) -> dict[str, set[str]]:
+    """
+    โหลด hash ของรีวิวที่มีอยู่แล้ว แยกตามชื่อร้าน
+    ใช้ให้ scraper รู้ว่า "อันไหนเคยเก็บแล้ว" → หยุด scroll ได้ทันทีที่ชนของเดิม
+    """
+    if not place_names:
+        return {}
+    result = await session.execute(
+        text("""
+            SELECT p.name, r.text_hash
+            FROM places p JOIN reviews r ON r.place_id = p.id
+            WHERE p.name = ANY(:names)
+        """),
+        {"names": place_names},
+    )
+    out: dict[str, set[str]] = {}
+    for name, h in result.fetchall():
+        out.setdefault(name, set()).add(h)
+    return out
+
+
+async def update_scan_stats(session: AsyncSession, place_names: list[str]) -> None:
+    """
+    บันทึกค่าอ้างอิงหลัง scan เสร็จ:
+      - last_review_count      = จำนวนรีวิวที่มีตอนนี้
+      - last_scan_new_reviews  = รอบนี้ได้ใหม่กี่อัน (เทียบกับค่าอ้างอิงเดิม)
+      - consecutive_no_change  = ไม่มีของใหม่ติดกันกี่รอบ (+1 หรือ reset 0)
+    """
+    if not place_names:
+        return
+    await session.execute(
+        text("""
+            WITH cur AS (
+                SELECT p.id,
+                       COUNT(r.id) AS cnt
+                FROM places p
+                LEFT JOIN reviews r ON r.place_id = p.id
+                WHERE p.name = ANY(:names)
+                GROUP BY p.id
+            )
+            UPDATE places p SET
+                last_scan_new_reviews = GREATEST(cur.cnt - COALESCE(p.last_review_count, 0), 0),
+                consecutive_no_change = CASE
+                    WHEN cur.cnt > COALESCE(p.last_review_count, 0) THEN 0
+                    ELSE COALESCE(p.consecutive_no_change, 0) + 1
+                END,
+                last_review_count = cur.cnt
+            FROM cur
+            WHERE p.id = cur.id
+        """),
+        {"names": place_names},
+    )
+    await session.commit()
 
 
 async def save_to_db(
@@ -67,7 +139,7 @@ async def save_to_db(
     scraped_expr = "NOW()" if full_scrape else "NULL"
 
     for result in results:
-        if not result:
+        if not result or result.get("_blocked"):
             continue
 
         lat = result.get("lat")
@@ -166,12 +238,12 @@ async def save_to_db(
             if len(text_content) < 5:
                 continue
 
-            text_hash = hashlib.md5(text_content.encode("utf-8")).hexdigest()
-
             # แปลง relative date → วันที่โดยประมาณ (ณ เวลาที่ scrape)
             review_date_approx = parse_relative_date(review.get("date"))
             # ทำความสะอาด text → เก็บใน text_clean
             text_clean = clean_review_text(text_content)
+            # hash จากข้อความที่ล้างแล้ว (คงที่ทุกรอบ scrape) — ดูคำอธิบายใน review_text_hash
+            text_hash = review_text_hash(text_content)
 
             rv = await session.execute(
                 text("""
@@ -369,6 +441,7 @@ async def _run_with_fallback(
     max_places: int | None,
     auto_discover: bool,
     max_reviews: int = MAX_REVIEWS_PER_PLACE,
+    known_hashes_by_place: dict[str, set[str]] | None = None,
 ) -> list[dict]:
     """Try Playwright up to 3 times. On repeated failure, use Selenium fallback."""
     last_exc = None
@@ -380,6 +453,7 @@ async def _run_with_fallback(
                 max_places=max_places,
                 auto_discover=auto_discover,
                 max_reviews=max_reviews,
+                known_hashes_by_place=known_hashes_by_place,
             )
         except Exception as e:
             last_exc = e
@@ -420,7 +494,8 @@ async def run_discover(
     try:
         existing = set(await load_existing_places(session))
 
-        # discover = เก็บร้านเร็ว (รีวิวน้อย) + scraped_at NULL ให้ auto_refresh ดึงรีวิวต่อ
+        # A1: discover = หาร้านใหม่ + เก็บ "เฉพาะข้อมูลร้าน" (ไม่ดึงรีวิว, DISCOVER_MAX_REVIEWS=0)
+        # scraped_at=NULL → auto_refresh จะมาดึงรีวิวเต็มทีหลัง (ร้านใหม่ = scan เต็ม)
         results = await _run_with_fallback(
             places=None,
             headless=headless,
@@ -494,27 +569,43 @@ async def run_refresh(
             await session.commit()
             return {"places": 0, "reviews_new": 0, "duration_sec": 0.0}
 
+        # Incremental: บอก scraper ว่าแต่ละร้านมีรีวิวอะไรอยู่แล้ว
+        # → หยุด scroll ทันทีที่ชนของเดิม แทนที่จะ scroll จนครบทุกครั้ง
+        known_hashes = await load_known_hashes(session, place_names)
+        n_known = sum(len(v) for v in known_hashes.values())
+        print(f"[incremental] โหลดรีวิวเดิม {n_known:,} อัน จาก {len(known_hashes)} ร้าน "
+              f"(ร้านใหม่ {len(place_names) - len(known_hashes)} ร้าน = scan เต็ม)")
+
         results = await _run_with_fallback(
             places=place_names,
             headless=headless,
             max_places=max_places,
             auto_discover=False,
+            known_hashes_by_place=known_hashes,
         )
 
+        # B3: ถ้า scraper เจอบล็อกจริง → คืน flag ให้ auto_refresh พักแล้วลองใหม่
+        blocked_signal = next((r["_blocked"] for r in results if r and r.get("_blocked")), None)
+
         places_count, reviews_new = await save_to_db(results, session)
+        # อัปเดตค่าอ้างอิงเฉพาะร้านที่ scrape สำเร็จจริง (ไม่นับรอบที่โดนบล็อก)
+        if not blocked_signal:
+            await update_scan_stats(session, place_names)
         duration = round(time() - t0, 1)
 
+        job_status = "blocked" if blocked_signal else "done"
         await session.execute(
             text("""
                 UPDATE scrape_jobs
-                SET status='done', places_count=:p, reviews_count=:r, finished_at=NOW()
+                SET status=:st, places_count=:p, reviews_count=:r, finished_at=NOW()
                 WHERE id=:id
             """),
-            {"p": places_count, "r": reviews_new, "id": job_id},
+            {"st": job_status, "p": places_count, "r": reviews_new, "id": job_id},
         )
         await session.commit()
         print(f"[refresh] Done — {places_count} places, {reviews_new} new reviews ({duration}s)")
-        return {"places": places_count, "reviews_new": reviews_new, "duration_sec": duration}
+        return {"places": places_count, "reviews_new": reviews_new,
+                "duration_sec": duration, "blocked": blocked_signal}
 
     except Exception as e:
         await session.execute(

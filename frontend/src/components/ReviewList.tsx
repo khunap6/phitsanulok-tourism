@@ -2,14 +2,15 @@ import type { Review } from '../types'
 
 const SEVERITY_STYLE: Record<string, string> = {
   high: 'bg-red-500/20 text-red-400 border-red-500/40',
-  medium: 'bg-orange-500/20 text-orange-400 border-orange-500/40',
-  low: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40',
+  medium: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40',
+  low: 'bg-green-500/20 text-green-400 border-green-500/40',
 }
 
+// severity = ระดับความรุนแรงของปัญหา (ไม่ใช่ตัวบอกว่าชมหรือบ่น — ดูที่ sentiment แทน)
 const SEVERITY_TH: Record<string, string> = {
-  high: 'รุนแรงมาก',
-  medium: 'ปานกลาง',
-  low: 'เล็กน้อย',
+  high: '🔥 สูง',
+  medium: '⚠️ กลาง',
+  low: '💬 ต่ำ',
 }
 
 function Badge({ label, className }: { label: string; className: string }) {

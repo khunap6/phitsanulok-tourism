@@ -1,13 +1,17 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import CategoryDrilldown from '../components/CategoryDrilldown'
+import DateRangeSelector, { ALL_TIME, type DateRange } from '../components/DateRangeSelector'
 import KPICard from '../components/KPICard'
 import PainPointChart from '../components/PainPointChart'
+import PositiveHighlights from '../components/PositiveHighlights'
+import ReportDownload from '../components/ReportDownload'
 import StatusBadge, { STATUS_OPTIONS } from '../components/StatusBadge'
+import TrendingPanel from '../components/TrendingPanel'
 import PlaceSelector from '../components/PlaceSelector'
 import ReviewList from '../components/ReviewList'
 import SeverityPie from '../components/SeverityPie'
-import { useInsights, useTopPlaces } from '../hooks/useInsights'
+import { useInsights, useTopPlaces, type ViewMode } from '../hooks/useInsights'
 import { usePlaceReviews, usePlaces } from '../hooks/usePlaces'
 import { useReviews } from '../hooks/useReviews'
 
@@ -24,11 +28,14 @@ interface ZoneSummary {
   top_category: string | null
 }
 
-function useZones() {
+function useZones(dateRange?: DateRange) {
   return useQuery<ZoneSummary[]>({
-    queryKey: ['zones'],
+    queryKey: ['zones', dateRange?.label ?? 'all'],
     queryFn: async () => {
-      const res = await fetch('/api/insights/zones')
+      const url = new URL('/api/insights/zones', window.location.origin)
+      if (dateRange?.from) url.searchParams.set('date_from', dateRange.from)
+      if (dateRange?.to) url.searchParams.set('date_to', dateRange.to)
+      const res = await fetch(url.toString())
       if (!res.ok) return []
       return res.json()
     },
@@ -53,14 +60,15 @@ export default function Dashboard() {
   const [selectedPlace, setSelectedPlace] = useState<number | null>(null)
   const [filterSeverity, setFilterSeverity] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
-  const [painOnly, setPainOnly] = useState(false)
+  const [viewMode, setViewMode] = useState<ViewMode>('complaints')
   const [bizStatus, setBizStatus] = useState('operational')
+  const [dateRange, setDateRange] = useState<DateRange>(ALL_TIME)
   const [drillCategory, setDrillCategory] = useState<string | null>(null)
 
-  const { data: insights, isLoading: insightsLoading } = useInsights(painOnly, bizStatus)
-  const { data: topPlaces } = useTopPlaces(5, bizStatus)
+  const { data: insights, isLoading: insightsLoading } = useInsights(viewMode, bizStatus, dateRange)
+  const { data: topPlaces } = useTopPlaces(5, bizStatus, dateRange)
   const { data: places = [] } = usePlaces()
-  const { data: zones = [] } = useZones()
+  const { data: zones = [] } = useZones(dateRange)
 
   // รีวิวตาม place ที่เลือก หรือ paginated ทั้งหมด
   const { data: placeReviews = [], isLoading: placeReviewsLoading } = usePlaceReviews(
@@ -118,6 +126,11 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Date range filter */}
+      <div className="bg-brand-card rounded-xl p-3 border border-brand-border">
+        <DateRangeSelector value={dateRange} onChange={(dr) => { setDateRange(dr); setDrillCategory(null) }} />
+      </div>
+
       {/* KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
@@ -133,10 +146,19 @@ export default function Dashboard() {
           accentColor="#22d3ee"
         />
         <KPICard
-          title="ปัญหารุนแรงมาก"
+          title="ปัญหาระดับสูง"
           value={insightsLoading ? '…' : (insights?.severity_distribution?.['high'] ?? 0)}
-          subtitle="รีวิวระดับ High severity"
+          unit="คอมเมนต์"
           accentColor="#ef4444"
+          breakdown={{
+            high: insights?.severity_distribution?.['high'] ?? 0,
+            medium: insights?.severity_distribution?.['medium'] ?? 0,
+            low: insights?.severity_distribution?.['low'] ?? 0,
+          }}
+          riskPlaces={topPlaces?.slice(0, 3).map((p: any) => ({
+            name: p.name,
+            high_count: p.high_count,
+          }))}
         />
         <KPICard
           title="Pain Point อันดับ 1"
@@ -146,29 +168,31 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Toggle: รวมทั้งหมด / เฉพาะปัญหาจริง */}
-      <div className="flex items-center gap-2">
-        <span className="text-brand-subtext text-sm">มุมมองกราฟ Pain Point:</span>
+      {/* View mode toggle — 3 โหมด: คำบ่น / คำชม / ทั้งหมด (คุมกราฟ + drill-down + จุดเด่นให้ตรงกัน) */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-brand-subtext text-sm">มุมมอง:</span>
         <div className="inline-flex rounded-lg border border-brand-border overflow-hidden">
-          <button
-            onClick={() => setPainOnly(false)}
-            className={`px-3 py-1.5 text-sm transition-colors ${
-              !painOnly ? 'bg-brand-primary text-white' : 'bg-brand-card text-brand-subtext hover:text-brand-text'
-            }`}
-          >
-            รวมทั้งหมด
-          </button>
-          <button
-            onClick={() => setPainOnly(true)}
-            className={`px-3 py-1.5 text-sm transition-colors ${
-              painOnly ? 'bg-red-500 text-white' : 'bg-brand-card text-brand-subtext hover:text-brand-text'
-            }`}
-          >
-            เฉพาะปัญหาจริง
-          </button>
+          {[
+            { key: 'complaints', label: '🔴 คำบ่น', color: '#ef4444', hint: 'เห็นเฉพาะรีวิวเชิงลบ = pain point จริง' },
+            { key: 'praise',     label: '⭐ คำชม',  color: '#22c55e', hint: 'เห็นเฉพาะรีวิวเชิงบวก = จุดแข็ง' },
+            { key: 'all',        label: '📊 ทั้งหมด', color: '#3b82f6', hint: 'รวมทุกรีวิว ทุกอารมณ์ ทุกหมวด' },
+          ].map((m) => (
+            <button
+              key={m.key}
+              onClick={() => { setViewMode(m.key as ViewMode); setDrillCategory(null) }}
+              className={`px-3 py-1.5 text-sm transition-colors ${
+                viewMode === m.key ? 'text-white' : 'bg-brand-card text-brand-subtext hover:text-brand-text'
+              }`}
+              style={viewMode === m.key ? { background: m.color } : {}}
+            >
+              {m.label}
+            </button>
+          ))}
         </div>
         <span className="text-brand-subtext text-xs">
-          {painOnly ? 'ตัด "ความคิดเห็นทั่วไป" ออก เหลือเฉพาะปัญหาที่แก้ได้' : 'รวมความเห็นทุกแบบ'}
+          {viewMode === 'complaints' && 'รีวิวเชิงลบเท่านั้น — หมวดที่ถูกบ่นมากสุด'}
+          {viewMode === 'praise'     && 'รีวิวเชิงบวกเท่านั้น — หมวดที่ถูกชมมากสุด'}
+          {viewMode === 'all'        && 'ไม่กรอง — เห็นทุกรีวิวทุกอารมณ์'}
         </span>
       </div>
 
@@ -178,6 +202,13 @@ export default function Dashboard() {
           {insights?.top_pain_point_categories && (
             <PainPointChart
               data={insights.top_pain_point_categories}
+              title={
+                viewMode === 'praise'
+                  ? '⭐ หมวดที่ถูกชมมากที่สุด'
+                  : viewMode === 'all'
+                  ? '📊 หมวดที่พูดถึงมากที่สุด'
+                  : '🔴 Pain Point ตามหมวดหมู่'
+              }
               onCategoryClick={(c) => setDrillCategory(c === drillCategory ? null : c)}
             />
           )}
@@ -191,8 +222,19 @@ export default function Dashboard() {
 
       {/* Drill-down: ร้านที่มีปัญหาหมวดที่คลิก */}
       {drillCategory && (
-        <CategoryDrilldown category={drillCategory} status={bizStatus} onClose={() => setDrillCategory(null)} />
+        <CategoryDrilldown category={drillCategory} status={bizStatus} viewMode={viewMode} dateRange={dateRange} onClose={() => setDrillCategory(null)} />
       )}
+
+      {/* จุดเด่น (positive) — โชว์ในโหมด "คำบ่น" และ "ทั้งหมด" (ให้เห็นสองด้าน) — ซ่อนใน "คำชม" (เพราะซ้ำกับกราฟ) */}
+      {viewMode !== 'praise' && (
+        <PositiveHighlights status={bizStatus} dateRange={dateRange} />
+      )}
+
+      {/* แนวโน้มปัญหาตามช่วงเวลา (นับจากวันที่เขียนรีวิว — ไม่ขึ้นกับตัวกรองด้านบน) */}
+      <TrendingPanel />
+
+      {/* ดาวน์โหลดรายงานประจำเดือน */}
+      <ReportDownload />
 
       {/* Top problematic places */}
       {topPlaces && topPlaces.length > 0 && (
@@ -212,7 +254,7 @@ export default function Dashboard() {
                 </div>
                 <span className="text-brand-text text-sm w-40 truncate">{p.name}</span>
                 <StatusBadge status={p.business_status} />
-                <span className="text-red-400 text-sm w-16 text-right">{p.high_count} high</span>
+                <span className="text-red-400 text-sm w-20 text-right">🔥 {p.high_count} สูง</span>
               </div>
             ))}
           </div>
@@ -249,10 +291,11 @@ export default function Dashboard() {
                     <div className="bg-green-500" style={{ width: `${Math.round((z.low_count / total) * 100)}%` }} />
                   </div>
 
+                  {/* ระดับความรุนแรง: สูง / กลาง / ต่ำ (ใช้คำเดียวกันทั้งเว็บ) */}
                   <div className="flex justify-between text-xs text-brand-subtext mb-3">
-                    <span className="text-red-400">{z.high_count} สูง</span>
-                    <span className="text-yellow-400">{z.medium_count} กลาง</span>
-                    <span className="text-green-400">{z.low_count} ต่ำ</span>
+                    <span className="text-red-400">🔥 {z.high_count} สูง</span>
+                    <span className="text-yellow-400">⚠️ {z.medium_count} กลาง</span>
+                    <span className="text-green-400">💬 {z.low_count} ต่ำ</span>
                   </div>
 
                   {z.top_category && (
@@ -288,9 +331,9 @@ export default function Dashboard() {
             onChange={e => setFilterSeverity(e.target.value)}
           >
             <option value="">— ทุกระดับ —</option>
-            <option value="high">รุนแรงมาก (High)</option>
-            <option value="medium">ปานกลาง (Medium)</option>
-            <option value="low">เล็กน้อย (Low)</option>
+            <option value="high">🔥 สูง</option>
+            <option value="medium">⚠️ กลาง</option>
+            <option value="low">💬 ต่ำ</option>
           </select>
           <select
             className="bg-brand-bg border border-brand-border text-brand-text rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-primary"

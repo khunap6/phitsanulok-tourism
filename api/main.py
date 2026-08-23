@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import admin, analysis, places, reviews, stats
+from api.routers import admin, analysis, places, reports, reviews, stats
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ app.include_router(reviews.router, prefix="/api")
 app.include_router(analysis.router, prefix="/api")
 app.include_router(stats.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(reports.router, prefix="/api")
 
 
 @app.get("/", tags=["root"])

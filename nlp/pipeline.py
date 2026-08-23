@@ -13,11 +13,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from nlp.preprocessor import preprocess
 from nlp.sentiment import analyze_wangchan, analyze_claude
 from nlp.topic_model import rule_based_categorize, severity_from_rating
+from nlp import wangchan_classifier
 
 _USE_CLAUDE = bool(
     os.getenv("ANTHROPIC_API_KEY", "")
     and os.getenv("ANTHROPIC_API_KEY") != "your_anthropic_key_here"
 )
+
+# หมวดที่ไม่ใช่ปัญหา — ไม่ตั้ง severity (severity มีความหมายเฉพาะกับคำบ่น)
+_NON_PROBLEM_CATS = {"ความคิดเห็นทั่วไป (ไม่ระบุปัญหา)", "อื่นๆ", "ไม่มี"}
+
+
+def _severity_for(sentiment: str, category: str, rating: int | None) -> str:
+    """
+    severity มีความหมายเฉพาะรีวิวเชิงลบที่เป็นปัญหาจริง
+    - ไม่ใช่คำบ่น หรือเป็นหมวดที่ไม่ใช่ปัญหา → 'low' (ไม่รุนแรง)
+    - คำบ่น → ประเมินจากดาว (1★=high, 2★=medium, 3-5★=low)
+    """
+    if sentiment != "negative" or category in _NON_PROBLEM_CATS:
+        return "low"
+    return severity_from_rating(rating)
 
 
 # ---------------------------------------------------------------------------
@@ -133,33 +148,36 @@ async def run_analysis(
     analyzed_rows: list[dict] = []
 
     # -----------------------------------------------------------------------
-    # Strategy A: WangchanBERTa sentiment + rule-based categories
+    # Strategy A: WangchanBERTa ที่ fine-tune เองแล้ว (อารมณ์ + หมวดหมู่)
+    # โมเดลนี้ทำทั้ง 2 งาน แทน rule-based เดิมที่จับได้แค่ 1% ของหมวด
     # -----------------------------------------------------------------------
-    wangchan_ok = False
-    try:
-        texts = [preprocess(r["text"])[0] for r in reviews]
-        sentiments = analyze_wangchan(texts)
-        wangchan_ok = True
-    except Exception:
-        sentiments = ["neutral"] * len(reviews)
+    wangchan_results = None
+    if wangchan_classifier.is_available():
+        texts = [r["text"] for r in reviews]
+        try:
+            wangchan_results = wangchan_classifier.classify(texts)
+        except Exception as e:
+            print(f"[nlp] WangchanBERTa classify ล้มเหลว: {str(e)[:80]}")
+            wangchan_results = None
 
-    if wangchan_ok:
-        for review, sentiment in zip(reviews, sentiments):
+    if wangchan_results:
+        for review, res in zip(reviews, wangchan_results):
             _, tokens = preprocess(review["text"])
-            categories = rule_based_categorize(review["text"])
+            sentiment = res["sentiment"]
+            category = res["category"]
             analyzed_rows.append({
                 "review_id": review["id"],
                 "sentiment": sentiment,
-                "pain_point_category": categories[0],
+                "pain_point_category": category,
                 "pain_point_thai": review["text"][:60] + ("..." if len(review["text"]) > 60 else ""),
-                "severity": severity_from_rating(review.get("rating")),
+                "severity": _severity_for(sentiment, category, review.get("rating")),
                 "keywords": tokens[:10],
-                "model_used": "wangchanberta+rule-based",
+                "model_used": "wangchanberta-finetuned",
             })
-        print(f"[nlp] WangchanBERTa analyzed {len(analyzed_rows)} reviews")
+        print(f"[nlp] WangchanBERTa (fine-tuned) analyzed {len(analyzed_rows)} reviews")
 
     # -----------------------------------------------------------------------
-    # Strategy B: Claude API (used when WangchanBERTa unavailable + API key set)
+    # Strategy B: Claude API (ใช้เมื่อโมเดล WangchanBERTa ไม่พร้อม + มี API key)
     # -----------------------------------------------------------------------
     elif _USE_CLAUDE:
         by_place: dict[str, list[dict]] = defaultdict(list)

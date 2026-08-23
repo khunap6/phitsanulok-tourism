@@ -17,9 +17,9 @@ const SEVERITY_COLOR: Record<string, string> = {
 }
 
 const SEVERITY_TH: Record<string, string> = {
-  high: 'รุนแรงมาก',
-  medium: 'ปานกลาง',
-  low: 'เล็กน้อย',
+  high: 'สูง',
+  medium: 'กลาง',
+  low: 'ต่ำ',
 }
 
 const MAP_STYLES = [
@@ -179,7 +179,7 @@ export default function MapView() {
                   </div>
                   <div className="flex gap-3 mt-2 text-xs text-gray-600">
                     <span className="text-red-500 font-medium">
-                      {selected.properties.high_count} high
+                      🔥 {selected.properties.high_count} สูง
                     </span>
                     <span>{selected.properties.review_count} รีวิว</span>
                   </div>

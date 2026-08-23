@@ -2,11 +2,12 @@
 auto_refresh.py — เก็บข้อมูลที่ขาดจากร้านเดิมแบบอัตโนมัติ (คำสั่งเดียว เดินจากเครื่องได้)
 
 ทำงานวนเอง:
-  1. เช็คว่ายังมีร้านที่ต้องทำไหม (scraped_at เก่ากว่า 7 วัน) → ถ้าไม่มี = จบ
-  2. scrape N ร้าน (default 40)
-  3. ตรวจจับการโดนบล็อก (ถ้าได้ทั้งรีวิว 0 + เวลาเปิด 0 ติดกัน 2 รอบ → หยุดเตือน)
+  1. เช็คว่ายังมีร้านที่ต้องทำไหม (adaptive cooldown 7/14/30 วัน) → ถ้าไม่มี = จบ
+  2. scrape N ร้าน (default 40) แบบ incremental (หยุด scroll เมื่อชนรีวิวเดิม)
+  3. ถ้าเจอสัญญาณบล็อกจริง (CAPTCHA/sorry-page) → พักยาวขึ้น 2→4→6 ชม.
+     แล้วลองใหม่เอง (เกิน 3 ครั้งค่อยหยุดจริงให้ไปเปลี่ยน IP)
   4. รอ M นาที (default 15) แล้ววนกลับข้อ 1
-  5. เมื่อครบทุกร้าน → รัน analyze + classify ให้อัตโนมัติ
+  5. เมื่อครบทุกร้าน → รัน analyze + classify + snapshot ให้อัตโนมัติ
 
 รัน:
   uv run python scripts/auto_refresh.py                    # เต็มรูปแบบ (แนะนำ)
@@ -41,18 +42,42 @@ def log(msg: str) -> None:
 
 
 async def eligible_count(session) -> int:
-    """จำนวนร้านที่ยังต้อง refresh (scrape เกิน 7 วัน หรือยังไม่เคย)"""
+    """
+    จำนวนร้านที่ยังต้อง refresh — ต้องใช้เกณฑ์เดียวกับ load_places_to_refresh()
+    (adaptive cooldown: ร้านนิ่งจะถูกเว้นนานขึ้น) ไม่งั้น loop จะวนไม่จบ
+    เพราะนับว่ามีงานเหลือ แต่ run_refresh ไม่หยิบร้านไหนมาทำ
+    """
     r = await session.execute(
-        text("""SELECT COUNT(*) FROM places
-                WHERE scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days'""")
+        text("""
+            SELECT COUNT(*) FROM places
+            WHERE scraped_at IS NULL
+               OR scraped_at < NOW() - (
+                    CASE
+                        WHEN COALESCE(consecutive_no_change, 0) >= 3 THEN INTERVAL '30 days'
+                        WHEN COALESCE(consecutive_no_change, 0) = 2  THEN INTERVAL '14 days'
+                        ELSE INTERVAL '7 days'
+                    END
+                  )
+        """)
     )
     return r.scalar()
 
 
-async def hours_count(session) -> int:
-    """จำนวนร้านที่มีเวลาเปิด-ปิดแล้ว (ใช้ตรวจว่ารอบนี้เก็บข้อมูลได้จริงไหม)"""
-    r = await session.execute(text("SELECT COUNT(*) FROM places WHERE opening_hours IS NOT NULL"))
-    return r.scalar()
+async def cooldown_summary(session) -> str:
+    """สรุปว่าร้านถูกจัดกลุ่มรอบ scan ยังไง (ใช้รายงานผลตอนจบ)"""
+    r = await session.execute(
+        text("""
+            SELECT
+                COUNT(*) FILTER (WHERE COALESCE(consecutive_no_change,0) = 0)  AS active,
+                COUNT(*) FILTER (WHERE COALESCE(consecutive_no_change,0) = 1)  AS w7,
+                COUNT(*) FILTER (WHERE COALESCE(consecutive_no_change,0) = 2)  AS w14,
+                COUNT(*) FILTER (WHERE COALESCE(consecutive_no_change,0) >= 3) AS w30
+            FROM places
+        """)
+    )
+    x = r.fetchone()
+    return (f"รอบ scan: มีรีวิวใหม่ล่าสุด {x.active} ร้าน | "
+            f"เว้น 7 วัน {x.w7} | เว้น 14 วัน {x.w14} | เว้น 30 วัน {x.w30}")
 
 
 async def scrape_loop(limit: int, wait_min: int) -> str:
@@ -64,7 +89,10 @@ async def scrape_loop(limit: int, wait_min: int) -> str:
             log("ไม่มีร้านที่ต้อง refresh (ทุกร้าน scrape ภายใน 7 วันแล้ว)")
             return "done"
 
-        bad_streak = 0
+        # B3: เมื่อเจอบล็อกจริง → พักยาวขึ้นเรื่อยๆ แล้วลองใหม่เอง (2 → 4 → 6 ชม.)
+        BLOCK_BACKOFF_HOURS = [2, 4, 6]
+        block_count = 0
+
         for rnd in range(1, MAX_ROUNDS + 1):
             remaining = await eligible_count(session)
             if remaining == 0:
@@ -72,31 +100,36 @@ async def scrape_loop(limit: int, wait_min: int) -> str:
                 return "done"
 
             log(f"── รอบ {rnd} | เหลือ {remaining} ร้าน ──")
-            hours_before = await hours_count(session)
 
             result = await run_refresh(session, headless=True, max_places=limit)
             reviews_new = result.get("reviews_new", 0)
             places_done = result.get("places", 0)
+            blocked = result.get("blocked")
+            dur = result.get("duration_sec", 0)
+            per_place = dur / places_done if places_done else 0
+            log(f"   ทำ {places_done} ร้าน | รีวิวใหม่ {reviews_new} "
+                f"| ใช้เวลา {dur:.0f} วิ ({per_place:.1f} วิ/ร้าน)")
 
-            hours_after = await hours_count(session)
-            new_hours = hours_after - hours_before
-
-            log(f"   ทำ {places_done} ร้าน | รีวิวใหม่ {reviews_new} | เวลาเปิดใหม่ {new_hours}")
-
-            # ตรวจจับบล็อก: ทำร้านไปแล้วแต่ไม่ได้ทั้งรีวิวและเวลาเปิด = น่าจะโดนบล็อก
-            if places_done > 0 and reviews_new == 0 and new_hours == 0:
-                bad_streak += 1
-                log(f"   ⚠️  รอบนี้ไม่ได้ข้อมูลใหม่เลย (streak {bad_streak}/2)")
-                if bad_streak >= 2:
-                    log("🛑 น่าจะโดน Google บล็อก — หยุดอัตโนมัติ")
-                    log("   ลองเปลี่ยน IP (mobile hotspot) หรือรอสักพักแล้วรันใหม่")
+            # ── เจอสัญญาณบล็อกจริง (CAPTCHA/sorry-page) — พักยาวแล้วลองใหม่ ──
+            if blocked:
+                if block_count >= len(BLOCK_BACKOFF_HOURS):
+                    log(f"🛑 โดนบล็อกซ้ำ {block_count} ครั้งแม้พักยาวแล้ว — หยุดจริง")
+                    log("   แนะนำเปลี่ยน IP (mobile hotspot / VPN) แล้วรัน auto_refresh ใหม่")
                     return "blocked"
-            else:
-                bad_streak = 0
+                hrs = BLOCK_BACKOFF_HOURS[block_count]
+                block_count += 1
+                log(f"🛑 เจอสัญญาณบล็อก ({blocked}) — พัก {hrs} ชม. แล้วลองใหม่อัตโนมัติ "
+                    f"(ครั้งที่ {block_count}/{len(BLOCK_BACKOFF_HOURS)})")
+                await asyncio.sleep(hrs * 3600)
+                continue   # ไม่นับเป็นรอบเสีย ลองรอบเดิมใหม่
+
+            # ไม่โดนบล็อก → รีเซ็ตตัวนับ
+            block_count = 0
 
             # เช็คอีกทีว่าจบหรือยัง (ถ้าจบ ไม่ต้องรอ)
             if await eligible_count(session) == 0:
                 log(f"✅ ครบทุกร้านแล้ว (จบที่รอบ {rnd})")
+                log(f"   {await cooldown_summary(session)}")
                 return "done"
 
             log(f"   ⏳ พัก {wait_min} นาที...")
@@ -107,13 +140,20 @@ async def scrape_loop(limit: int, wait_min: int) -> str:
 
 
 def run_followup():
-    """รัน analyze + classify ต่ออัตโนมัติ (ใช้ interpreter เดียวกัน)"""
+    """รัน analyze + classify + เก็บ snapshot ต่ออัตโนมัติ (ใช้ interpreter เดียวกัน)"""
     py = sys.executable
     log("── ต่อ: วิเคราะห์ NLP (analyze.py) ──")
     subprocess.run([py, "scripts/analyze.py"], check=False)
     log("── ต่อ: จัดหมวด 'อื่นๆ' ด้วย Claude (classify_other_llm.py) ──")
     subprocess.run([py, "scripts/classify_other_llm.py"], check=False)
-    log("✅ analyze + classify เสร็จ")
+
+    # เก็บ snapshot หลังวิเคราะห์เสร็จ → มีจุดอ้างอิงให้เทียบว่ารอบหน้าอะไรเปลี่ยน
+    label = datetime.now().strftime("%Y-%m-%d")
+    log(f"── ต่อ: เก็บ snapshot สถิติ ({label}) ──")
+    subprocess.run([py, "scripts/take_snapshot.py", "--label", label,
+                    "--note", "เก็บอัตโนมัติหลัง auto_refresh"], check=False)
+
+    log("✅ analyze + classify + snapshot เสร็จ")
 
 
 async def _amain(limit, wait_min):

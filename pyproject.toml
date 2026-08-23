@@ -18,7 +18,7 @@ dependencies = [
     # Phase 3 — NLP
     "pythainlp>=5.0",
     "transformers",
-    "torch",
+    "torch>=2.9,<3",   # CUDA build — ดู [tool.uv.sources] ท้ายไฟล์
     "anthropic>=0.40",
     # Phase 4 — FastAPI
     "fastapi>=0.115",
@@ -30,7 +30,23 @@ dependencies = [
     "tiktoken>=0.13.0",
     # Topic Modeling (sklearn ไม่ต้อง compile C++)
     "scikit-learn>=1.4",
+    "python-docx>=1.2.0",
+    "protobuf>=7.36.0",
 ]
+
+# ── PyTorch เวอร์ชัน CUDA (ใช้ GPU ฝึกโมเดล) ────────────────────────────
+# ต้องดึงจาก index ของ PyTorch เอง เพราะบน PyPI มีแต่เวอร์ชัน CPU
+# ถ้าไม่ตั้งตรงนี้ `uv sync` ครั้งหน้าจะย้อนกลับเป็น CPU แบบเงียบๆ แล้ว GPU จะหยุดทำงาน
+#
+# cu128 = CUDA 12.8 (driver 596.21 รองรับถึง CUDA 13.2 จึงใช้ได้)
+# เครื่องที่ไม่มีการ์ดจอ NVIDIA ให้ลบ 2 บล็อกนี้ออก แล้วรัน `uv sync` ใหม่
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["db", "api", "scraper", "nlp", "scheduler"]

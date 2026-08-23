@@ -4,6 +4,7 @@ Scrapes 1-3 star reviews from tourist attractions using Playwright
 """
 
 import asyncio
+import hashlib
 import json
 import os
 import random
@@ -18,13 +19,17 @@ load_dotenv()  # โหลด PLAYWRIGHT_BROWSERS_PATH และ env อื่�
 
 from playwright.async_api import async_playwright, Page, TimeoutError as PlaywrightTimeout
 
+# ใช้ล้างข้อความรีวิวก่อนคำนวณ hash (ตัดวันที่/ไอคอน/ข้อความ UI ออก)
+from nlp.text_cleaner import clean_review_text
+
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
 # จำนวนรีวิวสูงสุดต่อสถานที่ (ตอน refresh — เก็บให้มากที่สุด)
 MAX_REVIEWS_PER_PLACE = 200
-# ตอน discover ร้านใหม่ — เก็บรีวิวน้อยๆ ให้เร็ว (auto_refresh จะดึงรีวิวเต็มทีหลัง)
-DISCOVER_MAX_REVIEWS = 5
+# ตอน discover ร้านใหม่ — เก็บ "เฉพาะข้อมูลร้าน" ไม่แตะรีวิวเลย (เร็ว + เสี่ยงบล็อกน้อย)
+# ชื่อ/พิกัด/หมวดหมู่/เวลาทำการ/สถานะร้าน มาจาก discover ส่วนรีวิวมาจาก refresh ทีหลัง
+DISCOVER_MAX_REVIEWS = 0
 
 # Bounding box ของจังหวัดพิษณุโลก (lat/lng)
 PHITSANULOK_BBOX = {
@@ -419,8 +424,109 @@ async def debug_page(page: Page, label: str = "debug"):
         print(f"  [debug] Could not save: {e}")
 
 
-async def extract_reviews(page: Page, max_reviews: int = 20) -> list[dict]:
-    """Extract reviews from the current place page."""
+# ── Incremental scan ────────────────────────────────────────────────────────
+# หยุด scroll เมื่อเจอรีวิวที่มีอยู่แล้วติดกันครบจำนวนนี้ (ไม่มีของใหม่แทรก)
+# เรียง "ใหม่ล่าสุด" สำเร็จ → รีวิวใหม่อยู่บนสุดแน่นอน หยุดได้เร็ว
+# เรียงไม่สำเร็จ → ลำดับเป็น "เกี่ยวข้องที่สุด" ต้องเผื่อมากขึ้น
+KNOWN_STOP_SORTED = 10
+KNOWN_STOP_UNSORTED = 25
+
+
+def review_text_hash(text: str) -> str:
+    """
+    คำนวณ hash กันรีวิวซ้ำ — ต้องตรงกับที่ scraper.py ใช้ตอน INSERT
+    (ไม่งั้น early-stop จะเทียบไม่เจอของเดิม)
+
+    ⚠️ สำคัญ: ต้อง hash จาก "ข้อความที่ล้างแล้ว" (text_clean) ไม่ใช่ข้อความดิบ
+    เพราะข้อความดิบจาก Google มีวันที่แบบสัมพัทธ์ติดมาด้วย เช่น "7 เดือนที่แล้ว"
+    พอ scrape รอบใหม่วันที่เลื่อนเป็น "8 เดือนที่แล้ว" → hash เปลี่ยน
+    → ระบบนึกว่าเป็นรีวิวใหม่ แล้วบันทึกซ้ำ (เคยทำให้มีรีวิวซ้ำ 3,453 แถว)
+
+    รีวิวที่ให้ดาวอย่างเดียว (ล้างแล้วเหลือว่าง) → ใช้ข้อความดิบแทน
+    """
+    raw = (text or "").strip()
+    clean = clean_review_text(raw)[:1000] if raw else ""
+    base = clean if clean else raw
+    return hashlib.md5(base.encode("utf-8")).hexdigest()
+
+
+async def _extract_visible_reviews(page: Page, cap: int) -> list[dict]:
+    """ดึงรีวิวที่โหลดอยู่ใน DOM ตอนนี้ (ไม่ scroll) — ใช้เช็คระหว่าง scroll ทีละรอบ"""
+    try:
+        return await page.evaluate(f"""
+            () => {{
+                const results = [];
+                const seen = new Set();
+                const UI_SKIP = [
+                    'ดาวน์โหลดแอป','ผลลัพธ์','ตัวกรองทั้งหมด',
+                    'เขียนรีวิว','ค้นหารีวิว','บัญชี Google',
+                ];
+                const allEls = document.querySelectorAll('[aria-label]');
+                const starEls = Array.from(allEls).filter(el => {{
+                    const lbl = el.getAttribute('aria-label') || '';
+                    return /^[1-5]\\s*(ดาว|star)/.test(lbl);
+                }});
+                starEls.forEach(starEl => {{
+                    try {{
+                        const label = starEl.getAttribute('aria-label') || '';
+                        const match = label.match(/^([1-5])/);
+                        const rating = match ? parseInt(match[1]) : null;
+                        let container = starEl.parentElement;
+                        for (let i = 0; i < 7; i++) {{
+                            if (!container) break;
+                            const text = (container.innerText || '').trim();
+                            const hasUI = UI_SKIP.some(w => text.includes(w));
+                            const key = text.substring(0, 60);
+                            if (text.length >= 40 && text.length <= 1200 && !hasUI && !seen.has(key)) {{
+                                seen.add(key);
+                                let dateText = '';
+                                container.querySelectorAll('span').forEach(s => {{
+                                    const t = (s.innerText || '').trim();
+                                    if (/(เดือน|สัปดาห์|วัน|ปี|ago|month|week|year)/i.test(t) && t.length < 35)
+                                        dateText = t;
+                                }});
+                                results.push({{ rating, text: text.substring(0, 600), date: dateText }});
+                                break;
+                            }}
+                            container = container.parentElement;
+                        }}
+                    }} catch(e) {{}}
+                }});
+                return results.slice(0, {cap});
+            }}
+        """)
+    except Exception:
+        return []
+
+
+def _trailing_known_count(raw_reviews: list[dict], known_hashes: set[str]) -> int:
+    """
+    นับว่ารีวิว "ท้ายรายการติดกัน" กี่อันที่เรามีอยู่แล้ว
+    (เรียงใหม่ล่าสุด → ของใหม่อยู่บนสุด ถ้าท้ายๆ เป็นของเดิมยาวๆ = ไม่มีอะไรใหม่ให้เก็บอีก)
+    """
+    count = 0
+    for item in reversed(raw_reviews):
+        t = (item.get("text") or "").strip()[:500].strip()
+        if review_text_hash(t) in known_hashes:
+            count += 1
+        else:
+            break
+    return count
+
+
+async def extract_reviews(
+    page: Page,
+    max_reviews: int = 20,
+    known_hashes: set[str] | None = None,
+) -> list[dict]:
+    """
+    Extract reviews from the current place page.
+
+    known_hashes: hash ของรีวิวที่มีอยู่แล้วในฐานข้อมูลของร้านนี้
+      - ว่าง/None  → scan เต็ม (ร้านใหม่ หรือ scan ครั้งแรก)
+      - มีค่า      → incremental: หยุด scroll ทันทีที่ชนกำแพงรีวิวเดิม
+    """
+    known_hashes = known_hashes or set()
     reviews = []
     try:
         # Step 1: Click "รีวิว" tab by visible text
@@ -450,6 +556,8 @@ async def extract_reviews(page: Page, max_reviews: int = 20) -> list[dict]:
         # await page.screenshot(path=str(debug_dir / "after_reviews_tab.png"))
 
         # Step 2: Sort by Newest — หาจากข้อความ ไม่ใช่ index
+        # sorted_ok บอกว่าเรียง "ใหม่ล่าสุด" สำเร็จไหม → ใช้ตัดสินว่า early-stop ได้เร็วแค่ไหน
+        sorted_ok = False
         try:
             sort_btn = page.locator('button', has_text="จัดเรียง").first
             if await sort_btn.count() == 0:
@@ -468,8 +576,9 @@ async def extract_reviews(page: Page, max_reviews: int = 20) -> list[dict]:
                         if "ล่าสุด" in txt or "newest" in txt.lower() or "recent" in txt.lower():
                             await opt.click(timeout=3000)
                             clicked = True
+                            sorted_ok = True     # เรียงตามใหม่ล่าสุดสำเร็จ
                             break
-                    # ถ้าหาไม่เจอ → ใช้ index 1
+                    # ถ้าหาไม่เจอ → ใช้ index 1 (มักเป็น "ใหม่ล่าสุด" แต่ไม่การันตี)
                     if not clicked and count > 1:
                         await options.nth(1).click(timeout=3000)
                     await random_delay(1.5, 2.5)
@@ -478,65 +587,34 @@ async def extract_reviews(page: Page, max_reviews: int = 20) -> list[dict]:
         except Exception:
             pass
 
-        # Step 3: Scroll to load more reviews
-        # ปรับจำนวนรอบ scroll ตาม max_reviews (รีวิวน้อย = scroll น้อย = เร็ว)
-        # Google โหลดรีวิวประมาณ 8-10 อันต่อการ scroll หนึ่งครั้ง
-        scroll_times = max(2, min(60, max_reviews // 4))
-        await scroll_reviews(page, times=scroll_times)
+        # Step 3+4: scroll ทีละรอบ + ดึงรีวิว + เช็คว่าชนกำแพงรีวิวเดิมหรือยัง
+        # เดิม: scroll รวดเดียวสูงสุด 60 รอบ แล้วค่อยดึง → ช้ามากแม้ไม่มีรีวิวใหม่เลย
+        # ใหม่: ดึงหลัง scroll ทุกรอบ ถ้าเจอรีวิวเดิมติดกันครบเกณฑ์ → หยุดทันที
+        max_scrolls = max(2, min(60, max_reviews // 4))
+        stop_threshold = KNOWN_STOP_SORTED if sorted_ok else KNOWN_STOP_UNSORTED
+        cap = max_reviews * 3
+        raw_reviews: list[dict] = await _extract_visible_reviews(page, cap)
 
-        # Step 4: Extract reviews via JavaScript
-        # Match ONLY exact "N ดาว" patterns (e.g. "1 ดาว", "2 ดาว") to avoid
-        # picking up overall-rating elements like "4.7 ดาว" or histogram bars.
-        raw_reviews = await page.evaluate(f"""
-            () => {{
-                const results = [];
-                const seen = new Set();
-                // Only skip text that clearly belongs to Google Maps chrome (never in review text)
-                const UI_SKIP = [
-                    'ดาวน์โหลดแอป','ผลลัพธ์','ตัวกรองทั้งหมด',
-                    'เขียนรีวิว','ค้นหารีวิว','บัญชี Google',
-                ];
+        no_growth = 0
+        for _ in range(max_scrolls):
+            # ชนกำแพงรีวิวเดิมแล้ว = ไม่มีของใหม่ให้เก็บอีก → หยุดประหยัดเวลา
+            if known_hashes and _trailing_known_count(raw_reviews, known_hashes) >= stop_threshold:
+                print(f"  ⏩ หยุดเร็ว — เจอรีวิวเดิมติดกัน {stop_threshold} อัน (ไม่มีรีวิวใหม่)")
+                break
+            if len(raw_reviews) >= cap:
+                break
 
-                // Only match individual-review star elements (exact "N ดาว" or "N star")
-                const allEls = document.querySelectorAll('[aria-label]');
-                const starEls = Array.from(allEls).filter(el => {{
-                    const lbl = el.getAttribute('aria-label') || '';
-                    return /^[1-5]\\s*(ดาว|star)/.test(lbl);
-                }});
+            before = len(raw_reviews)
+            await scroll_reviews(page, times=1)
+            raw_reviews = await _extract_visible_reviews(page, cap)
 
-                starEls.forEach(starEl => {{
-                    try {{
-                        const label = starEl.getAttribute('aria-label') || '';
-                        const match = label.match(/^([1-5])/);
-                        const rating = match ? parseInt(match[1]) : null;
-
-                        // Walk up max 7 levels to find the review card
-                        let container = starEl.parentElement;
-                        for (let i = 0; i < 7; i++) {{
-                            if (!container) break;
-                            const text = (container.innerText || '').trim();
-                            // Valid review card: 40-1200 chars, no UI chrome, not seen before
-                            const hasUI = UI_SKIP.some(w => text.includes(w));
-                            const key = text.substring(0, 60);
-                            if (text.length >= 40 && text.length <= 1200 && !hasUI && !seen.has(key)) {{
-                                seen.add(key);
-                                let dateText = '';
-                                container.querySelectorAll('span').forEach(s => {{
-                                    const t = (s.innerText || '').trim();
-                                    if (/(เดือน|สัปดาห์|วัน|ปี|ago|month|week|year)/i.test(t) && t.length < 35)
-                                        dateText = t;
-                                }});
-                                results.push({{ rating, text: text.substring(0, 600), date: dateText }});
-                                break;
-                            }}
-                            container = container.parentElement;
-                        }}
-                    }} catch(e) {{}}
-                }});
-
-                return results.slice(0, {max_reviews * 3});
-            }}
-        """)
+            # scroll แล้วไม่ได้รีวิวเพิ่ม 2 รอบติด = โหลดครบแล้ว
+            if len(raw_reviews) <= before:
+                no_growth += 1
+                if no_growth >= 2:
+                    break
+            else:
+                no_growth = 0
 
         # Step 5: Filter and clean
         seen_texts = set()
@@ -594,6 +672,39 @@ async def extract_reviews(page: Page, max_reviews: int = 20) -> list[dict]:
     return reviews
 
 
+async def detect_block_signal(page: Page) -> str | None:
+    """
+    ตรวจ "สัญญาณบล็อกจริง" จากหน้าเว็บ — แม่นกว่าการเดาจาก "ไม่มีรีวิวใหม่"
+    (เพราะ incremental scan ที่ทำงานถูกต้องก็ได้ 0 รีวิวใหม่เป็นปกติ)
+
+    คืนข้อความบอกชนิดของบล็อกถ้าเจอ, None ถ้าปกติ
+    """
+    try:
+        # 1) CAPTCHA / reCAPTCHA / "unusual traffic" — บล็อกชัดเจนที่สุด
+        block_texts = [
+            "unusual traffic", "การเข้าชมที่ผิดปกติ",
+            "ระบบตรวจพบการรับส่งข้อมูล", "our systems have detected",
+            "verify you're not a robot", "ยืนยันว่าคุณไม่ใช่หุ่นยนต์",
+        ]
+        body = (await page.evaluate("() => document.body ? document.body.innerText.slice(0,3000) : ''")) or ""
+        low = body.lower()
+        for t in block_texts:
+            if t.lower() in low:
+                return f"block-page ('{t}')"
+
+        # 2) reCAPTCHA iframe
+        if await page.locator('iframe[src*="recaptcha"]').count() > 0:
+            return "recaptcha"
+
+        # 3) หน้าเปล่า/สั้นผิดปกติ (โดน redirect ไป sorry page)
+        url = page.url
+        if "google.com/sorry" in url or "/sorry/" in url:
+            return "sorry-page"
+    except Exception:
+        pass
+    return None
+
+
 async def wait_for_place_loaded(page: Page, timeout: int = 20000) -> bool:
     """Wait for Google Maps place page to fully load using multiple strategies."""
     # Strategy 1: URL changes to include /place/
@@ -626,8 +737,16 @@ async def wait_for_place_loaded(page: Page, timeout: int = 20000) -> bool:
     return False
 
 
-async def scrape_place(page: Page, place_name: str, max_reviews: int = MAX_REVIEWS_PER_PLACE) -> dict | None:
-    """Search for a place and scrape its reviews. max_reviews ต่ำ = เร็ว (ใช้ตอน discover)"""
+async def scrape_place(
+    page: Page,
+    place_name: str,
+    max_reviews: int = MAX_REVIEWS_PER_PLACE,
+    known_hashes: set[str] | None = None,
+) -> dict | None:
+    """
+    Search for a place and scrape its reviews. max_reviews ต่ำ = เร็ว (ใช้ตอน discover)
+    known_hashes = hash รีวิวที่มีอยู่แล้วของร้านนี้ → เปิดโหมด incremental (หยุดเร็วถ้าไม่มีของใหม่)
+    """
     print(f"\n  Searching: {place_name}")
 
     try:
@@ -635,6 +754,12 @@ async def scrape_place(page: Page, place_name: str, max_reviews: int = MAX_REVIE
         search_url = f"https://www.google.com/maps/search/{place_name.replace(' ', '+')}"
         await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
         await random_delay(2.0, 4.0)
+
+        # B3: ตรวจสัญญาณบล็อกจริง (CAPTCHA / sorry-page) — คืน sentinel ให้ผู้เรียกจัดการ
+        blocked = await detect_block_signal(page)
+        if blocked:
+            print(f"  🛑 เจอสัญญาณบล็อก: {blocked}")
+            return {"_blocked": blocked}
 
         # If results list appears (multiple places), click first result
         try:
@@ -709,7 +834,7 @@ async def scrape_place(page: Page, place_name: str, max_reviews: int = MAX_REVIE
 
         # Scrape reviews — ข้ามถ้า max_reviews <= 0 (โหมด discover เร็ว)
         if max_reviews > 0:
-            reviews = await extract_reviews(page, max_reviews=max_reviews)
+            reviews = await extract_reviews(page, max_reviews=max_reviews, known_hashes=known_hashes)
             print(f"  Collected {len(reviews)} reviews")
         else:
             reviews = []
@@ -748,8 +873,12 @@ async def run_scraper(
     auto_discover: bool = True,
     discover_query: str | None = None,
     max_reviews: int = MAX_REVIEWS_PER_PLACE,
+    known_hashes_by_place: dict[str, set[str]] | None = None,
 ) -> list[dict]:
-    """Main scraper function. max_reviews ต่ำ = เก็บร้านเร็ว (โหมด discover)"""
+    """
+    Main scraper function. max_reviews ต่ำ = เก็บร้านเร็ว (โหมด discover)
+    known_hashes_by_place: {ชื่อร้าน: set(hash รีวิวที่มีแล้ว)} → เปิด incremental scan
+    """
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=headless,
@@ -788,9 +917,22 @@ async def run_scraper(
             places = places[:max_places]
 
         results = []
+        block_streak = 0   # นับร้านที่เจอสัญญาณบล็อกติดกัน
         for i, place in enumerate(places):
             print(f"\n[{i+1}/{len(places)}] Processing...")
-            result = await scrape_place(page, place, max_reviews=max_reviews)
+            place_hashes = (known_hashes_by_place or {}).get(place)
+            result = await scrape_place(page, place, max_reviews=max_reviews, known_hashes=place_hashes)
+
+            # B3: เจอสัญญาณบล็อกจริง → หยุดทั้งรอบทันที ส่งสัญญาณให้ auto_refresh พัก
+            if result and result.get("_blocked"):
+                block_streak += 1
+                if block_streak >= 2:
+                    print(f"  🛑 เจอบล็อกติดกัน {block_streak} ร้าน — หยุด scrape รอบนี้")
+                    await browser.close()
+                    return [{"_blocked": result["_blocked"]}]
+                continue
+            block_streak = 0
+
             if result:
                 # กรองเฉพาะสถานที่ในพิษณุโลก
                 if not is_in_phitsanulok(result.get("lat"), result.get("lng")):
@@ -800,7 +942,7 @@ async def run_scraper(
                     save_results(results, "phitsanulok_reviews_inprogress.json")
 
             if i < len(places) - 1:
-                delay = random.uniform(4.0, 8.0)
+                delay = random.uniform(8.0, 16.0)  # B1: หน่วงนานขึ้นลดโอกาสโดนบล็อก
                 print(f"  ⏳ Waiting {delay:.1f}s...")
                 await asyncio.sleep(delay)
 
@@ -853,7 +995,7 @@ async def _run_scraper_old(places: list[str] = None, headless: bool = True, max_
 
             # Longer delay between places
             if i < len(places) - 1:
-                delay = random.uniform(4.0, 8.0)
+                delay = random.uniform(8.0, 16.0)  # B1: หน่วงนานขึ้นลดโอกาสโดนบล็อก
                 print(f"  ⏳ Waiting {delay:.1f}s before next place...")
                 await asyncio.sleep(delay)
 
