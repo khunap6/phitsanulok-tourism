@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { formatThaiYear } from '../utils/thaiDate'
 
 export interface DateRange {
   from: string | null
@@ -34,13 +35,16 @@ function monthsAgo(n: number): DateRange {
 }
 
 function yearRange(y: number): DateRange {
-  return { from: `${y}-01-01`, to: `${y}-12-31`, label: `ปี ${y}` }
+  // from/to เป็น ค.ศ. (ISO) เสมอ — แปลงเป็น พ.ศ. แค่ใน label ที่เอาไปแสดงผล
+  // (เดิม label เขียน `ปี ${y}` เป็น ค.ศ. ขณะที่ dropdown ข้าง ๆ แสดง พ.ศ.
+  //  ทำให้บนจอเดียวกันมีทั้ง "ปี 2025" และ "2568" ซึ่งคนอ่านจะเข้าใจว่าคนละช่วงเวลา)
+  return { from: `${y}-01-01`, to: `${y}-12-31`, label: `ปี ${formatThaiYear(y)}` }
 }
 
 function monthRange(y: number, m: number): DateRange {
   const last = new Date(y, m, 0).getDate()  // วันสุดท้ายของเดือน
   const mm = String(m).padStart(2, '0')
-  const yr = y + 543  // แสดงเป็นพ.ศ.
+  const yr = formatThaiYear(y)
   return {
     from: `${y}-${mm}-01`,
     to: `${y}-${mm}-${String(last).padStart(2, '0')}`,
@@ -105,7 +109,7 @@ export default function DateRangeSelector({ value, onChange }: Props) {
           className="bg-brand-card border border-brand-border text-brand-text rounded-md px-2 py-1 text-xs focus:outline-none focus:border-brand-primary"
         >
           <option value="">— เลือกปี —</option>
-          {YEARS.map(y => <option key={y} value={y}>{y + 543}</option>)}
+          {YEARS.map(y => <option key={y} value={y}>{formatThaiYear(y)}</option>)}
         </select>
       </div>
 
@@ -123,7 +127,7 @@ export default function DateRangeSelector({ value, onChange }: Props) {
           className="bg-brand-card border border-brand-border text-brand-text rounded-md px-2 py-1 text-xs focus:outline-none focus:border-brand-primary"
         >
           <option value="">— ปี —</option>
-          {YEARS.map(y => <option key={y} value={y}>{y + 543}</option>)}
+          {YEARS.map(y => <option key={y} value={y}>{formatThaiYear(y)}</option>)}
         </select>
         <select
           value={mode === 'month' ? selectedMonth : ''}

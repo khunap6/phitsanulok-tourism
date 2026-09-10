@@ -45,6 +45,13 @@ class Place(Base):
     last_review_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     last_scan_new_reviews: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     consecutive_no_change: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # ผ่าน deep scan (เก็บรีวิวแบบไม่จำกัดจำนวน) ล่าสุดเมื่อไร — NULL = ยังไม่เคย
+    deep_scanned_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    # นับครั้งที่ deep scan ล้มเหลวเพราะ "เข้าไม่ถึงหน้ารีวิว" (ไม่นับตอนโดนบล็อก)
+    # ครบ DEEP_MAX_ATTEMPTS แล้วยัง deep_scanned_at IS NULL = ยอมแพ้
+    deep_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     updated_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )

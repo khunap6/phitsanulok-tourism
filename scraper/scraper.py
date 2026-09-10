@@ -17,6 +17,7 @@ from db.models import ScrapeJob
 from nlp.text_cleaner import clean_review_text
 from scraper.date_parser import parse_relative_date
 from scraper.scraper_core import (
+    DEEP_REVIEW_CAP,
     DISCOVER_MAX_REVIEWS,
     MAX_REVIEWS_PER_PLACE,
     PHITSANULOK_PLACES_FALLBACK,
@@ -25,6 +26,14 @@ from scraper.scraper_core import (
     run_scraper,
 )
 from scraper.zones import assign_zone, distance_to_campus_km
+
+# deep scan: commit ระหว่างทางทุกกี่รีวิว (ร้านละหลายนาที ถ้าพังตอนท้ายจะเสียงานทั้งรอบ)
+DEEP_COMMIT_EVERY_REVIEWS = 200
+# deep scan: เจอบล็อกติดกันกี่ร้านถึงหยุดรอบแล้วส่งสัญญาณให้ผู้เรียกไป backoff
+DEEP_BLOCK_STREAK_STOP = 2
+# deep scan: ล้มเหลวแบบ "เข้าไม่ถึงหน้ารีวิว" กี่ครั้งถึงเลิกตามร้านนั้น
+# (ยอมแพ้ = ไม่ตั้ง deep_scanned_at แต่ deep_attempts >= ค่านี้ → คิวรีแยกออกจาก "เก็บสำเร็จ" ได้)
+DEEP_MAX_ATTEMPTS = 3
 
 
 # ---------------------------------------------------------------------------
@@ -126,11 +135,15 @@ async def save_to_db(
     results: list[dict],
     session: AsyncSession,
     full_scrape: bool = True,
+    saved_place_ids: list[int] | None = None,
 ) -> tuple[int, int]:
     """
     Upsert places + insert reviews (skip duplicates via text_hash).
     full_scrape=False (โหมด discover) → เก็บ scraped_at เป็น NULL เพื่อให้ auto_refresh
     ดึงรีวิวเต็มทีหลัง (NULLS FIRST ในคิว refresh)
+    saved_place_ids: ถ้าส่ง list มา จะเติม id ที่ได้จาก RETURNING ของแถวที่บันทึกสำเร็จจริง
+      (deep scan ใช้ตัวนี้ตี deep_scanned_at — ห้ามเดาจากชื่อร้านที่ส่งเข้ามา
+       เพราะชื่อจริงบนหน้าเว็บอาจไม่ตรงกับชื่อที่ใช้ค้น)
     Returns (places_upserted, reviews_inserted_new).
     """
     places_count = 0
@@ -231,6 +244,8 @@ async def save_to_db(
 
         place_id = place_row.scalar_one()
         places_count += 1
+        if saved_place_ids is not None:
+            saved_place_ids.append(place_id)
 
         # Insert reviews — skip duplicates via (place_id, text_hash)
         for review in result.get("reviews", []):
@@ -442,6 +457,7 @@ async def _run_with_fallback(
     auto_discover: bool,
     max_reviews: int = MAX_REVIEWS_PER_PLACE,
     known_hashes_by_place: dict[str, set[str]] | None = None,
+    deep: bool = False,
 ) -> list[dict]:
     """Try Playwright up to 3 times. On repeated failure, use Selenium fallback."""
     last_exc = None
@@ -454,12 +470,20 @@ async def _run_with_fallback(
                 auto_discover=auto_discover,
                 max_reviews=max_reviews,
                 known_hashes_by_place=known_hashes_by_place,
+                deep=deep,
             )
         except Exception as e:
             last_exc = e
             print(f"[scraper] Playwright attempt {attempt}/3 failed: {e}")
             if attempt < 3:
                 await asyncio.sleep(5 * attempt)
+
+    # โหมด deep ห้ามตกไป Selenium — ตัวนั้นไม่รู้จัก deep และกรองเก็บเฉพาะรีวิว <=3 ดาว
+    # ถ้าปล่อยผ่าน จะได้ผลตื้นแล้วถูกตี deep_scanned_at = ร้านนั้นไม่ถูกหยิบมาทำอีกเลย
+    if deep:
+        print(f"[scraper] deep: Playwright ล้ม 3 ครั้ง ({last_exc}) — ข้ามร้านนี้ "
+              f"(ไม่ใช้ Selenium fallback) ไว้รอบหน้าค่อยหยิบมาทำใหม่")
+        return []
 
     print(f"[scraper] Playwright failed 3×. Switching to Selenium fallback...")
     fallback_places = places or PHITSANULOK_PLACES_FALLBACK
@@ -608,6 +632,169 @@ async def run_refresh(
                 "duration_sec": duration, "blocked": blocked_signal}
 
     except Exception as e:
+        await session.execute(
+            text("UPDATE scrape_jobs SET status='failed', error_msg=:msg, finished_at=NOW() WHERE id=:id"),
+            {"msg": str(e)[:500], "id": job_id},
+        )
+        await session.commit()
+        raise
+
+
+async def run_deep_scan(
+    session: AsyncSession,
+    place_names: list[str],
+    headless: bool = True,
+) -> dict:
+    """
+    Deep scan — เก็บรีวิวของร้านที่ระบุให้ครบที่สุด (ไม่ใช้ incremental early-stop)
+
+    ต่างจาก run_refresh:
+      - ไม่ส่ง known_hashes → scraper ไม่หยุดเมื่อเจอรีวิวเดิม (กันซ้ำด้วย ON CONFLICT แทน)
+      - เรียก scraper ทีละร้าน เพราะร้านละหลายนาที ถ้ารวมเป็นชุดแล้วพังกลางทางจะเสียงานทั้งชุด
+        และทำให้ตี deep_scanned_at ทีละร้านตอนสำเร็จจริงได้
+      - commit ทุก ~200 รีวิว ไม่ใช่ทีเดียวตอนจบ
+      - หน่วงระหว่างร้าน 20–40 วิ (นานกว่าโหมดปกติ เพราะ session deep หนักกว่ามาก)
+      - เจอบล็อกติดกัน 2 ร้าน → หยุดรอบแล้วคืน blocked ให้ผู้เรียกไป backoff
+
+    Returns {"places": int, "reviews_new": int, "duration_sec": float, "blocked": str|None}
+    """
+    started_at = datetime.now()
+    t0 = time()
+
+    job = ScrapeJob(job_type="deep", status="running", started_at=started_at)
+    session.add(job)
+    await session.flush()
+    job_id = job.id
+
+    places_count = 0
+    reviews_new = 0
+    blocked_signal: str | None = None
+
+    try:
+        pending_commit = 0
+        block_streak = 0
+        done_names: list[str] = []
+
+        for i, name in enumerate(place_names):
+            print(f"\n[deep {i + 1}/{len(place_names)}] {name}")
+
+            results = await _run_with_fallback(
+                places=[name],
+                headless=headless,
+                max_places=None,
+                auto_discover=False,
+                max_reviews=DEEP_REVIEW_CAP,
+                deep=True,
+            )
+
+            sig = next((r["_blocked"] for r in results if r and r.get("_blocked")), None)
+            # collected = จำนวนรีวิวที่ "ดึงมาจากหน้าเว็บ" (ไม่ใช่จำนวนที่ INSERT ลง DB)
+            collected = sum(len(r.get("reviews", [])) for r in results if r and not r.get("_blocked"))
+            # ธงจาก scrape_place: เข้าไม่ถึงหน้ารีวิว (กดแท็บไม่ติด / scroll แล้วไม่เจอการ์ดเลย)
+            reviews_failed = next(
+                (r["_reviews_failed"] for r in results if r and r.get("_reviews_failed")), None
+            )
+
+            # save_to_db ข้ามรายการที่เป็น _blocked / นอก bbox ให้อยู่แล้ว
+            saved_ids: list[int] = []
+            p_cnt, r_cnt = await save_to_db(results, session, saved_place_ids=saved_ids)
+            places_count += p_cnt
+            reviews_new += r_cnt
+            pending_commit += r_cnt
+
+            # เกณฑ์ "scrape สำเร็จ" ก่อนตี deep_scanned_at — ต้องครบทุกข้อ:
+            #   1. มี id จาก RETURNING  (หน้าร้านโหลดขึ้น อยู่ในพื้นที่ บันทึกลง DB แล้ว)
+            #   2. ไม่โดนบล็อก
+            #   3. เข้าถึงหน้ารีวิวได้จริง (ไม่ใช่กดแท็บไม่ติด / feed ไม่ render)
+            #   4. ดึงรีวิวมาได้อย่างน้อย 1 อัน
+            # ข้อ 3-4 ทำให้ "ร้านไม่มีรีวิว" กับ "เข้าไม่ถึงหน้ารีวิว" ไม่ถูกเหมารวมกัน —
+            # ทั้งคู่ไม่ถูกมาร์ค จึงถูกหยิบมาลองใหม่ได้เสมอ (เดิมเงื่อนไข existing == 0
+            # จะมาร์คร้านกลุ่ม zero ที่กดแท็บไม่ติดว่าเสร็จถาวร ซึ่งคือกลุ่มที่ตั้งใจจะไปกู้)
+            scraped_ok = bool(saved_ids) and not sig and not reviews_failed and collected > 0
+
+            if scraped_ok:
+                await session.execute(
+                    text("UPDATE places SET deep_scanned_at = NOW() WHERE id = ANY(:ids)"),
+                    {"ids": saved_ids},
+                )
+                done_names.extend(
+                    r["place_name"] for r in results if r and not r.get("_blocked")
+                )
+                print(f"   ✅ ดึงมา {collected} รีวิว (ใหม่ {r_cnt}) | ตี deep_scanned_at แล้ว")
+            elif not sig:
+                # นับ deep_attempts เฉพาะ "เข้าไม่ถึงหน้ารีวิว" ซึ่งเป็นความผิดของหน้าเว็บ
+                # ไม่นับตอนโดนบล็อก (กิ่งนี้ไม่รวมกรณี sig อยู่แล้ว) — โดนบล็อก 3 รอบติด
+                # ต้องไม่ทำให้ร้านที่ไม่ผิดอะไรถูกทิ้งถาวร
+                attempts = None
+                if reviews_failed and saved_ids:
+                    r = await session.execute(
+                        text("""
+                            UPDATE places SET deep_attempts = COALESCE(deep_attempts, 0) + 1
+                            WHERE id = ANY(:ids) RETURNING deep_attempts
+                        """),
+                        {"ids": saved_ids},
+                    )
+                    attempts = max((row[0] for row in r.fetchall()), default=None)
+
+                if reviews_failed:
+                    why = f"เข้าไม่ถึงหน้ารีวิว ({reviews_failed})"
+                elif not saved_ids:
+                    why = "หน้าร้านโหลดไม่ขึ้น/นอกพื้นที่พิษณุโลก"
+                else:
+                    why = "เข้าหน้ารีวิวได้แต่ดึงมาได้ 0 อัน"
+
+                if attempts is not None and attempts >= DEEP_MAX_ATTEMPTS:
+                    print(f"   ⛔ ไม่นับว่าสำเร็จ — {why} | ล้มเหลวครบ {attempts}/{DEEP_MAX_ATTEMPTS} ครั้ง "
+                          f"→ ยอมแพ้ ถอดออกจากคิว (deep_scanned_at ยังเป็น NULL)")
+                else:
+                    tail = (f" | ล้มเหลวครั้งที่ {attempts}/{DEEP_MAX_ATTEMPTS}"
+                            if attempts is not None else "")
+                    print(f"   ⚠️  ไม่นับว่าสำเร็จ — {why}{tail} "
+                          f"→ ปล่อย deep_scanned_at เป็น NULL ไว้ทำรอบหน้า")
+
+            if sig:
+                block_streak += 1
+                print(f"   🛑 เจอสัญญาณบล็อก ({sig}) — ติดกัน {block_streak} ร้าน")
+                if block_streak >= DEEP_BLOCK_STREAK_STOP:
+                    blocked_signal = sig
+                    print(f"   หยุดรอบนี้ (บล็อกติดกัน {block_streak} ร้าน)")
+                    break
+            else:
+                block_streak = 0
+
+            if pending_commit >= DEEP_COMMIT_EVERY_REVIEWS:
+                await session.commit()
+                print(f"   💾 commit ระหว่างทาง (สะสม {pending_commit} รีวิว)")
+                pending_commit = 0
+
+            if i < len(place_names) - 1:
+                delay = random.uniform(20.0, 40.0)
+                print(f"   ⏳ พัก {delay:.0f} วิ ก่อนร้านถัดไป")
+                await asyncio.sleep(delay)
+
+        await session.commit()
+
+        # อัปเดตค่าอ้างอิงเฉพาะร้านที่ scrape สำเร็จจริง (ชื่อจริงจากหน้าเว็บ)
+        if done_names:
+            await update_scan_stats(session, done_names)
+
+        duration = round(time() - t0, 1)
+        job_status = "blocked" if blocked_signal else "done"
+        await session.execute(
+            text("""
+                UPDATE scrape_jobs
+                SET status=:st, places_count=:p, reviews_count=:r, finished_at=NOW()
+                WHERE id=:id
+            """),
+            {"st": job_status, "p": places_count, "r": reviews_new, "id": job_id},
+        )
+        await session.commit()
+        print(f"[deep] Done — {places_count} places, {reviews_new} new reviews ({duration}s)")
+        return {"places": places_count, "reviews_new": reviews_new,
+                "duration_sec": duration, "blocked": blocked_signal}
+
+    except Exception as e:
+        await session.rollback()
         await session.execute(
             text("UPDATE scrape_jobs SET status='failed', error_msg=:msg, finished_at=NOW() WHERE id=:id"),
             {"msg": str(e)[:500], "id": job_id},

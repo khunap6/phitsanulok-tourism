@@ -5,6 +5,9 @@ import {
   Marker,
 } from '@react-google-maps/api'
 import { useState } from 'react'
+import DateRangeSelector from '../components/DateRangeSelector'
+import { STATUS_OPTIONS } from '../components/StatusBadge'
+import { useDateRange } from '../hooks/useDateRange'
 import { useMapGeoJSON } from '../hooks/useInsights'
 import type { GeoFeatureProperties } from '../types'
 
@@ -39,11 +42,20 @@ interface SelectedFeature {
 }
 
 export default function MapView() {
-  const { data: geoJSON, isLoading } = useMapGeoJSON()
+  // ช่วงเวลาอยู่ใน URL — ค่าตรงกับหน้าอื่นอัตโนมัติ (ดู hooks/useDateRange.ts)
+  const [dateRange, setDateRange] = useDateRange()
+  // default 'all' ให้ตรงกับพฤติกรรมเดิมของแผนที่ (แสดงร้านปิดด้วย)
+  const [bizStatus, setBizStatus] = useState('all')
+  const { data: geoJSON, isLoading } = useMapGeoJSON(dateRange, bizStatus)
+  // ฐานเทียบ "จาก N สถานที่" — ไม่กรองอะไรเลย
+  // ตอนไม่ได้กรอง queryKey ตรงกับคิวรีข้างบน react-query จึงยิงครั้งเดียว
+  const { data: allGeoJSON } = useMapGeoJSON()
   const [selected, setSelected] = useState<SelectedFeature | null>(null)
   const [severityFilter, setSeverityFilter] = useState<string>('all')
 
   const features = geoJSON?.features ?? []
+  const totalPlaces = allGeoJSON?.features.length ?? 0
+  const isFiltered = Boolean(dateRange.from || dateRange.to) || bizStatus !== 'all'
   const filtered =
     severityFilter === 'all'
       ? features
@@ -64,7 +76,37 @@ export default function MapView() {
   }
 
   return (
-    <div className="flex h-screen bg-brand-bg overflow-hidden">
+    <div className="flex flex-col h-screen bg-brand-bg overflow-hidden">
+      {/* แถบเครื่องมือ — flex-none: สูงเท่าเนื้อหา ไม่ hardcode px จอเล็กจึงไม่พัง */}
+      <div className="flex-none bg-brand-card border-b border-brand-border px-4 py-2 space-y-2">
+        <DateRangeSelector value={dateRange} onChange={setDateRange} />
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-brand-subtext text-sm shrink-0">🏪 สถานะร้าน:</span>
+          <div className="flex flex-wrap gap-1.5">
+            {STATUS_OPTIONS.map(opt => (
+              <button
+                key={opt.key}
+                onClick={() => setBizStatus(opt.key)}
+                className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                  bizStatus === opt.key
+                    ? 'bg-brand-primary text-white'
+                    : 'bg-brand-card text-brand-subtext hover:text-brand-text border border-brand-border'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <span className="text-brand-subtext text-xs ml-auto">
+            แสดง <b className="text-brand-text">{filtered.length}</b>
+            {isFiltered && totalPlaces > 0 ? ` จาก ${totalPlaces}` : ''} สถานที่
+            {isFiltered ? ' (เฉพาะที่มีรีวิวในช่วงที่เลือก)' : ''}
+          </span>
+        </div>
+      </div>
+
+      {/* เนื้อหา: sidebar + แผนที่ — flex-1 กินพื้นที่ที่เหลือทั้งหมด */}
+      <div className="flex flex-1 min-h-0">
       {/* Sidebar */}
       <aside className="w-64 bg-brand-card border-r border-brand-border p-4 flex flex-col gap-4 z-10">
         <div>
@@ -188,6 +230,7 @@ export default function MapView() {
             )}
           </GoogleMap>
         </LoadScript>
+      </div>
       </div>
     </div>
   )

@@ -1,3 +1,5 @@
+import { formatRateOf } from '../utils/format'
+
 interface SeverityBreakdown {
   high: number
   medium: number
@@ -20,6 +22,15 @@ interface KPICardProps {
   breakdown?: SeverityBreakdown
   /** ร้านที่เสี่ยงสูงสุด — โชว์รายชื่อกันเข้าใจผิดว่าคอมมาจากร้านเดียว */
   riskPlaces?: RiskPlace[]
+  /**
+   * สัดส่วนของตัวเลขหลัก — ต้องส่ง denominator มาด้วยเสมอ
+   * เพราะกฎของโปรเจกต์คือห้ามโชว์ % โดยไม่มี n ควบคู่ (utils/format.ts)
+   * rate = null → แสดง "—" ไม่ใช่ 0%
+   */
+  rate?: number | null
+  denominator?: number | null
+  /** ตัวส่วนคืออะไร เช่น "รีวิวที่มีข้อความ" / "คำบ่นทั้งหมด" — ห้ามละ */
+  rateOf?: string
 }
 
 export default function KPICard({
@@ -30,6 +41,9 @@ export default function KPICard({
   unit,
   breakdown,
   riskPlaces,
+  rate,
+  denominator,
+  rateOf = 'รีวิวที่มีข้อความ',
 }: KPICardProps) {
   return (
     <div className="bg-brand-card rounded-xl p-5 border border-brand-border flex flex-col gap-1">
@@ -40,6 +54,12 @@ export default function KPICard({
           <span className="text-sm font-normal text-brand-subtext">{unit}</span>
         )}
       </p>
+
+      {rate !== undefined && (
+        <p className="text-brand-subtext text-xs">
+          {formatRateOf(rate, typeof value === 'number' ? value : null, denominator, rateOf)}
+        </p>
+      )}
 
       {breakdown && (
         <div className="flex flex-wrap gap-3 text-xs mt-1">

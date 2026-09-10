@@ -86,6 +86,17 @@ def build(data: ReportData, out_path: str) -> str:
     sr.font.size = Pt(11)
     sr.font.color.rgb = GRAY
 
+    # ── ฐานข้อมูลที่ใช้ — พิมพ์ลงเอกสารเพื่อให้รายงานป้องกันตัวเองได้ ──
+    # ไม่ว่าจะเลือกฐานไหน คนอ่านต้องรู้ทันทีว่ากำลังดูอะไรอยู่
+    # ดีกว่าตัวเลขที่ถูกแต่ไม่มีคำอธิบาย
+    base = doc.add_paragraph()
+    base.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    br = base.add_run(f"ฐานข้อมูล: {data.base_label}\n"
+                      f"รีวิวที่ให้ดาวอย่างเดียว {data.excluded_no_text:,} รายการ "
+                      f"ไม่ถูกนับ (ไม่มีข้อความให้วิเคราะห์)")
+    br.font.size = Pt(9)
+    br.font.color.rgb = GRAY
+
     if not data.has_data:
         doc.add_paragraph()
         p = doc.add_paragraph()

@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import CategoryDrilldown from '../components/CategoryDrilldown'
-import DateRangeSelector, { ALL_TIME, type DateRange } from '../components/DateRangeSelector'
+import DateRangeSelector, { type DateRange } from '../components/DateRangeSelector'
 import KPICard from '../components/KPICard'
 import PainPointChart from '../components/PainPointChart'
 import PositiveHighlights from '../components/PositiveHighlights'
 import { STATUS_OPTIONS } from '../components/StatusBadge'
 import TrendingPanel from '../components/TrendingPanel'
-import type { ViewMode } from '../hooks/useInsights'
+import { dateKey, type ViewMode } from '../hooks/useInsights'
+import { formatCount, formatRate } from '../utils/format'
+import { useDateRange } from '../hooks/useDateRange'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +23,24 @@ interface ZoneSummary {
   medium_count: number
   low_count: number
   top_category: string | null
+  /** ── ฟิลด์เชิงสัดส่วน (ฐานเข้ม: มีข้อความ + วิเคราะห์แล้ว + ผ่านตัวกรองสถานะ) ──
+   *  ห้ามจับคู่ % พวกนี้กับ review_count/analyzed_count ซึ่งเป็นฐานหลวม */
+  total_with_text?: number | null
+  negative_count?: number | null
+  complaint_rate?: number | null
+  severity_counts?: Record<string, number> | null
+  severity_share?: Record<string, number | null> | null
+}
+
+/** /insights/zones/{zone}/pain-points — คืน object เพราะต้องพก "ตัวส่วน" มาด้วย */
+interface ZonePainPoints {
+  items: { category: string; count: number
+           share_of_negative?: number | null; rate_of_all?: number | null }[]
+  total_with_text: number
+  sentiment_counts: { negative: number; positive: number; neutral: number }
+  complaint_rate: number | null
+  severity_counts: Record<string, number>
+  severity_share: Record<string, number | null>
 }
 
 interface PlaceTypeBreakdown {
@@ -44,7 +64,7 @@ function withDate(url: URL, dr?: DateRange): URL {
 
 function useZones(dr?: DateRange) {
   return useQuery<ZoneSummary[]>({
-    queryKey: ['zones', dr?.label ?? 'all'],
+    queryKey: ['zones', dateKey(dr)],
     queryFn: async () => {
       const url = withDate(new URL('/api/insights/zones', window.location.origin), dr)
       const res = await fetch(url.toString())
@@ -57,7 +77,7 @@ function useZones(dr?: DateRange) {
 
 function useZoneBreakdown(zone: string | null, viewMode: ViewMode, status: string, dr?: DateRange) {
   return useQuery<PlaceTypeBreakdown[]>({
-    queryKey: ['zone-breakdown', zone, viewMode, status, dr?.label ?? 'all'],
+    queryKey: ['zone-breakdown', zone, viewMode, status, dateKey(dr)],
     queryFn: async () => {
       if (!zone) return []
       const url = withDate(
@@ -76,21 +96,25 @@ function useZoneBreakdown(zone: string | null, viewMode: ViewMode, status: strin
 }
 
 function useZonePainPoints(zone: string | null, viewMode: ViewMode, status: string, dr?: DateRange) {
-  return useQuery<{ category: string; count: number }[]>({
-    queryKey: ['zone-pain-points', zone, viewMode, status, dr?.label ?? 'all'],
+  return useQuery<ZonePainPoints>({
+    queryKey: ['zone-pain-points', zone, viewMode, status, dateKey(dr)],
     queryFn: async () => {
-      if (!zone) return []
       const url = withDate(
-        new URL(`/api/insights/zones/${zone}/pain-points`, window.location.origin),
-        dr,
-      )
+        new URL(`/api/insights/zones/${zone}/pain-points`, window.location.origin), dr)
       url.searchParams.set('view_mode', viewMode)
       url.searchParams.set('status', status)
       const res = await fetch(url.toString())
-      if (!res.ok) return []
+      // ตัวส่วนเป็น 0 → rate เป็น null ทั้งหมด ฝั่ง UI จะแสดง "—" ไม่ใช่ 0%
+      if (!res.ok) {
+        return {
+          items: [], total_with_text: 0,
+          sentiment_counts: { negative: 0, positive: 0, neutral: 0 },
+          complaint_rate: null, severity_counts: {}, severity_share: {},
+        }
+      }
       return res.json()
     },
-    enabled: !!zone,
+    enabled: zone !== null,
     staleTime: 1000 * 60 * 5,
   })
 }
@@ -210,7 +234,12 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
   const [bizStatus, setBizStatus] = useState('operational')
   const [drillCategory, setDrillCategory] = useState<string | null>(null)
   const { data: breakdown = [], isLoading: breakLoading } = useZoneBreakdown(zone, viewMode, bizStatus, dateRange)
-  const { data: painPoints = [] } = useZonePainPoints(zone, viewMode, bizStatus, dateRange)
+  const { data: pp } = useZonePainPoints(zone, viewMode, bizStatus, dateRange)
+  const painPoints = pp?.items ?? []
+  // ตัวส่วนทั้งหมดมาจาก endpoint เดียวกับตัวเศษ (zone + view_mode + status + ช่วงเวลา)
+  // จึงไม่มีทางที่สลับสถานะร้านแล้ว % เพี้ยนเพราะตัวส่วนไม่ได้อัปเดตตาม (กฎ 1)
+  const negTotal = pp?.sentiment_counts?.negative ?? null
+  const withText = pp?.total_with_text ?? null
 
   // รวม top places จากทุกประเภทสถานที่ใน zone → เอา 3 ร้านที่เสี่ยงสูงสุดโชว์บน KPI card
   const topRiskPlaces = breakdown
@@ -282,18 +311,39 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
         <KPICard
           title="รีวิวที่วิเคราะห์"
           value={summary.analyzed_count}
-          subtitle={`จากทั้งหมด ${summary.review_count} รีวิว`}
+          subtitle={
+            `จากทั้งหมด ${formatCount(summary.review_count)} รีวิว · `
+            + `มีข้อความให้วิเคราะห์ ${formatCount(withText)} รีวิว`
+          }
           accentColor="#22d3ee"
+        />
+
+        <KPICard
+          title="อัตราการบ่น"
+          value={
+            pp?.complaint_rate == null
+              ? '—'
+              : `${(pp.complaint_rate * 100).toFixed(1)}%`
+          }
+          accentColor="#f97316"
+          subtitle={
+            pp?.complaint_rate == null
+              ? '—'
+              : `${formatCount(negTotal)}/${formatCount(withText)} ของรีวิวที่มีข้อความ`
+          }
         />
         <KPICard
           title="ปัญหาระดับสูง"
-          value={summary.high_count}
+          value={pp?.severity_counts?.['high'] ?? 0}
           unit="คอมเมนต์"
           accentColor="#ef4444"
+          rate={pp?.severity_share?.['high'] ?? null}
+          denominator={negTotal}
+          rateOf="คำบ่นทั้งหมด"
           breakdown={{
-            high: summary.high_count,
-            medium: summary.medium_count,
-            low: summary.low_count,
+            high: pp?.severity_counts?.['high'] ?? 0,
+            medium: pp?.severity_counts?.['medium'] ?? 0,
+            low: pp?.severity_counts?.['low'] ?? 0,
           }}
           riskPlaces={topRiskPlaces}
         />
@@ -311,6 +361,8 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
           <div>
             <PainPointChart
               data={painPoints}
+              negativeTotal={negTotal}
+              totalWithText={withText}
               title={
                 viewMode === 'praise'
                   ? `⭐ จุดเด่นใน${summary.label}`
@@ -333,7 +385,8 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
       )}
 
       {/* แนวโน้มปัญหาของโซนนี้ */}
-      <TrendingPanel zone={zone} zoneLabel={summary.label} />
+      <TrendingPanel zone={zone} zoneLabel={summary.label} dateRange={dateRange}
+                     status={bizStatus} />
 
       {/* Place type breakdown */}
       <div>
@@ -360,7 +413,8 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ZoneDashboard() {
-  const [dateRange, setDateRange] = useState<DateRange>(ALL_TIME)
+  // ช่วงเวลาอยู่ใน URL — ค่าตรงกับหน้าอื่นอัตโนมัติ (ดู hooks/useDateRange.ts)
+  const [dateRange, setDateRange] = useDateRange()
   const { data: zones = [], isLoading } = useZones(dateRange)
   const [activeZone, setActiveZone] = useState<string | null>(null)
 
@@ -418,7 +472,12 @@ export default function ZoneDashboard() {
                 </span>
               </div>
               <div className="text-brand-subtext text-xs mb-2">
-                {z.place_count} สถานที่ · {z.analyzed_count} รีวิว
+                {z.place_count} สถานที่ · {formatCount(z.analyzed_count)} รีวิว
+              </div>
+              {/* อัตราการบ่นของโซน — ตัวเลขที่เทียบข้ามโซนได้จริง ต่างจากจำนวนดิบ
+                  ที่โซนใหญ่ชนะเสมอ · formatRate ใส่ (a/b) ให้เองตามกฎ */}
+              <div className="text-brand-subtext text-[11px] mb-1.5">
+                บ่น {formatRate(z.complaint_rate, z.negative_count, z.total_with_text)}
               </div>
               <SeverityBar high={z.high_count} medium={z.medium_count} low={z.low_count} />
               <div className="flex justify-between text-xs mt-1.5">

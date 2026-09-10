@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import StatusBadge from './StatusBadge'
 import type { DateRange } from './DateRangeSelector'
-import type { ViewMode } from '../hooks/useInsights'
+import { dateKey, type ViewMode } from '../hooks/useInsights'
 
 // เติม date_from/date_to เข้า URL search params ถ้า DateRange ระบุ
 function appendDate(url: URL, dr?: DateRange) {
@@ -72,7 +72,7 @@ function usePlacesForCategory(
   viewMode: ViewMode = 'complaints', dateRange?: DateRange,
 ) {
   return useQuery<PlaceRow[]>({
-    queryKey: ['cat-places', category, zone ?? 'all', status, viewMode, dateRange?.label ?? 'all'],
+    queryKey: ['cat-places', category, zone ?? 'all', status, viewMode, dateKey(dateRange)],
     queryFn: async () => {
       const url = new URL('/api/insights/category-places', window.location.origin)
       url.searchParams.set('category', category)
@@ -94,7 +94,7 @@ function useReviewsForPlace(
   viewMode: ViewMode = 'complaints', dateRange?: DateRange,
 ) {
   return useQuery<ReviewRow[]>({
-    queryKey: ['cat-reviews', category, placeId, severity, sentiment, viewMode, dateRange?.label ?? 'all'],
+    queryKey: ['cat-reviews', category, placeId, severity, sentiment, viewMode, dateKey(dateRange)],
     queryFn: async () => {
       if (!placeId) return []
       const url = new URL('/api/insights/category-reviews', window.location.origin)

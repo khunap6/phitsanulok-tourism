@@ -10,6 +10,14 @@ Word ใช้ python-docx → แก้ไขต่อเองได้
   uv run python scripts/generate_report.py --format pdf          # เอาแค่ PDF
   uv run python scripts/generate_report.py --format docx         # เอาแค่ Word
   uv run python scripts/generate_report.py --out D:\\myreports    # เลือกโฟลเดอร์ปลายทาง
+  uv run python scripts/generate_report.py --status all          # รวมร้านที่ปิดแล้ว
+
+หมายเหตุเรื่อง --status:
+  default 'operational' ทำให้ตัวเลขในรายงานตรงกับที่เห็นบนแดชบอร์ด
+  แต่ business_status เป็น "สถานะปัจจุบัน" ไม่ใช่สถานะ ณ เดือนนั้น รายงานเดือนเดียวกัน
+  ที่ออกวันนี้กับที่ออกอีกหลายเดือนข้างหน้าจึงได้ตัวเลขไม่เท่ากัน (มีร้านปิดเพิ่ม)
+  ถ้าต้องการ 'บันทึกอดีต' ที่ตัวเลขไม่ขยับ ให้ใช้ --status all
+  ไม่ว่าเลือกแบบไหน ฐานที่ใช้จะถูกพิมพ์กำกับไว้ในหัวรายงานเสมอ
 """
 import argparse
 import asyncio
@@ -77,7 +85,8 @@ def parse_month(s: str | None) -> tuple[int, int] | None:
     return int(y), int(m)
 
 
-async def main(month_arg: str | None, fmt: str, out_dir: str) -> None:
+async def main(month_arg: str | None, fmt: str, out_dir: str,
+               status: str = "operational") -> None:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -86,7 +95,7 @@ async def main(month_arg: str | None, fmt: str, out_dir: str) -> None:
         year, month = ym
         safe_print(f"กำลังสร้างรายงานเดือน {thai_month_label(year, month)} ...")
 
-        data = await collect(session, year, month)
+        data = await collect(session, year, month, status=status)
 
     if not data.has_data:
         safe_print(f"⚠️  ไม่มีข้อมูลรีวิวในเดือน {data.period_label} — จะสร้างรายงานเปล่าให้")
@@ -127,5 +136,9 @@ if __name__ == "__main__":
     ap.add_argument("--format", default="both", choices=["both", "pdf", "docx", "html"],
                     help="รูปแบบไฟล์ (default: both = PDF + Word)")
     ap.add_argument("--out", default=str(DEFAULT_OUT), help="โฟลเดอร์ปลายทาง")
+    ap.add_argument("--status", default="operational",
+                    choices=["operational", "closed", "all"],
+                    help="ฐานสถานะร้าน (default operational = ตรงกับหน้าจอ) · "
+                         "ใช้ all เมื่อต้องการบันทึกอดีตที่ตัวเลขไม่ขยับตามร้านที่ปิดทีหลัง")
     a = ap.parse_args()
-    asyncio.run(main(a.month, a.format, a.out))
+    asyncio.run(main(a.month, a.format, a.out, a.status))

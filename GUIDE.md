@@ -354,16 +354,56 @@ npm run dev
 | GET | `/api/places/{id}` | ข้อมูลสถานที่เดียว |
 | GET | `/api/places/nearby?lat=&lng=&radius=` | สถานที่ในรัศมี (PostGIS) |
 | GET | `/api/places/{id}/pain-points` | สรุป pain point ของสถานที่ |
-| GET | `/api/places/{id}/reviews` | รีวิวของสถานที่ |
+| GET | `/api/places/{id}/reviews` | ⚠️ **DEPRECATED** — ใช้ `/api/reviews?place_id=` แทน (ดูตาราง Reviews) |
+
+### Reviews
+| Method | Path | หน้าที่ |
+|---|---|---|
+| GET | `/api/reviews` | รายการรีวิวแบบแบ่งหน้า — **ทางเดียวที่ควรใช้** |
+
+พารามิเตอร์ของ `/api/reviews` (ไม่ส่ง = ไม่กรอง):
+
+| พารามิเตอร์ | ค่า | หน้าที่ |
+|---|---|---|
+| `place_id` | int | เฉพาะร้านเดียว (แทน `/places/{id}/reviews` เดิม) |
+| `date_from` / `date_to` | `YYYY-MM-DD` | ช่วงวันที่เขียนรีวิว |
+| `view_mode` | `complaints` \| `praise` \| `all` | คำบ่น / คำชม / ทั้งหมด |
+| `status` | `operational` \| `closed` \| `all` | สถานะร้าน |
+| `category` / `severity` | str | หมวด pain point / ระดับความรุนแรง |
+| `page` / `page_size` | int | แบ่งหน้า (page_size ≤ 100) |
+
+คืน `{total, hidden_no_text, page, page_size, items}` — `hidden_no_text` คือรีวิวที่เข้า
+เงื่อนไขครบแต่ไม่มีข้อความ (ให้ดาวอย่างเดียว) ถูกซ่อนจากรายการ ใช้บอกผู้ใช้ว่าซ่อนไปกี่รายการ
+
+> ⚠️ **อย่าใช้ `/api/places/{id}/reviews`** แม้จะดูเป็นทางการกว่า — ตัวนั้นไม่รู้จัก
+> `date_from`/`date_to`/`view_mode`/`status` จึงคืนรีวิวทุกช่วงเวลาทุกอารมณ์เสมอ
+> ถ้าหน้าจอกรองอยู่แล้วไปเรียกตัวนั้น ตัวเลขกับรายการจะไม่ตรงกันโดยไม่มีอะไรฟ้อง
 
 ### Insights
 | Method | Path | หน้าที่ |
 |---|---|---|
 | GET | `/api/insights/summary` | ภาพรวม KPIs + top categories |
 | GET | `/api/insights/top-places` | สถานที่ที่มีปัญหามากสุด |
-| GET | `/api/insights/categories` | นับรีวิวแต่ละหมวด |
-| GET | `/api/insights/heatmap` | GeoJSON สำหรับ heatmap |
+| GET | `/api/insights/positive-highlights` | หมวดที่ถูกชมบ่อยสุด |
+| GET | `/api/insights/zones` | สรุปแยกโซน |
+| GET | `/api/insights/zones/{zone}/pain-points` · `/breakdown` | รายละเอียดต่อโซน |
+| GET | `/api/insights/category-places` · `/category-reviews` | drill-down จากหมวด → ร้าน → รีวิว |
+| GET | `/api/insights/trending` | ตารางแนวโน้มปัญหาแยก bucket เวลา |
+| GET | `/api/insights/alerts` | แจ้งเตือนปัญหาที่เพิ่มขึ้น |
+| GET | `/api/insights/categories` | นับรีวิวแต่ละหมวด (frontend ไม่ได้เรียก) |
+| GET | `/api/insights/heatmap` | GeoJSON สำหรับ heatmap (frontend ไม่ได้เรียก) |
 | GET | `/api/map/geojson` | GeoJSON FeatureCollection ทุกสถานที่ |
+| GET | `/api/reports/months` · `/reports/download` | รายงานประจำเดือน (PDF/Word/HTML) |
+
+**ตัวกรองช่วงเวลา** — `summary`, `top-places`, `positive-highlights`, `zones`,
+`zones/{z}/*`, `category-*`, `trending`, `map/geojson`, `reviews` รับ
+`date_from`/`date_to` (`YYYY-MM-DD`) ทุกตัว ไม่ส่ง = ไม่กรอง
+ส่วน `map/geojson` และ `reviews` รับ `status` ด้วย (default `all` = ไม่กรอง)
+
+> ตัวกรองทั้งหมดมาจาก `api/filters.py` แหล่งเดียว (`date_filter` / `status_filter` /
+> `sentiment_filter` / `NON_PROBLEM_CATEGORIES`) — router และ `reports/report_data.py`
+> import จากที่นั่น **ห้ามเขียนซ้ำ** ไม่งั้นแก้ที่เดียวแล้วอีกที่ไม่เปลี่ยน
+> ตัวเลขบนแดชบอร์ดกับในรายงานจะไม่ตรงกัน
 
 ### Admin
 | Method | Path | หน้าที่ |

@@ -141,6 +141,11 @@ def render(data: ReportData) -> str:
   <h1>รายงาน Pain Point การท่องเที่ยวพิษณุโลก</h1>
   <div class="sub">ประจำเดือน {e(data.period_label)} · วิเคราะห์จากรีวิว Google Maps
   · สร้างเมื่อ {e(data.generated_at)}</div>
+  <div class="sub" style="margin-top:6px;font-size:11px">
+    ฐานข้อมูล: {e(data.base_label)}<br>
+    รีวิวที่ให้ดาวอย่างเดียว {data.excluded_no_text:,} รายการ ไม่ถูกนับ
+    (ไม่มีข้อความให้วิเคราะห์)
+  </div>
 </div>
 
 {kpis}

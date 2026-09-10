@@ -4,13 +4,22 @@ diag_reviews.py — วินิจฉัยว่าทำไม extract_review
 รัน: uv run python scripts/diag_reviews.py
 """
 import asyncio
+import sys
+
 from dotenv import load_dotenv
 load_dotenv()
 
 from playwright.async_api import async_playwright
-from scraper.scraper_core import wait_for_place_loaded, random_delay, scroll_reviews
+from scraper.scraper_core import (
+    open_reviews_tab,
+    random_delay,
+    reviews_feed_ready,
+    scroll_reviews,
+    wait_for_place_loaded,
+)
 
-PLACE = "Layers Cafe พิษณุโลก"
+# รับชื่อร้านจาก argv ได้ เช่น: uv run python scripts/diag_reviews.py "โกปี๊ฮับ พิษณุโลก"
+PLACE = sys.argv[1] if len(sys.argv) > 1 else "Layers Cafe พิษณุโลก"
 
 
 async def main():
@@ -48,17 +57,20 @@ async def main():
         """)
         print(f"ปุ่ม/แท็บในหน้า: {tabs}")
 
-        # คลิกแท็บรีวิว
-        clicked = False
-        try:
-            tab = page.locator('button', has_text="รีวิว").first
-            if await tab.count() > 0:
-                await tab.click(timeout=6000)
-                await random_delay(2.5, 3.5)
-                clicked = True
-        except Exception as e:
-            print(f"คลิกแท็บรีวิวไม่ได้: {e}")
-        print(f"คลิกแท็บรีวิว: {clicked}")
+        # ── ปุ่มที่มีคำว่า "รีวิว" ทั้งหมด (ดูว่ามีปุ่ม "เขียนรีวิว" ปนไหม) ──
+        review_labels = await page.evaluate("""
+            () => Array.from(document.querySelectorAll('button'))
+                    .map(b => (b.innerText || '').trim())
+                    .filter(t => t.includes('รีวิว'))
+        """)
+        print(f"<button> ที่มีคำว่า 'รีวิว': {review_labels}")
+        tab_role = await page.get_by_role("tab").filter(has_text="รีวิว").count()
+        print(f"element ที่มี role='tab' + คำว่า 'รีวิว': {tab_role}")
+
+        # ── เปิดแท็บด้วยโค้ดตัวจริงจาก scraper_core (ไม่ก็อปมาไว้ที่นี่ จะได้ทดสอบของจริง) ──
+        clicked = await open_reviews_tab(page)
+        print(f"open_reviews_tab() -> {clicked}  (True = เข้าถึง feed ได้จริง ไม่ใช่แค่กดติด)")
+        print(f"reviews_feed_ready() -> {await reviews_feed_ready(page)}")
 
         await scroll_reviews(page, times=8)
 

@@ -5,6 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_db
+from api.filters import date_filter, status_filter
 from api.schemas.analysis import ScrapeJobResponse
 
 router = APIRouter(tags=["system"])
@@ -39,10 +40,31 @@ async def list_scrape_jobs(
 
 
 @router.get("/map/geojson")
-async def map_geojson(db: Annotated[AsyncSession, Depends(get_db)]):
-    """Full GeoJSON FeatureCollection of all places for map rendering."""
+async def map_geojson(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    date_from: str | None = None,
+    date_to: str | None = None,
+    status: str = "all",
+):
+    """
+    GeoJSON FeatureCollection ของสถานที่ทั้งหมด สำหรับวาดแผนที่
+
+    date_from / date_to: กรองตามวันที่เขียนรีวิว
+      เมื่อกรอง จะใช้ INNER JOIN reviews → ร้านที่ไม่มีรีวิวในช่วงนั้น "หลุดออกไปเลย"
+      ไม่ใช่แสดงเป็น 0 — เพราะช่วงนั้นเราไม่มีอะไรจะพูดถึงร้านนั้นจริง ๆ
+      (ฝั่ง frontend บอกผู้ใช้ว่าแสดงกี่จาก 323 สถานที่)
+
+    status: default = "all" โดยเจตนา ต่างจาก endpoint อื่นที่ default 'operational'
+      เพราะแผนที่เดิมแสดงทุกร้านรวมร้านปิด ถ้าเปลี่ยน default เป็น operational
+      หมุดร้านปิดจะหายเงียบ ๆ ทั้งที่ผู้เรียกไม่ได้ส่งอะไรมา
+      อยากกรองให้ frontend ส่ง status มาชัด ๆ
+    """
+    date_sql, date_params = date_filter(date_from, date_to, "r")
+    # เมื่อกรองวันที่ ใช้ INNER JOIN reviews (ร้านที่ไม่มีรีวิวในช่วงจะหลุด) — ตามหลักการ
+    join_kind = "JOIN" if date_sql else "LEFT JOIN"
+    status_sql = status_filter(status, "p")
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT
                 p.id, p.name, p.overall_rating,
                 ST_X(p.location) AS lng,
@@ -53,11 +75,13 @@ async def map_geojson(db: Annotated[AsyncSession, Depends(get_db)]):
                 ARRAY_AGG(DISTINCT ar.pain_point_category)
                     FILTER (WHERE ar.pain_point_category IS NOT NULL)        AS pain_categories
             FROM places p
-            LEFT JOIN reviews r  ON r.place_id = p.id
+            {join_kind} reviews r  ON r.place_id = p.id {date_sql}
             LEFT JOIN analyzed_reviews ar ON ar.review_id = r.id
             WHERE p.location IS NOT NULL
+              {status_sql}
             GROUP BY p.id, p.name, p.overall_rating, p.location
-        """)
+        """),
+        date_params,
     )
     features = []
     for row in result.fetchall():

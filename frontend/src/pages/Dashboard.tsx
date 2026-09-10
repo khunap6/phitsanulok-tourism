@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import CategoryDrilldown from '../components/CategoryDrilldown'
-import DateRangeSelector, { ALL_TIME, type DateRange } from '../components/DateRangeSelector'
+import DateRangeSelector, { type DateRange } from '../components/DateRangeSelector'
 import KPICard from '../components/KPICard'
 import PainPointChart from '../components/PainPointChart'
 import PositiveHighlights from '../components/PositiveHighlights'
@@ -11,8 +11,10 @@ import TrendingPanel from '../components/TrendingPanel'
 import PlaceSelector from '../components/PlaceSelector'
 import ReviewList from '../components/ReviewList'
 import SeverityPie from '../components/SeverityPie'
-import { useInsights, useTopPlaces, type ViewMode } from '../hooks/useInsights'
-import { usePlaceReviews, usePlaces } from '../hooks/usePlaces'
+import { dateKey, useInsights, useTopPlaces, type ViewMode } from '../hooks/useInsights'
+import { formatCount, formatRate } from '../utils/format'
+import { useDateRange } from '../hooks/useDateRange'
+import { usePlaces } from '../hooks/usePlaces'
 import { useReviews } from '../hooks/useReviews'
 
 // ── Zone hooks ────────────────────────────────────────────────────────────
@@ -30,7 +32,7 @@ interface ZoneSummary {
 
 function useZones(dateRange?: DateRange) {
   return useQuery<ZoneSummary[]>({
-    queryKey: ['zones', dateRange?.label ?? 'all'],
+    queryKey: ['zones', dateKey(dateRange)],
     queryFn: async () => {
       const url = new URL('/api/insights/zones', window.location.origin)
       if (dateRange?.from) url.searchParams.set('date_from', dateRange.from)
@@ -62,27 +64,53 @@ export default function Dashboard() {
   const [filterCategory, setFilterCategory] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('complaints')
   const [bizStatus, setBizStatus] = useState('operational')
-  const [dateRange, setDateRange] = useState<DateRange>(ALL_TIME)
+  // ช่วงเวลาอยู่ใน URL — เปลี่ยนหน้า/refresh แล้วไม่หาย (ดู hooks/useDateRange.ts)
+  const [dateRange, setDateRange] = useDateRange()
   const [drillCategory, setDrillCategory] = useState<string | null>(null)
+  // จัดอันดับร้าน: จำนวนมากสุด vs อัตราสูงสุด (คนละคำถาม ต้องเลือกดูทีละแบบ)
+  const [placeSort, setPlaceSort] = useState<'count' | 'rate'>('count')
+  const MIN_REVIEWS_FOR_RATE = 30
 
   const { data: insights, isLoading: insightsLoading } = useInsights(viewMode, bizStatus, dateRange)
-  const { data: topPlaces } = useTopPlaces(5, bizStatus, dateRange)
+  const { data: topPlaces } = useTopPlaces(
+    5, bizStatus, dateRange, placeSort, MIN_REVIEWS_FOR_RATE,
+  )
   const { data: places = [] } = usePlaces()
   const { data: zones = [] } = useZones(dateRange)
 
-  // รีวิวตาม place ที่เลือก หรือ paginated ทั้งหมด
-  const { data: placeReviews = [], isLoading: placeReviewsLoading } = usePlaceReviews(
-    selectedPlace,
-    { severity: filterSeverity || undefined, category: filterCategory || undefined },
-  )
-  const { data: allReviews, isLoading: allReviewsLoading } = useReviews({
+  // รายการรีวิว — ใช้ /reviews ตัวเดียวทั้งโหมด "ทุกร้าน" และ "เลือกร้าน"
+  // (ส่ง place_id) เพื่อให้ตัวกรองหลักของหน้า ลำดับ และยอดรวม เป็นชุดเดียวกันเสมอ
+  const { data: reviewData, isLoading: reviewsLoading } = useReviews({
     severity: filterSeverity || undefined,
     category: filterCategory || undefined,
+    place_id: selectedPlace ?? undefined,
     page_size: 30,
+    dateRange,
+    viewMode,
+    status: bizStatus,
   })
+  const reviews = reviewData?.items ?? []
 
-  const reviews = selectedPlace ? placeReviews : (allReviews?.items ?? [])
-  const reviewsLoading = selectedPlace ? placeReviewsLoading : allReviewsLoading
+  // ── บรรทัดกำกับเหนือรายการรีวิว ─────────────────────────────────────────
+  // กฎ: ต้องบอก "ทุกตัวกรองที่กำลังทำงานอยู่" ห้ามละตัวใดตัวหนึ่ง เรียงลำดับคงที่
+  // เพื่อให้อ่านซ้ำได้ง่าย — ตัวที่ไม่ได้เลือกไม่ต้องเขียนถึง แต่ห้ามมีกรณีที่กรองอยู่
+  // แล้วไม่ปรากฏ เพราะคนอ่านจะเข้าใจว่าเห็นภาพกว้างกว่าความจริง
+  const VIEW_NOUN: Record<ViewMode, string> = {
+    complaints: 'คำบ่น', praise: 'คำชม', all: 'รีวิว',
+  }
+  const SEVERITY_NOUN: Record<string, string> = {
+    high: 'ระดับสูง', medium: 'ระดับกลาง', low: 'ระดับต่ำ',
+  }
+  const activeFilters = [
+    dateRange.from || dateRange.to ? dateRange.label : null,
+    bizStatus !== 'all' ? STATUS_OPTIONS.find(o => o.key === bizStatus)?.label : null,
+    selectedPlace ? places.find(p => p.id === selectedPlace)?.name : null,
+    filterCategory ? `หมวด${filterCategory}` : null,
+    filterSeverity ? SEVERITY_NOUN[filterSeverity] : null,
+  ].filter(Boolean)
+  const reviewCaption =
+    `${VIEW_NOUN[viewMode]} ${(reviewData?.total ?? 0).toLocaleString()} รายการ` +
+    (activeFilters.length ? ` · ${activeFilters.join(' · ')}` : '')
 
   // "ปัญหาหลัก" = ปัญหาจริงตัวแรก (ข้ามความคิดเห็นทั่วไป/อื่นๆ) เสมอ ไม่ว่าจะกดปุ่มไหน
   const NON_PROBLEM = ['ความคิดเห็นทั่วไป (ไม่ระบุปัญหา)', 'อื่นๆ']
@@ -142,18 +170,42 @@ export default function Dashboard() {
         <KPICard
           title="รีวิวที่วิเคราะห์แล้ว"
           value={insightsLoading ? '…' : (insights?.total_analyzed ?? 0)}
-          subtitle={`จากทั้งหมด ${insights?.total_reviews ?? 0} รีวิว`}
+          subtitle={
+            `จากทั้งหมด ${formatCount(insights?.total_reviews)} รีวิว · `
+            + `มีข้อความให้วิเคราะห์ ${formatCount(insights?.total_with_text)} รีวิว`
+          }
           accentColor="#22d3ee"
         />
         <KPICard
+          title="อัตราการบ่น"
+          value={
+            insights?.complaint_rate == null
+              ? '—'
+              : `${(insights.complaint_rate * 100).toFixed(1)}%`
+          }
+          accentColor="#f97316"
+          // ตัวเลขหลักเป็น % แล้ว บรรทัดรองจึงเขียนแค่ n/ตัวส่วน ไม่ซ้ำ % อีก
+          // (กฎคือ % ต้องมี n ควบคู่ ไม่ใช่ต้องเขียน % สองรอบ)
+          subtitle={
+            insights?.complaint_rate == null
+              ? '—'
+              : `${formatCount(insights.sentiment_counts?.negative)}`
+                + `/${formatCount(insights.total_with_text)} ของรีวิวที่มีข้อความ`
+          }
+        />
+
+        <KPICard
           title="ปัญหาระดับสูง"
-          value={insightsLoading ? '…' : (insights?.severity_distribution?.['high'] ?? 0)}
+          value={insightsLoading ? '…' : (insights?.severity_counts?.['high'] ?? 0)}
+          rate={insights?.severity_share?.['high'] ?? null}
+          denominator={insights?.sentiment_counts?.negative ?? null}
+          rateOf="คำบ่นทั้งหมด"
           unit="คอมเมนต์"
           accentColor="#ef4444"
           breakdown={{
-            high: insights?.severity_distribution?.['high'] ?? 0,
-            medium: insights?.severity_distribution?.['medium'] ?? 0,
-            low: insights?.severity_distribution?.['low'] ?? 0,
+            high: insights?.severity_counts?.['high'] ?? 0,
+            medium: insights?.severity_counts?.['medium'] ?? 0,
+            low: insights?.severity_counts?.['low'] ?? 0,
           }}
           riskPlaces={topPlaces?.slice(0, 3).map((p: any) => ({
             name: p.name,
@@ -202,6 +254,8 @@ export default function Dashboard() {
           {insights?.top_pain_point_categories && (
             <PainPointChart
               data={insights.top_pain_point_categories}
+              negativeTotal={insights.sentiment_counts?.negative ?? null}
+              totalWithText={insights.total_with_text ?? null}
               title={
                 viewMode === 'praise'
                   ? '⭐ หมวดที่ถูกชมมากที่สุด'
@@ -214,8 +268,12 @@ export default function Dashboard() {
           )}
         </div>
         <div>
-          {insights?.severity_distribution && (
-            <SeverityPie data={insights.severity_distribution} />
+          {insights?.severity_counts && (
+            <SeverityPie
+              data={insights.severity_counts}
+              share={insights.severity_share}
+              negativeTotal={insights.sentiment_counts?.negative ?? null}
+            />
           )}
         </div>
       </div>
@@ -231,32 +289,66 @@ export default function Dashboard() {
       )}
 
       {/* แนวโน้มปัญหาตามช่วงเวลา (นับจากวันที่เขียนรีวิว — ไม่ขึ้นกับตัวกรองด้านบน) */}
-      <TrendingPanel />
+      <TrendingPanel dateRange={dateRange} status={bizStatus} />
 
       {/* ดาวน์โหลดรายงานประจำเดือน */}
       <ReportDownload />
 
-      {/* Top problematic places */}
+      {/* Top problematic places — สลับดู "จำนวนมากสุด" กับ "อัตราสูงสุด" ได้ */}
       {topPlaces && topPlaces.length > 0 && (
         <div className="bg-brand-card rounded-xl p-5 border border-brand-border">
-          <h3 className="text-brand-text font-semibold mb-4">สถานที่ที่มีปัญหามากสุด (Top 5)</h3>
-          <div className="space-y-2">
-            {topPlaces.map((p: { id: number; name: string; high_count: number; review_count: number; business_status?: string }, i: number) => (
-              <div key={p.id} className="flex items-center gap-3">
-                <span className="text-brand-subtext w-5 text-sm">{i + 1}.</span>
-                <div className="flex-1 bg-brand-bg rounded-full h-5 overflow-hidden">
-                  <div
-                    className="h-full bg-red-500/70 rounded-full transition-all"
-                    style={{
-                      width: `${Math.min(100, (p.high_count / (topPlaces[0]?.high_count || 1)) * 100)}%`,
-                    }}
-                  />
+          <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
+            <div>
+              <h3 className="text-brand-text font-semibold">สถานที่ที่มีปัญหามากสุด (Top 5)</h3>
+              <p className="text-brand-subtext text-xs mt-0.5">
+                {placeSort === 'count'
+                  ? 'เรียงตามจำนวนคำบ่นระดับสูง — ร้านที่มีรีวิวเยอะจะได้เปรียบ'
+                  : `เรียงตามอัตรา = คำบ่นระดับสูง ÷ รีวิวที่มีข้อความ · `
+                    + `เฉพาะร้านที่มีรีวิวตั้งแต่ ${MIN_REVIEWS_FOR_RATE} ขึ้นไป`}
+              </p>
+            </div>
+            <div className="inline-flex rounded-lg border border-brand-border overflow-hidden">
+              {([['count', 'จำนวนมากสุด'], ['rate', 'อัตราสูงสุด']] as const).map(([k, lbl]) => (
+                <button
+                  key={k}
+                  onClick={() => setPlaceSort(k)}
+                  className={`px-3 py-1 text-xs transition-colors ${
+                    placeSort === k ? 'bg-brand-primary text-white'
+                                    : 'bg-brand-card text-brand-subtext hover:text-brand-text'
+                  }`}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2 mt-3">
+            {topPlaces.map((p, i) => {
+              // ความยาวแท่งอ้างกับตัวชี้วัดที่กำลังเรียงอยู่ ไม่ใช่จำนวนดิบเสมอ
+              const metric = placeSort === 'rate' ? (p.high_rate ?? 0) : p.high_count
+              const top = placeSort === 'rate'
+                ? (topPlaces[0]?.high_rate ?? 1)
+                : (topPlaces[0]?.high_count || 1)
+              return (
+                <div key={p.id} className="flex items-center gap-3">
+                  <span className="text-brand-subtext w-5 text-sm">{i + 1}.</span>
+                  <div className="flex-1 bg-brand-bg rounded-full h-5 overflow-hidden">
+                    <div
+                      className="h-full bg-red-500/70 rounded-full transition-all"
+                      style={{ width: `${Math.min(100, (metric / (top || 1)) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-brand-text text-sm w-40 truncate">{p.name}</span>
+                  <StatusBadge status={p.business_status} />
+                  {/* ห้ามโชว์ % โดยไม่มี n — formatRate ใส่ (a/b) ให้เสมอ */}
+                  <span className="text-red-400 text-sm w-40 text-right whitespace-nowrap">
+                    {placeSort === 'rate'
+                      ? formatRate(p.high_rate, p.high_count_with_text, p.review_count_with_text)
+                      : `🔥 ${formatCount(p.high_count)} สูง`}
+                  </span>
                 </div>
-                <span className="text-brand-text text-sm w-40 truncate">{p.name}</span>
-                <StatusBadge status={p.business_status} />
-                <span className="text-red-400 text-sm w-20 text-right">🔥 {p.high_count} สูง</span>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
@@ -347,7 +439,12 @@ export default function Dashboard() {
           </select>
         </div>
 
-        <ReviewList reviews={reviews} loading={reviewsLoading} />
+        <ReviewList
+          reviews={reviews}
+          loading={reviewsLoading}
+          caption={reviewCaption}
+          hiddenNoText={reviewData?.hidden_no_text}
+        />
       </div>
     </div>
   )

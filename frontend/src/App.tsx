@@ -13,11 +13,13 @@ const queryClient = new QueryClient({
 })
 
 function NavLink({ to, label }: { to: string; label: string }) {
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
   const active = pathname === to
   return (
     <Link
-      to={to}
+      // พา search params ไปด้วย — ช่วงเวลาที่เลือกเก็บไว้ใน URL (hooks/useDateRange.ts)
+      // ถ้าใช้ to={to} เปล่า ๆ query string จะหลุด แล้วเปลี่ยนหน้าทีก็รีเซ็ตเป็น "ทั้งหมด" ทุกที
+      to={{ pathname: to, search }}
       className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
         active
           ? 'bg-brand-primary text-white'

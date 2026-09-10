@@ -5,6 +5,14 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_db
+from api.filters import (
+    GENERAL_CATEGORY,
+    NON_PROBLEM_CATEGORIES,
+    _NONPROBLEM_IN,
+    date_filter,
+    sentiment_filter,
+    status_filter,
+)
 from api.schemas.analysis import (
     CategoryCount,
     GeoJSONCollection,
@@ -15,86 +23,39 @@ from api.schemas.analysis import (
 
 router = APIRouter(prefix="/insights", tags=["insights"])
 
-# หมวด "ความคิดเห็นทั่วไป" ไม่ใช่ pain point จริง — ตัดออกเมื่อดูโหมด "เฉพาะปัญหา"
-GENERAL_CATEGORY = "ความคิดเห็นทั่วไป (ไม่ระบุปัญหา)"
-
-# หมวดที่ "ไม่ใช่ปัญหา" — ไม่นับเป็น pain point ไม่ว่ากรณีใด
-NON_PROBLEM_CATEGORIES = [GENERAL_CATEGORY, "อื่นๆ", "ไม่มี"]
-# literal สำหรับ NOT IN (...) — ค่าเป็น constant ของเราเอง ปลอดภัยจาก injection
-_NONPROBLEM_IN = ", ".join("'" + c.replace("'", "''") + "'" for c in NON_PROBLEM_CATEGORIES)
+# ตัวกรองที่ใช้ร่วมกับ router อื่น (และรายงาน) อยู่ที่ api/filters.py แหล่งเดียว
+# ห้าม copy-paste มาไว้ที่นี่ — ดูเหตุผลใน docstring ของไฟล์นั้น
 
 # นิยาม "pain point" = รีวิวเชิงลบ (คำบ่น) เท่านั้น — ไม่นับคำชม/ความเห็นทั่วไป
+# ⚠️ dead code: ไม่มีที่ไหนเรียก คงไว้ที่นี่โดยเจตนา ไม่ย้ายเข้า api/filters.py
+# (เอา dead code ไปไว้ในโมดูลกลางจะทำให้มันดูเหมือนของสำคัญ แล้วคนต่อไปไม่กล้าลบ)
 NEGATIVE_ONLY = "ar.sentiment = 'negative'"
 
 
-def _parse_iso_date(s: str | None):
-    """แปลง 'YYYY-MM-DD' → date; asyncpg ไม่รับ str ต้องเป็น date จริง"""
-    if not s:
-        return None
-    from datetime import date
-    try:
-        y, m, d = s.split("-")
-        return date(int(y), int(m), int(d))
-    except (ValueError, AttributeError):
-        return None
-
-
-def date_filter(date_from: str | None, date_to: str | None, alias: str = "r") -> tuple[str, dict]:
-    """
-    คืน (SQL fragment, dict params) กรองรีวิวตามช่วงเวลา
-      date_from / date_to = 'YYYY-MM-DD' หรือ None
-    - ถ้าไม่ส่งทั้งคู่ = ไม่กรอง (ทำงานเหมือนเดิม)
-    - รีวิวที่ไม่มี review_date_approx จะถูกตัดออกเมื่อกรอง (ตามหลักการ)
-    """
-    conds = []
-    params: dict = {}
-    df = _parse_iso_date(date_from)
-    dt = _parse_iso_date(date_to)
-    if df:
-        conds.append(f"{alias}.review_date_approx >= :date_from")
-        params["date_from"] = df
-    if dt:
-        conds.append(f"{alias}.review_date_approx <= :date_to")
-        params["date_to"] = dt
-    return ("AND " + " AND ".join(conds) if conds else ""), params
-
-
-def sentiment_filter(view_mode: str, alias: str = "ar") -> str:
-    """
-    โหมดมุมมอง (3 ทาง):
-      'complaints' → รีวิวเชิงลบ (คำบ่นจริง) + ตัดหมวดที่ไม่ใช่ปัญหา
-      'praise'     → รีวิวเชิงบวก (คำชม)   + ตัดหมวดที่ไม่ใช่ปัญหา
-      'all' หรืออื่น → ไม่กรอง (ดูทุกรีวิวทุกอารมณ์ทุกหมวด)
-    ตัด "ความคิดเห็นทั่วไป/อื่นๆ/ไม่มี" ทั้งในโหมด complaints+praise
-    เพื่อให้เห็นหมวดที่มีสาระ (ปัญหา/จุดแข็ง)
-    """
-    if view_mode == "complaints":
-        return (f"AND {alias}.sentiment = 'negative' "
-                f"AND {alias}.pain_point_category NOT IN ({_NONPROBLEM_IN})")
-    if view_mode == "praise":
-        return (f"AND {alias}.sentiment = 'positive' "
-                f"AND {alias}.pain_point_category NOT IN ({_NONPROBLEM_IN})")
-    return ""
-
-
-# alias เดิม — เผื่อยังมี code ตรงไหนเรียกอยู่ (จะย้ายทั้งหมดใน commit นี้)
+# ⚠️ dead code เช่นกัน — alias เดิมของ sentiment_filter ไม่มีที่ไหนเรียก
 def pain_filter(pain_only: bool, alias: str = "ar") -> str:
     return sentiment_filter("complaints" if pain_only else "all", alias)
 
 
-def status_filter(status: str, alias: str = "p") -> str:
+# ฐานต่ำกว่านี้ในหนึ่ง bucket → ติดธง low_confidence (อัตราแกว่งแรงเกินจะอ่าน)
+LOW_CONFIDENCE_MIN = 30
+
+
+def _rate(numerator: int | None, denominator: int | None) -> float | None:
     """
-    คืน SQL fragment กรองสถานะร้าน
-      operational (default) = เฉพาะร้านที่เปิด
-      closed                = เฉพาะร้านที่ปิด (ถาวร + ชั่วคราว)
-      all                   = ทุกร้าน
+    สัดส่วน numerator/denominator — ตัวส่วนเป็น 0 หรือ None → คืน None ไม่ใช่ 0.0
+
+    0% = "วัดแล้วไม่พบ" · None = "ไม่มีข้อมูลให้วัด" คนละความหมาย
+    ถ้าคืน 0 เมื่อไม่มีข้อมูล กราฟจะวาดเส้นลงถึงศูนย์เหมือนปัญหาหมดไป
+    ทั้งที่จริงคือเดือนนั้นไม่มีรีวิวเลย
+
+    ⚠️ ตัวเศษกับตัวส่วนต้องมาจากคิวรีที่ผ่านชุดกรองเดียวกัน (ช่วงเวลา + สถานะร้าน
+    + text_clean <> '' + มีแถวใน analyzed_reviews) ไม่งั้นจะได้ % เกิน 100
+    หรือต่ำผิดปกติแบบหาสาเหตุไม่เจอ
     """
-    if status == "closed":
-        return (f"AND COALESCE({alias}.business_status,'operational') "
-                f"IN ('closed_permanently','closed_temporarily')")
-    if status == "all":
-        return ""
-    return f"AND COALESCE({alias}.business_status,'operational') = 'operational'"
+    if not denominator:
+        return None
+    return (numerator or 0) / denominator
 
 
 @router.get("/zones")
@@ -102,9 +63,20 @@ async def zone_summary(
     db: Annotated[AsyncSession, Depends(get_db)],
     date_from: str | None = None,
     date_to: str | None = None,
+    status: str = "all",
 ):
-    """สรุป pain point แยกตามโซนพื้นที่ (กรองช่วงเวลาได้)"""
+    """
+    สรุป pain point แยกตามโซนพื้นที่ (กรองช่วงเวลาได้)
+
+    status: default "all" = ไม่กรอง → ไม่ส่งมาก็ได้ค่าเท่าเดิมทุกตัว
+
+    ฟิลด์เชิงสัดส่วน (ฐานเข้ม: มีข้อความ + วิเคราะห์แล้ว + ผ่าน status):
+      total_with_text · negative_count · complaint_rate · severity_counts · severity_share
+    ฟิลด์เดิม (review_count / analyzed_count / high_count / ...) ไม่กรอง text_clean
+    จึงห้ามเอาไปเป็นตัวส่วนของสัดส่วนใหม่ (กฎ 1)
+    """
     date_sql, date_params = date_filter(date_from, date_to)
+    biz_filter = status_filter(status)
     # เมื่อกรองวันที่ ใช้ INNER JOIN reviews (คนไม่มี date จะหลุด) — ตามหลักการ
     join_kind = "JOIN" if date_sql else "LEFT JOIN"
     result = await db.execute(
@@ -132,6 +104,30 @@ async def zone_summary(
     )
     rows = result.fetchall()
 
+    # ── ฐานเชิงสัดส่วนต่อโซน — คิวรีแยกเพื่อไม่แตะตัวเลขเดิม ──
+    base_result = await db.execute(
+        text(f"""
+            SELECT COALESCE(p.zone, 'other') AS zone,
+                   COUNT(*)                                          AS total_with_text,
+                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative')  AS neg,
+                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative'
+                                      AND ar.severity = 'high')       AS sev_high,
+                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative'
+                                      AND ar.severity = 'medium')     AS sev_medium,
+                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative'
+                                      AND ar.severity = 'low')        AS sev_low
+            FROM analyzed_reviews ar
+            JOIN reviews r ON r.id = ar.review_id
+            JOIN places  p ON p.id = r.place_id
+            WHERE r.text_clean <> ''
+              {biz_filter}
+              {date_sql}
+            GROUP BY COALESCE(p.zone, 'other')
+        """),
+        date_params,
+    )
+    base = {b.zone: b for b in base_result.fetchall()}
+
     zone_labels = {
         "naresuan":   "รอบ ม.นเรศวร",
         "rajabhat":   "รอบ ม.ราชภัฏ",
@@ -139,8 +135,18 @@ async def zone_summary(
         "other":      "อื่นๆ พิษณุโลก",
     }
 
-    return [
-        {
+    out = []
+    for r in rows:
+        b = base.get(r.zone)
+        sev = {
+            "high": (b.sev_high if b else 0),
+            "medium": (b.sev_medium if b else 0),
+            "low": (b.sev_low if b else 0),
+        }
+        neg = b.neg if b else 0
+        twt = b.total_with_text if b else 0
+        out.append({
+            # ── ฟิลด์เดิม ──
             "zone": r.zone,
             "label": zone_labels.get(r.zone, r.zone),
             "place_count": r.place_count,
@@ -150,9 +156,14 @@ async def zone_summary(
             "medium_count": r.medium_count or 0,
             "low_count": r.low_count or 0,
             "top_category": r.top_category,
-        }
-        for r in rows
-    ]
+            # ── ฟิลด์ใหม่เชิงสัดส่วน (ฐานเข้ม) ──
+            "total_with_text": twt,
+            "negative_count": neg,
+            "complaint_rate": _rate(neg, twt),
+            "severity_counts": sev,
+            "severity_share": {k: _rate(v, neg) for k, v in sev.items()},
+        })
+    return out
 
 
 @router.get("/zones/{zone}/pain-points")
@@ -164,10 +175,49 @@ async def zone_pain_points(
     date_from: str | None = None,
     date_to: str | None = None,
 ):
-    """Pain point categories ของโซน (view_mode: complaints/praise/all)"""
+    """
+    Pain point categories ของโซน (view_mode: complaints/praise/all)
+
+    คืน object ไม่ใช่ list เพราะต้องส่ง "ตัวส่วน" มาด้วย — ตัวเลข % บนหน้าเว็บ
+    ต้องมี n ควบคู่เสมอ และตัวเศษ/ตัวส่วนต้องมาจากชุดกรองเดียวกัน (กฎ 1)
+    ถ้าให้ UI ไปหยิบตัวส่วนจาก /insights/zones (ซึ่งไม่รู้ status ของแผงนี้)
+    พอผู้ใช้สลับสถานะร้าน ตัวเศษจะเปลี่ยนแต่ตัวส่วนไม่เปลี่ยน → % ผิดเงียบ ๆ
+
+    {
+      items: [{category, count, share_of_negative, rate_of_all}],
+      total_with_text, sentiment_counts, complaint_rate,
+      severity_counts, severity_share
+    }
+    """
     general_filter = sentiment_filter(view_mode)
     biz_filter = status_filter(status)
     date_sql, date_params = date_filter(date_from, date_to)
+
+    # ── ฐานของโซนนี้ ใช้ตัวกรองชุดเดียวกับคิวรีหมวด (ต่างแค่ไม่กรอง sentiment/หมวด) ──
+    base_result = await db.execute(
+        text(f"""
+            SELECT COUNT(*)                                         AS total_with_text,
+                   COUNT(*) FILTER (WHERE ar.sentiment='negative')  AS neg,
+                   COUNT(*) FILTER (WHERE ar.sentiment='positive')  AS pos,
+                   COUNT(*) FILTER (WHERE ar.sentiment='neutral')   AS neu,
+                   COUNT(*) FILTER (WHERE ar.sentiment='negative'
+                                      AND ar.severity='high')       AS sev_high,
+                   COUNT(*) FILTER (WHERE ar.sentiment='negative'
+                                      AND ar.severity='medium')     AS sev_medium,
+                   COUNT(*) FILTER (WHERE ar.sentiment='negative'
+                                      AND ar.severity='low')        AS sev_low
+            FROM analyzed_reviews ar
+            JOIN reviews r  ON r.id = ar.review_id
+            JOIN places p   ON p.id = r.place_id
+            WHERE COALESCE(p.zone, 'other') = :zone
+              AND r.text_clean <> ''
+              {biz_filter}
+              {date_sql}
+        """),
+        {"zone": zone, **date_params},
+    )
+    b = base_result.fetchone()
+
     result = await db.execute(
         text(f"""
             SELECT ar.pain_point_category AS category, COUNT(*) AS count
@@ -186,7 +236,25 @@ async def zone_pain_points(
         """),
         {"zone": zone, "general": GENERAL_CATEGORY, **date_params},
     )
-    return [{"category": r.category, "count": r.count} for r in result.fetchall()]
+    # share_of_negative มีความหมายเฉพาะโหมด complaints (เหมือน /insights/summary)
+    share_base = b.neg if view_mode == "complaints" else None
+    sev = {"high": b.sev_high, "medium": b.sev_medium, "low": b.sev_low}
+    return {
+        "items": [
+            {
+                "category": r.category,
+                "count": r.count,
+                "share_of_negative": _rate(r.count, share_base),
+                "rate_of_all": _rate(r.count, b.total_with_text),
+            }
+            for r in result.fetchall()
+        ],
+        "total_with_text": b.total_with_text,
+        "sentiment_counts": {"negative": b.neg, "positive": b.pos, "neutral": b.neu},
+        "complaint_rate": _rate(b.neg, b.total_with_text),
+        "severity_counts": sev,
+        "severity_share": {k: _rate(v, b.neg) for k, v in sev.items()},
+    }
 
 
 @router.get("/zones/{zone}/breakdown")
@@ -487,6 +555,41 @@ async def insights_summary(
 
     general_filter = sentiment_filter(view_mode)
     biz_filter = status_filter(status)
+
+    # ── ฐานเดียวของทุกตัวชี้วัดเชิงสัดส่วน (กฎ 1) ────────────────────────────
+    # ประชากร = รีวิวในช่วงที่เลือก ที่มีข้อความ + มีแถวใน analyzed_reviews
+    #           + ผ่าน status_filter  → ใช้เป็นตัวส่วนทุกตัวในบล็อกนี้
+    # ต่างจาก total_reviews/total_analyzed (ฟิลด์เดิม) ที่ไม่กรอง text_clean/status
+    # จึงห้ามเอาฟิลด์เดิมมาเป็นตัวส่วนของสัดส่วนใหม่
+    base_result = await db.execute(
+        text(f"""
+            SELECT
+                COUNT(*)                                                    AS total_with_text,
+                COUNT(*) FILTER (WHERE ar.sentiment = 'negative')           AS neg,
+                COUNT(*) FILTER (WHERE ar.sentiment = 'positive')           AS pos,
+                COUNT(*) FILTER (WHERE ar.sentiment = 'neutral')            AS neu,
+                COUNT(*) FILTER (WHERE ar.sentiment = 'negative'
+                                   AND ar.severity = 'high')                AS sev_high,
+                COUNT(*) FILTER (WHERE ar.sentiment = 'negative'
+                                   AND ar.severity = 'medium')              AS sev_medium,
+                COUNT(*) FILTER (WHERE ar.sentiment = 'negative'
+                                   AND ar.severity = 'low')                 AS sev_low
+            FROM analyzed_reviews ar
+            JOIN reviews r ON r.id = ar.review_id
+            JOIN places  p ON p.id = r.place_id
+            WHERE r.text_clean <> ''
+              {biz_filter}
+              {date_sql}
+        """),
+        date_params,
+    )
+    b = base_result.fetchone()
+    total_with_text = b.total_with_text
+    sentiment_counts = {"negative": b.neg, "positive": b.pos, "neutral": b.neu}
+    # severity มีความหมายเฉพาะรีวิวเชิงลบ → ตัวส่วนของ severity_share คือคำบ่นทั้งหมด
+    severity_counts = {"high": b.sev_high, "medium": b.sev_medium, "low": b.sev_low}
+    severity_share = {k: _rate(v, b.neg) for k, v in severity_counts.items()}
+
     cat_result = await db.execute(
         text(f"""
             SELECT ar.pain_point_category AS category, COUNT(*) AS count
@@ -504,8 +607,17 @@ async def insights_summary(
         """),
         {"general": GENERAL_CATEGORY, **date_params},
     )
+    # share_of_negative มีความหมายเฉพาะโหมด complaints เพราะตัวเศษเป็นรีวิวเชิงลบ
+    # โหมด praise ตัวเศษเป็นรีวิวเชิงบวก / โหมด all รวมทุกอารมณ์ → หารด้วยคำบ่น
+    # จะได้ค่าไร้ความหมายและเกิน 100% ได้ จึงคืน None (ชื่อฟิลด์ต้องไม่โกหก)
+    _share_base = b.neg if view_mode == "complaints" else None
     top_categories = [
-        {"category": r.category, "count": r.count}
+        {
+            "category": r.category,
+            "count": r.count,
+            "share_of_negative": _rate(r.count, _share_base),
+            "rate_of_all": _rate(r.count, total_with_text),
+        }
         for r in cat_result.fetchall()
     ]
 
@@ -543,13 +655,31 @@ async def insights_summary(
     ]
 
     return {
+        # ── ฟิลด์เดิม (กฎ 3: ห้ามลบ ห้ามเปลี่ยนชนิด ห้ามเปลี่ยนค่า) ──
         "total_places": total_places,
         "total_reviews": total_reviews,
         "total_analyzed": total_analyzed,
         "top_pain_point_categories": top_categories,
         "severity_distribution": severity_dist,
         "worst_places": worst_places,
+        # ── ฟิลด์ใหม่เชิงสัดส่วน ทั้งหมดคิดจากฐาน total_with_text ──
+        "total_with_text": total_with_text,
+        "sentiment_counts": sentiment_counts,
+        "complaint_rate": _rate(b.neg, total_with_text),
+        # severity_counts คือ severity บนฐานเดียวกับ severity_share
+        # (ต่างจาก severity_distribution ที่ไม่กรอง text_clean/status —
+        #  ห้ามเอา % ใหม่ไปแสดงคู่กับจำนวนเดิม เพราะคนละประชากร)
+        "severity_counts": severity_counts,
+        "severity_share": severity_share,
     }
+
+
+# นิพจน์ตัวเศษ/ตัวส่วนของ high_rate — ต้องกรอง text_clean ทั้งสองฝั่ง (กฎ 1)
+# วัดจริง: 46 จาก 775 ของ high+negative เป็นรีวิวที่ให้ดาวอย่างเดียว (ไม่มีข้อความ)
+# ถ้าใช้ high_count เดิมเป็นตัวเศษคู่กับตัวส่วนที่กรอง text_clean จะเป่าอัตราให้สูงเกินจริง
+_HIGH_WITH_TEXT = ("COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high' "
+                   "AND ar.sentiment = 'negative' AND r.text_clean <> '')")
+_REVIEWS_WITH_TEXT = "COUNT(DISTINCT r.id) FILTER (WHERE r.text_clean <> '')"
 
 
 @router.get("/top-places")
@@ -559,9 +689,38 @@ async def top_problematic_places(
     status: str = "operational",
     date_from: str | None = None,
     date_to: str | None = None,
+    sort: str = "count",
+    min_reviews: int = 30,
 ):
+    """
+    ร้านที่มีปัญหามากสุด — เรียงได้ 2 แบบ
+
+    sort='count' (default) → เรียงตาม high_count เหมือนเดิมทุกประการ
+                             ร้านที่มีรีวิวเยอะจะได้เปรียบเสมอ (ยอดดิบ)
+    sort='rate'            → เรียงตาม high_rate เฉพาะร้านที่มีรีวิว (ที่มีข้อความ)
+                             ตั้งแต่ min_reviews ขึ้นไป — 3 รีวิว บ่น 2 = 67%
+                             ไม่ใช่ข้อมูล แต่เป็นเสียงรบกวน
+
+    ฟิลด์ใหม่ (ฟิลด์เดิมไม่แตะ ตามกฎ 3):
+      review_count_with_text = ตัวส่วนของ high_rate (review_count เดิมไม่กรอง
+                               text_clean จึงใช้เป็นตัวส่วนไม่ได้)
+      high_count_with_text   = ตัวเศษของ high_rate
+      high_rate              = high_count_with_text / review_count_with_text
+    """
     biz_filter = status_filter(status)
     date_sql, date_params = date_filter(date_from, date_to)
+    params: dict = {"lim": limit, **date_params}
+
+    if sort == "rate":
+        having = f"HAVING {_REVIEWS_WITH_TEXT} >= :min_reviews"
+        order = (f"ORDER BY {_HIGH_WITH_TEXT}::float / NULLIF({_REVIEWS_WITH_TEXT}, 0) "
+                 f"DESC NULLS LAST, high_count DESC")
+        params["min_reviews"] = min_reviews
+    else:
+        # ของเดิมเป๊ะ — ไม่ส่ง sort/min_reviews มา ต้องได้ผลเท่าเดิมทุกค่า
+        having = ""
+        order = "ORDER BY high_count DESC, medium_count DESC"
+
     result = await db.execute(
         text(f"""
             SELECT p.id, p.name,
@@ -569,7 +728,9 @@ async def top_problematic_places(
                    COALESCE(p.business_status, 'operational') AS business_status,
                    COUNT(DISTINCT r.id)                                          AS review_count,
                    COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high'   AND ar.sentiment='negative') AS high_count,
-                   COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'medium' AND ar.sentiment='negative') AS medium_count
+                   COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'medium' AND ar.sentiment='negative') AS medium_count,
+                   {_REVIEWS_WITH_TEXT} AS review_count_with_text,
+                   {_HIGH_WITH_TEXT}    AS high_count_with_text
             FROM places p
             JOIN reviews r  ON r.place_id = p.id
             JOIN analyzed_reviews ar ON ar.review_id = r.id
@@ -577,12 +738,18 @@ async def top_problematic_places(
               {biz_filter}
               {date_sql}
             GROUP BY p.id, p.name, p.overall_rating, p.business_status
-            ORDER BY high_count DESC, medium_count DESC
+            {having}
+            {order}
             LIMIT :lim
         """),
-        {"lim": limit, **date_params},
+        params,
     )
-    return [dict(row._mapping) for row in result.fetchall()]
+    rows = []
+    for row in result.fetchall():
+        d = dict(row._mapping)
+        d["high_rate"] = _rate(d["high_count_with_text"], d["review_count_with_text"])
+        rows.append(d)
+    return rows
 
 
 @router.get("/positive-highlights")
@@ -785,6 +952,9 @@ async def trending_problems(
     buckets: int = 6,
     top: int = 5,
     zone: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    status: str = "all",
 ):
     """
     Top N ปัญหาแยกตามช่วงเวลา (สัปดาห์/เดือน) — นับจาก "วันที่เขียนรีวิว"
@@ -792,15 +962,44 @@ async def trending_problems(
     ต่างจาก snapshot ตรงที่อันนี้ดูว่า *นักท่องเที่ยวบ่นเรื่องอะไรในช่วงนั้น*
     ส่วน snapshot ดูว่า *เราเก็บข้อมูลเพิ่มได้เท่าไหร่*
 
-    หมายเหตุ: ตัด "ช่วงปัจจุบันที่ยังไม่จบ" ออกเสมอ เพราะข้อมูลยังไม่ครบ
-    จะทำให้แท่งสุดท้ายต่ำผิดปกติและดูเหมือนปัญหาลดฮวบ
+    ช่วงเวลาที่ใช้ (2 โหมด):
+      ไม่ส่ง date → ย้อนหลัง N bucket จากปัจจุบัน และ "ตัดช่วงปัจจุบันที่ยังไม่จบ"
+                    ออกเสมอ เพราะข้อมูลยังไม่ครบ จะทำให้แท่งสุดท้ายต่ำผิดปกติ
+                    และดูเหมือนปัญหาลดฮวบ (พฤติกรรมเดิมทุกประการ)
+      ส่ง date     → แบ่ง bucket ภายในช่วงที่ผู้ใช้เลือก และ "ไม่ตัด" ช่วงปัจจุบัน
+                    เพราะผู้ใช้กำหนดขอบเขตเองแล้ว การตัดท้ายจะกลายเป็นซ่อนข้อมูล
+
+    status: default "all" = ไม่กรอง → ไม่ส่งมาก็ได้ counts เท่าเดิมทุกค่า
+      frontend ส่ง status ของหน้ามาเพื่อให้ฐานตรงกับการ์ด KPI (กฎ 1)
+
+    ตัวเลขเชิงสัดส่วนต่อ bucket (ตัวส่วนต่างกัน ตอบคำถามคนละข้อ):
+      rates  = counts / bucket_total   → "เดือนนั้นคนกี่ % บ่นเรื่องนี้"
+                                          รวมทุกหมวดได้ประมาณ complaint_rate ไม่ใช่ 100%
+      shares = counts / bucket_negative → "ในบรรดาคำบ่นเดือนนั้น เรื่องนี้กินสัดส่วนเท่าไหร่"
+                                          รวมได้ ~100% (ขาดไปคือหมวดที่ถูกตัด)
+      ตัวแรกบอก "ปัญหาหนักขึ้นไหม" ตัวหลังบอก "องค์ประกอบของปัญหาเปลี่ยนไปไหม"
+
+    low_confidence = bucket_total < LOW_CONFIDENCE_MIN → ตัวเลขอัตราไม่น่าเชื่อถือ
     """
     unit = "week" if period == "week" else "month"
-    params: dict = {"buckets": buckets, "top": top}
+    params: dict = {"top": top}
     zone_sql = ""
     if zone:
         zone_sql = "AND COALESCE(p.zone,'other') = :zone"
         params["zone"] = zone
+
+    status_sql = status_filter(status, "p")
+    date_sql, date_params = date_filter(date_from, date_to, "r")
+    if date_sql:
+        window_sql = date_sql
+        params.update(date_params)
+    else:
+        window_sql = (
+            f"AND r.review_date_approx <  DATE_TRUNC('{unit}', NOW()) "
+            f"AND r.review_date_approx >= DATE_TRUNC('{unit}', NOW()) "
+            f"- :buckets * INTERVAL '1 {unit}'"
+        )
+        params["buckets"] = buckets
 
     # 1) หา top N หมวดในช่วงที่สนใจ (ใช้เป็นแถวของตาราง)
     top_rows = await db.execute(
@@ -812,10 +1011,10 @@ async def trending_problems(
             WHERE ar.sentiment = 'negative'
               AND r.text_clean <> ''
               AND r.review_date_approx IS NOT NULL
-              AND r.review_date_approx <  DATE_TRUNC('{unit}', NOW())
-              AND r.review_date_approx >= DATE_TRUNC('{unit}', NOW()) - :buckets * INTERVAL '1 {unit}'
+              {window_sql}
               AND ar.pain_point_category NOT IN ({_NONPROBLEM_IN})
               {zone_sql}
+              {status_sql}
             GROUP BY ar.pain_point_category
             ORDER BY total DESC
             LIMIT :top
@@ -839,10 +1038,10 @@ async def trending_problems(
             WHERE ar.sentiment = 'negative'
               AND r.text_clean <> ''
               AND r.review_date_approx IS NOT NULL
-              AND r.review_date_approx <  DATE_TRUNC('{unit}', NOW())
-              AND r.review_date_approx >= DATE_TRUNC('{unit}', NOW()) - :buckets * INTERVAL '1 {unit}'
+              {window_sql}
               AND ar.pain_point_category = ANY(:cats)
               {zone_sql}
+              {status_sql}
             GROUP BY 1, 2
             ORDER BY 1
         """),
@@ -854,18 +1053,51 @@ async def trending_problems(
         key = r.bucket.isoformat()
         grid.setdefault(key, {})[r.category] = r.count
 
+    # ── ตัวส่วนของแต่ละ bucket ──────────────────────────────────────────────
+    # ใช้ชุดกรองเดียวกับคิวรี counts ทุกมิติที่ใช้ร่วมกัน (window / text_clean /
+    # review_date_approx NOT NULL / zone / status / JOIN analyzed_reviews)
+    # ต่างกันเฉพาะที่ "ไม่กรอง sentiment และ category" เพราะเป็นตัวส่วนโดยเจตนา
+    denom_rows = await db.execute(
+        text(f"""
+            SELECT DATE_TRUNC('{unit}', r.review_date_approx)::date AS bucket,
+                   COUNT(*)                                          AS bucket_total,
+                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative') AS bucket_negative
+            FROM analyzed_reviews ar
+            JOIN reviews r ON r.id = ar.review_id
+            JOIN places  p ON p.id = r.place_id
+            WHERE r.text_clean <> ''
+              AND r.review_date_approx IS NOT NULL
+              {window_sql}
+              {zone_sql}
+              {status_sql}
+            GROUP BY 1
+        """),
+        params,
+    )
+    denom = {r.bucket.isoformat(): (r.bucket_total, r.bucket_negative)
+             for r in denom_rows.fetchall()}
+
     bucket_list = sorted(grid.keys())
+    buckets = []
+    for b in bucket_list:
+        counts = {c: grid[b].get(c, 0) for c in top_categories}
+        b_total, b_neg = denom.get(b, (0, 0))
+        buckets.append({
+            "bucket": b,
+            "counts": counts,
+            "total": sum(counts.values()),
+            "bucket_total": b_total,
+            "bucket_negative": b_neg,
+            "rates": {c: _rate(n, b_total) for c, n in counts.items()},
+            "shares": {c: _rate(n, b_neg) for c, n in counts.items()},
+            "low_confidence": b_total < LOW_CONFIDENCE_MIN,
+        })
+
     return {
         "period": unit,
         "categories": top_categories,
-        "buckets": [
-            {
-                "bucket": b,
-                "counts": {c: grid[b].get(c, 0) for c in top_categories},
-                "total": sum(grid[b].get(c, 0) for c in top_categories),
-            }
-            for b in bucket_list
-        ],
+        "low_confidence_min": LOW_CONFIDENCE_MIN,
+        "buckets": buckets,
     }
 
 

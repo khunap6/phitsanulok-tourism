@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  run_commands.ps1 — คำสั่งสำหรับรัน Scraper + NLP + LDA + Backup
 #
 #  วิธีใช้: ลบ # ออกหน้าคำสั่งที่ต้องการ แล้วรัน:
@@ -44,6 +44,15 @@ chcp 65001 > $null
 # uv run python scripts\auto_refresh.py --limit 40 --wait 15
 # uv run python scripts\auto_refresh.py --no-followup   # ไม่ต่อ analyze/classify
 
+# ── DEEP SCAN (เก็บรีวิวย้อนหลังให้ครบ — สั่งเองเท่านั้น) ──────
+# ต่างจาก refresh: ไม่หยุดเมื่อเจอรีวิวเดิม — scroll จนสุดจริง (ร้านละไม่เกิน 10 นาที)
+# ใช้กับร้านที่เคยติดเพดาน scroll เดิม (60 รอบ) จนเก็บรีวิวได้ไม่ครบ
+# uv run python scripts\deep_scan.py --dry-run              # ดูรายชื่อร้านก่อน (ไม่แตะเน็ต)
+# uv run python scripts\deep_scan.py                        # capped (รีวิว >=190) ทีละ 5 ร้าน พัก 20 นาที
+# uv run python scripts\deep_scan.py --targets all --limit 3 --wait 30
+# uv run python scripts\test_deep_block.py                  # ทดสอบการจัดการบล็อก (offline, rollback ทุกอย่าง)
+# ⚠️ ไม่ต่อ analyze/classify ให้อัตโนมัติ — เก็บครบแล้วสั่ง analyze.py เอง
+
 # ── ANALYZE (วิเคราะห์ NLP) ──────────────────────────────────
 # uv run python scripts\analyze.py           # วิเคราะห์รีวิวใหม่ที่ยังไม่วิเคราะห์ (ใช้ WangchanBERTa fine-tuned)
 
@@ -66,6 +75,13 @@ chcp 65001 > $null
 # uv run python nlp\train\train.py --task category --epochs 10   # ฝึก (GPU ~6 นาที / CPU ~50 นาที)
 # uv run python nlp\train\train.py --task sentiment --epochs 10
 # uv run python nlp\train\compare_models.py --task category      # เทียบผลกับระบบเดิม
+
+# ── ล้างรีวิวซ้ำในไฟล์ master JSON ──────────────
+# data/phitsanulok_accumulated.json เคยสะสมรีวิวซ้ำ เพราะกันซ้ำด้วย text[:80] ดิบ
+# ที่มีวันที่สัมพัทธ์ติดมา (แก้ต้นเหตุที่ _merge_reviews แล้ว — ใช้ hash เหมือน DB)
+# ไฟล์นี้เป็นแค่ backup ฝั่ง scraper — ไม่มีโค้ดไหนอ่านไปใช้วิเคราะห์
+# uv run python scripts\dedup_accumulated_json.py           # ดูก่อน ไม่แตะไฟล์
+# uv run python scripts\dedup_accumulated_json.py --apply   # ล้างจริง (สำรองไฟล์เดิมให้)
 
 # ── CHECK DB (ดูสถานะ Database) ──────────────────────────────
 # uv run python scripts\check_db.py
@@ -109,14 +125,21 @@ chcp 65001 > $null
 # uv run python scripts\fetch_hours_api.py --all --force  # ยิงทุกร้าน (รวมที่ครบแล้ว)
 
 # ── BACKUP / SEED DATABASE (สำหรับ git) ──────────────────────
+# ⚠️ pg_dump / psql ไม่ได้อยู่ใน PATH ของเครื่องนี้ ต้องเรียกด้วย full path
+#    (พิมพ์ pg_dump เปล่า ๆ จะได้ "not recognized as the name of a cmdlet")
+#    ปรับ path ให้ตรงเวอร์ชันที่ติดตั้ง — เครื่องนี้คือ D:\PostgreSQL\16\bin
+#    ถ้าไม่ตั้ง PGPASSWORD มันจะถามรหัสให้พิมพ์ (รหัสอยู่ใน .env: SYNC_DATABASE_URL)$PG = "D:\PostgreSQL\16\bin"
+#    $env:PGPASSWORD = "<รหัสใน .env>"    # ตั้งไว้ถ้าไม่อยากพิมพ์รหัสทุกครั้ง
+#    $env:PGPASSWORD = "<รหัสใน .env>"; & "D:\PostgreSQL\16\bin\pg_dump.exe" -U postgres -d phitsanulok_tourism -f "backup\seed.sql"
+
 # อัพเดต seed.sql ก่อน commit เข้า git (มีทั้ง schema + ข้อมูล)
-# pg_dump -U postgres -d phitsanulok_tourism -f "backup\seed.sql"
+# & "$PG\pg_dump.exe" -U postgres -d phitsanulok_tourism -f "backup\seed.sql"
 
 # Backup ปกติ (timestamp) — ไม่ขึ้น git เพราะ .gitignore กันไว้
-# pg_dump -U postgres -d phitsanulok_tourism -f "backup\db_backup.sql"
+# & "$PG\pg_dump.exe" -U postgres -d phitsanulok_tourism -f "backup\db_backup_$(Get-Date -Format yyyyMMdd_HHmmss).sql"
 
 # ── RESTORE DATABASE (หลัง clone / ย้อนกลับ) ─────────────────
-# psql -U postgres -d phitsanulok_tourism -f "backup\seed.sql"
+# & "$PG\psql.exe" -U postgres -d phitsanulok_tourism -f "backup\seed.sql"
 
 # ── RUN SERVERS (เปิดเว็บ) ───────────────────────────────────
 # [Terminal 1] Backend API:

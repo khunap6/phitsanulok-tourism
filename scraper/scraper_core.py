@@ -431,6 +431,41 @@ async def debug_page(page: Page, label: str = "debug"):
 KNOWN_STOP_SORTED = 10
 KNOWN_STOP_UNSORTED = 25
 
+# ── Deep scan ───────────────────────────────────────────────────────────────────
+# โหมดเก็บรีวิวให้ครบที่สุด — ไม่สนใจ known_hashes ไม่มี early-stop
+# หยุดด้วยเงื่อนไข 4 ข้อเท่านั้น: นับไม่โต / ครบ scroll / หมดเวลา / เจอสัญญาณบล็อก
+DEEP_MAX_SCROLLS = 400          # กันวนไม่รู้จบ
+DEEP_NO_GROWTH_LIMIT = 3        # จำนวน node ไม่โตติดกันกี่รอบถือว่าจบ
+DEEP_TIME_BUDGET_SEC = 600      # เพดานเวลาต่อร้าน
+DEEP_BLOCK_CHECK_EVERY = 20     # เช็คสัญญาณบล็อกทุกกี่ scroll
+DEEP_REVIEW_CAP = 100_000       # cap ตอนดึงรีวิวครั้งเดียวหลังจบลูป (สูงจนเสมือนไม่จำกัด)
+
+
+class DeepScanBlocked(Exception):
+    """
+    เจอสัญญาณบล็อกระหว่าง deep scroll — ต้องโยนออกนอกสุดทันที
+    (เหตุผลที่ต้องเป็น exception: extract_reviews กับ scrape_place มี except Exception
+    ครอบทั้งก้อน ถ้า return ธรรมดาสัญญาณจะถูกกลืนกลายเป็น "ไม่มีรีวิว" เฉยๆ)
+    """
+
+    def __init__(self, signal: str):
+        super().__init__(signal)
+        self.signal = signal
+
+
+class DeepReviewsUnavailable(Exception):
+    """
+    เข้าไม่ถึง "หน้ารีวิว" ของร้าน — ต่างจาก "ร้านนี้ไม่มีรีวิว"
+
+    เกิดเมื่อ: กดแท็บรีวิวไม่ติดทั้ง 2 วิธี  หรือ  scroll แล้วนับการ์ดรีวิวได้ 0
+    ทั้งสองกรณีคือความล้มเหลว ห้ามนับว่า scrape สำเร็จ และห้ามตี deep_scanned_at
+    (ไม่งั้นร้านที่พลาดจะถูกปิดตายถาวร ไม่ถูกหยิบมาทำใหม่อีกเลย)
+    """
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
 
 def review_text_hash(text: str) -> str:
     """
@@ -499,6 +534,29 @@ async def _extract_visible_reviews(page: Page, cap: int) -> list[dict]:
         return []
 
 
+async def _count_review_nodes(page: Page) -> int:
+    """
+    นับจำนวน "การ์ดรีวิว" ที่โหลดอยู่ใน DOM ตอนนี้ — ใช้เป็นสัญญาณว่า scroll แล้วโตขึ้นไหม
+
+    ตั้งใจให้ถูกกว่า _extract_visible_reviews มากๆ:
+      - นับอย่างเดียว ไม่สร้าง array ข้อความ ไม่ไต่ parent ไม่อ่าน innerText
+      - ค่าที่ได้ไม่เท่ากับจำนวนรีวิวสุดท้าย (ยังไม่ผ่านตัวกรอง) แต่ใช้ดู "การเติบโต" ได้
+    """
+    try:
+        return await page.evaluate(r"""
+            () => {
+                let n = 0;
+                document.querySelectorAll('[aria-label]').forEach(el => {
+                    const lbl = el.getAttribute('aria-label') || '';
+                    if (/^[1-5]\s*(ดาว|star)/.test(lbl)) n++;
+                });
+                return n;
+            }
+        """) or 0
+    except Exception:
+        return 0
+
+
 def _trailing_known_count(raw_reviews: list[dict], known_hashes: set[str]) -> int:
     """
     นับว่ารีวิว "ท้ายรายการติดกัน" กี่อันที่เรามีอยู่แล้ว
@@ -514,10 +572,174 @@ def _trailing_known_count(raw_reviews: list[dict], known_hashes: set[str]) -> in
     return count
 
 
+async def reviews_feed_ready(page: Page) -> bool:
+    """
+    เข้าถึง "feed รีวิว" ได้จริงหรือยัง — ใช้ยืนยันผลหลังกดแท็บ
+    หลักการ: กดติด != เข้าถึงได้ (เคยกดโดนปุ่ม "เขียนรีวิว" แล้วได้ modal login ค้างแทน)
+    """
+    try:
+        kids = await page.evaluate(
+            "() => { const f = document.querySelector('[role=feed]'); return f ? f.children.length : 0; }"
+        )
+        if kids and kids > 0:
+            return True
+    except Exception:
+        pass
+    return (await _count_review_nodes(page)) > 0
+
+
+async def dismiss_login_modal(page: Page) -> None:
+    """ปิด modal 'ลงชื่อเข้าใช้เพื่อเขียนรีวิว' ที่บังหน้าอยู่ด้วย Escape"""
+    try:
+        await page.keyboard.press("Escape")
+        await asyncio.sleep(1.0)
+    except Exception:
+        pass
+
+
+async def open_reviews_tab(page: Page, allow_reload: bool = True) -> bool:
+    """
+    เปิดแท็บ "รีวิว" ของหน้าร้าน — คืน True เฉพาะเมื่อ "เข้าถึง feed ได้จริง"
+
+    ทำไมต้องเขียนแบบนี้ (บั๊กที่เคยทำให้ได้ 0 รีวิวเงียบๆ ทั้ง refresh/discover/deep):
+      เดิมใช้ page.locator('button', has_text="รีวิว").first เป็นวิธีหลัก
+      has_text ของ Playwright จับแบบ substring → "เขียนรีวิว" แมตช์ด้วย
+      และ Google เปลี่ยนแท็บรีวิวไปเป็น element อื่นที่ไม่ใช่ <button> แล้ว
+      เหลือ <button> ที่มีคำนี้แค่ปุ่ม "เขียนรีวิว" → กดแล้วได้ modal login ค้าง
+      feed ไม่ render → นับ node ได้ 0 ทุกร้าน
+
+    4 ชั้น: role="tab" (ปุ่มเขียนรีวิวไม่มี role นี้) → <button> ที่ไม่มีคำว่า "เขียน"
+            → ปิด modal ด้วย Escape แล้วลอง role="tab" ซ้ำ → reload หน้าแล้วลองใหม่ทั้งชุด
+    ทุกชั้นยืนยันด้วย reviews_feed_ready() ก่อนถือว่าสำเร็จ
+    """
+    # ชั้น 1 (หลัก): แท็บจริงมี role="tab"
+    try:
+        tab = page.get_by_role("tab").filter(has_text="รีวิว").first
+        if await tab.count() > 0:
+            await tab.click(timeout=6000)
+            await random_delay(2.0, 3.0)
+            if await reviews_feed_ready(page):
+                return True
+    except Exception:
+        pass
+
+    # ชั้น 2 (fallback): <button> ที่มีคำว่า "รีวิว" แต่ต้องไม่ใช่ "เขียนรีวิว"
+    try:
+        buttons = page.locator("button", has_text="รีวิว")
+        total = await buttons.count()
+        for i in range(min(total, 5)):
+            btn = buttons.nth(i)
+            try:
+                label = ((await btn.inner_text()) or "").strip()
+            except Exception:
+                continue
+            if "เขียน" in label:          # ตัดปุ่มเขียนรีวิวออกเสมอ ไม่ว่ากรณีใด
+                continue
+            try:
+                await btn.click(timeout=4000)
+                await random_delay(2.0, 3.0)
+            except Exception:
+                continue
+            if await reviews_feed_ready(page):
+                return True
+    except Exception:
+        pass
+
+    # ชั้น 3: อาจมี modal login ค้างบังอยู่ → Escape ปิดแล้วลองแท็บอีกครั้ง
+    await dismiss_login_modal(page)
+    try:
+        tab = page.get_by_role("tab").filter(has_text="รีวิว").first
+        if await tab.count() > 0:
+            await tab.click(timeout=4000)
+            await random_delay(2.0, 3.0)
+            if await reviews_feed_ready(page):
+                return True
+    except Exception:
+        pass
+
+    # ชั้น 4: บางครั้ง Google render "แผงย่อ" ที่ไม่มีแท็บรีวิวเลย (เจอบ่อยกับหน้าร้านแรก
+    # ที่เปิดในบราวเซอร์ใหม่) — วัดได้จริง: โหลดสดได้ ['ภาพรวม','เกี่ยวกับ'] แต่พอ reload
+    # กลายเป็น ['ภาพรวม','เมนู','รีวิว','เกี่ยวกับ'] แล้วดึงรีวิวได้ตามปกติ
+    # reload ครั้งเดียวแล้วลองทั้ง 3 ชั้นใหม่ (allow_reload=False กันวนซ้ำ)
+    try:
+        on_place_page = "/maps/place/" in (page.url or "")
+    except Exception:
+        on_place_page = False      # page ที่ไม่มี .url (เช่นตัวปลอมในเทสต์) → ไม่ reload
+
+    if allow_reload and on_place_page:
+        try:
+            await page.reload(wait_until="domcontentloaded")
+            await random_delay(3.0, 4.0)
+            await wait_for_place_loaded(page, timeout=20000)
+        except Exception:
+            return False
+        print("  ↻ แผงร้านไม่มีแท็บรีวิว — reload แล้วลองใหม่")
+        return await open_reviews_tab(page, allow_reload=False)
+
+    return False
+
+
+async def _deep_scroll_collect(page: Page) -> list[dict]:
+    """
+    ลูป scroll ของโหมด deep — เก็บให้ครบที่สุดโดยไม่สนใจว่ามีรีวิวไหนอยู่ใน DB แล้ว
+
+    หยุดเมื่อ: จำนวน node ไม่โตติดกันครบ DEEP_NO_GROWTH_LIMIT / ครบ DEEP_MAX_SCROLLS
+              / ใช้เวลาเกิน DEEP_TIME_BUDGET_SEC
+    ระหว่างทางเช็คสัญญาณบล็อกทุก DEEP_BLOCK_CHECK_EVERY รอบ — เจอแล้ว raise ทันที
+    ดึงรีวิวจริงครั้งเดียวหลังจบลูป (ระหว่างลูปใช้แค่ตัวนับ node ซึ่งถูกกว่ามาก)
+    """
+    t0 = time.monotonic()
+    node_count = await _count_review_nodes(page)
+    no_growth = 0
+    scrolls = 0
+    stop_reason = f"ครบเพดาน {DEEP_MAX_SCROLLS} scroll"
+
+    for i in range(1, DEEP_MAX_SCROLLS + 1):
+        elapsed = time.monotonic() - t0
+        if elapsed > DEEP_TIME_BUDGET_SEC:
+            print(f"  ⚠️  deep: หมดเวลา {DEEP_TIME_BUDGET_SEC}s ที่ scroll {i - 1} รอบ "
+                  f"(node {node_count}) — ร้านนี้อาจยังเก็บไม่ครบ")
+            stop_reason = f"หมดเวลา {DEEP_TIME_BUDGET_SEC}s"
+            break
+
+        await scroll_reviews(page, times=1)
+        scrolls = i
+        count = await _count_review_nodes(page)
+
+        if count <= node_count:
+            no_growth += 1
+            if no_growth >= DEEP_NO_GROWTH_LIMIT:
+                stop_reason = f"โหลดครบ (node ไม่โต {DEEP_NO_GROWTH_LIMIT} รอบติด)"
+                break
+        else:
+            no_growth = 0
+        node_count = max(node_count, count)
+
+        if i % DEEP_BLOCK_CHECK_EVERY == 0:
+            blocked = await detect_block_signal(page)
+            if blocked:
+                raise DeepScanBlocked(blocked)
+            print(f"  🔎 deep: scroll {i} รอบ | node {node_count} | {elapsed:.0f}s")
+
+    # scroll จนจบแล้วยังนับการ์ดรีวิวไม่ได้เลย = เข้าไม่ถึง feed (ไม่ใช่ "ร้านไม่มีรีวิว")
+    # เคสจริงที่เจอ: แท็บรีวิวกดติด (clicked=True) แต่ feed ไม่ render — หน้ามี [aria-label] 61 ตัว
+    # แต่ไม่มี star label ของรีวิวสักอัน ทั้งที่ร้านนั้นมี 211 รีวิวใน DB
+    if node_count == 0:
+        raise DeepReviewsUnavailable(
+            f"scroll {scrolls} รอบแล้วไม่พบการ์ดรีวิวเลย (feed ไม่ render)"
+        )
+
+    reviews = await _extract_visible_reviews(page, DEEP_REVIEW_CAP)
+    print(f"  🧲 deep: จบที่ scroll {scrolls} รอบ | node {node_count} "
+          f"| ดึงได้ {len(reviews)} | {time.monotonic() - t0:.0f}s | {stop_reason}")
+    return reviews
+
+
 async def extract_reviews(
     page: Page,
     max_reviews: int = 20,
     known_hashes: set[str] | None = None,
+    deep: bool = False,
 ) -> list[dict]:
     """
     Extract reviews from the current place page.
@@ -525,30 +747,21 @@ async def extract_reviews(
     known_hashes: hash ของรีวิวที่มีอยู่แล้วในฐานข้อมูลของร้านนี้
       - ว่าง/None  → scan เต็ม (ร้านใหม่ หรือ scan ครั้งแรก)
       - มีค่า      → incremental: หยุด scroll ทันทีที่ชนกำแพงรีวิวเดิม
+
+    deep=True: โหมดเก็บให้ครบ — เพิกเฉย known_hashes ทั้งหมด ไม่มี early-stop
+      และไม่ตัดที่ max_reviews (ใช้ DEEP_REVIEW_CAP แทน)
+      เจอสัญญาณบล็อกระหว่าง scroll → raise DeepScanBlocked
     """
     known_hashes = known_hashes or set()
     reviews = []
     try:
-        # Step 1: Click "รีวิว" tab by visible text
-        clicked_reviews = False
-        try:
-            # Use has-text to find the tab by its visible label
-            tab = page.locator('button', has_text="รีวิว").first
-            if await tab.count() > 0:
-                await tab.click(timeout=6000)
-                await random_delay(2.0, 3.0)
-                clicked_reviews = True
-        except Exception:
-            pass
+        # Step 1: เปิดแท็บ "รีวิว" — ยืนยันด้วยผลลัพธ์ (เข้าถึง feed ได้จริง) ไม่ใช่แค่ "กดติด"
+        clicked_reviews = await open_reviews_tab(page)
 
-        if not clicked_reviews:
-            # Fallback: try clicking any tab-like element with review text
-            try:
-                await page.get_by_role("tab").filter(has_text="รีวิว").click(timeout=4000)
-                await random_delay(2.0, 3.0)
-                clicked_reviews = True
-            except Exception:
-                pass
+        # เข้าไม่ถึงหน้ารีวิว = ยังอยู่หน้าภาพรวม ถ้าปล่อยผ่านจะไป scroll หน้าภาพรวม
+        # แล้วคืน 0 รีวิวเงียบๆ แยกไม่ออกจาก "ร้านนี้ไม่มีรีวิวจริงๆ"
+        if deep and not clicked_reviews:
+            raise DeepReviewsUnavailable("เปิดแท็บรีวิวไม่สำเร็จทั้ง 3 วิธี (เข้าไม่ถึง feed)")
 
         # debug screenshot disabled (เปิดได้เมื่อต้องการ debug)
         # debug_dir = DATA_DIR / "debug"
@@ -588,35 +801,41 @@ async def extract_reviews(
             pass
 
         # Step 3+4: scroll ทีละรอบ + ดึงรีวิว + เช็คว่าชนกำแพงรีวิวเดิมหรือยัง
-        # เดิม: scroll รวดเดียวสูงสุด 60 รอบ แล้วค่อยดึง → ช้ามากแม้ไม่มีรีวิวใหม่เลย
-        # ใหม่: ดึงหลัง scroll ทุกรอบ ถ้าเจอรีวิวเดิมติดกันครบเกณฑ์ → หยุดทันที
-        max_scrolls = max(2, min(60, max_reviews // 4))
-        stop_threshold = KNOWN_STOP_SORTED if sorted_ok else KNOWN_STOP_UNSORTED
-        cap = max_reviews * 3
-        raw_reviews: list[dict] = await _extract_visible_reviews(page, cap)
+        if deep:
+            # โหมด deep — ลูปแยกคนละตัว ไม่แตะ known_hashes / ไม่ตัดที่ max_reviews
+            raw_reviews: list[dict] = await _deep_scroll_collect(page)
+        else:
+            # เดิม: scroll รวดเดียวสูงสุด 60 รอบ แล้วค่อยดึง → ช้ามากแม้ไม่มีรีวิวใหม่เลย
+            # ใหม่: ดึงหลัง scroll ทุกรอบ ถ้าเจอรีวิวเดิมติดกันครบเกณฑ์ → หยุดทันที
+            max_scrolls = max(2, min(60, max_reviews // 4))
+            stop_threshold = KNOWN_STOP_SORTED if sorted_ok else KNOWN_STOP_UNSORTED
+            cap = max_reviews * 3
+            raw_reviews: list[dict] = await _extract_visible_reviews(page, cap)
 
-        no_growth = 0
-        for _ in range(max_scrolls):
-            # ชนกำแพงรีวิวเดิมแล้ว = ไม่มีของใหม่ให้เก็บอีก → หยุดประหยัดเวลา
-            if known_hashes and _trailing_known_count(raw_reviews, known_hashes) >= stop_threshold:
-                print(f"  ⏩ หยุดเร็ว — เจอรีวิวเดิมติดกัน {stop_threshold} อัน (ไม่มีรีวิวใหม่)")
-                break
-            if len(raw_reviews) >= cap:
-                break
-
-            before = len(raw_reviews)
-            await scroll_reviews(page, times=1)
-            raw_reviews = await _extract_visible_reviews(page, cap)
-
-            # scroll แล้วไม่ได้รีวิวเพิ่ม 2 รอบติด = โหลดครบแล้ว
-            if len(raw_reviews) <= before:
-                no_growth += 1
-                if no_growth >= 2:
+            no_growth = 0
+            for _ in range(max_scrolls):
+                # ชนกำแพงรีวิวเดิมแล้ว = ไม่มีของใหม่ให้เก็บอีก → หยุดประหยัดเวลา
+                if known_hashes and _trailing_known_count(raw_reviews, known_hashes) >= stop_threshold:
+                    print(f"  ⏩ หยุดเร็ว — เจอรีวิวเดิมติดกัน {stop_threshold} อัน (ไม่มีรีวิวใหม่)")
                     break
-            else:
-                no_growth = 0
+                if len(raw_reviews) >= cap:
+                    break
+
+                before = len(raw_reviews)
+                await scroll_reviews(page, times=1)
+                raw_reviews = await _extract_visible_reviews(page, cap)
+
+                # scroll แล้วไม่ได้รีวิวเพิ่ม 2 รอบติด = โหลดครบแล้ว
+                if len(raw_reviews) <= before:
+                    no_growth += 1
+                    if no_growth >= 2:
+                        break
+                else:
+                    no_growth = 0
 
         # Step 5: Filter and clean
+        # โหมด deep ไม่ตัดที่ max_reviews (คงพฤติกรรมเดิมเป๊ะเมื่อ deep=False)
+        limit = DEEP_REVIEW_CAP if deep else max_reviews
         seen_texts = set()
         for item in raw_reviews:
             try:
@@ -661,11 +880,15 @@ async def extract_reviews(
                     "date": date,
                 })
 
-                if len(reviews) >= max_reviews:
+                if len(reviews) >= limit:
                     break
             except Exception:
                 continue
 
+    except (DeepScanBlocked, DeepReviewsUnavailable):
+        # สัญญาณบล็อก/เข้าไม่ถึงหน้ารีวิว ต้องทะลุออกไปให้ scrape_place จัดการ
+        # ห้ามให้ except Exception ข้างล่างกลืนจนกลายเป็น "ได้ 0 รีวิว" เฉยๆ
+        raise
     except Exception as e:
         print(f"  Warning: {e}")
 
@@ -742,10 +965,12 @@ async def scrape_place(
     place_name: str,
     max_reviews: int = MAX_REVIEWS_PER_PLACE,
     known_hashes: set[str] | None = None,
+    deep: bool = False,
 ) -> dict | None:
     """
     Search for a place and scrape its reviews. max_reviews ต่ำ = เร็ว (ใช้ตอน discover)
     known_hashes = hash รีวิวที่มีอยู่แล้วของร้านนี้ → เปิดโหมด incremental (หยุดเร็วถ้าไม่มีของใหม่)
+    deep = True → เก็บให้ครบที่สุด (เพิกเฉย known_hashes) ดู extract_reviews
     """
     print(f"\n  Searching: {place_name}")
 
@@ -833,9 +1058,19 @@ async def scrape_place(
         # await debug_page(page, f"before_reviews_{safe_name}")
 
         # Scrape reviews — ข้ามถ้า max_reviews <= 0 (โหมด discover เร็ว)
+        reviews_failed: str | None = None
         if max_reviews > 0:
-            reviews = await extract_reviews(page, max_reviews=max_reviews, known_hashes=known_hashes)
-            print(f"  Collected {len(reviews)} reviews")
+            try:
+                reviews = await extract_reviews(
+                    page, max_reviews=max_reviews, known_hashes=known_hashes, deep=deep
+                )
+                print(f"  Collected {len(reviews)} reviews")
+            except DeepReviewsUnavailable as e:
+                # ยังคืนข้อมูลร้าน (ชื่อ/พิกัด/หมวด/เวลาทำการ) ให้บันทึกได้ตามปกติ
+                # แต่ติดธงไว้ว่า "รีวิวล้มเหลว" เพื่อไม่ให้ถูกนับว่า deep scan สำเร็จ
+                reviews = []
+                reviews_failed = e.reason
+                print(f"  ⚠️  เข้าไม่ถึงหน้ารีวิว: {e.reason}")
         else:
             reviews = []
             print(f"  Skipped reviews (discover mode)")
@@ -851,9 +1086,14 @@ async def scrape_place(
             "lat": coords[0] if coords else None,
             "lng": coords[1] if coords else None,
             "reviews": reviews,
+            "_reviews_failed": reviews_failed,
             "scraped_at": datetime.now().isoformat(),
         }
 
+    except DeepScanBlocked as e:
+        # เจอบล็อกระหว่าง deep scroll → คืน sentinel เดียวกับที่ตรวจตอนเปิดหน้า
+        print(f"  🛑 เจอสัญญาณบล็อกระหว่าง deep scroll: {e.signal}")
+        return {"_blocked": e.signal}
     except Exception as e:
         print(f"  ❌ Error scraping {place_name}: {e}")
         return None
@@ -874,10 +1114,14 @@ async def run_scraper(
     discover_query: str | None = None,
     max_reviews: int = MAX_REVIEWS_PER_PLACE,
     known_hashes_by_place: dict[str, set[str]] | None = None,
+    deep: bool = False,
 ) -> list[dict]:
     """
     Main scraper function. max_reviews ต่ำ = เก็บร้านเร็ว (โหมด discover)
     known_hashes_by_place: {ชื่อร้าน: set(hash รีวิวที่มีแล้ว)} → เปิด incremental scan
+    deep=True: เก็บให้ครบที่สุด (ผู้เรียกคือ run_deep_scan ซึ่งส่งมาทีละร้าน)
+      - เจอบล็อกร้านแรกก็หยุดรอบทันที (ไม่รอให้ครบ 2 ร้านเหมือนโหมดปกติ
+        เพราะทีละร้าน = ไม่มีร้านที่ 2 ให้นับ) แล้วคืนผลที่เก็บมาได้ติดไปด้วย
     """
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -921,15 +1165,21 @@ async def run_scraper(
         for i, place in enumerate(places):
             print(f"\n[{i+1}/{len(places)}] Processing...")
             place_hashes = (known_hashes_by_place or {}).get(place)
-            result = await scrape_place(page, place, max_reviews=max_reviews, known_hashes=place_hashes)
+            result = await scrape_place(
+                page, place, max_reviews=max_reviews, known_hashes=place_hashes, deep=deep
+            )
 
             # B3: เจอสัญญาณบล็อกจริง → หยุดทั้งรอบทันที ส่งสัญญาณให้ auto_refresh พัก
             if result and result.get("_blocked"):
                 block_streak += 1
-                if block_streak >= 2:
+                # deep = ส่งมาทีละร้าน จึงต้องรายงานตั้งแต่ร้านแรก (ตัวนับ "ติดกัน 2 ร้าน"
+                # ย้ายไปอยู่ที่ run_deep_scan ซึ่งเห็นภาพข้ามร้าน)
+                if block_streak >= (1 if deep else 2):
                     print(f"  🛑 เจอบล็อกติดกัน {block_streak} ร้าน — หยุด scrape รอบนี้")
                     await browser.close()
-                    return [{"_blocked": result["_blocked"]}]
+                    # deep: ร้านละหลายนาที ทิ้งผลที่เก็บมาแล้วไม่คุ้ม → ส่งกลับไปบันทึกด้วย
+                    return ([*results, {"_blocked": result["_blocked"]}] if deep
+                            else [{"_blocked": result["_blocked"]}])
                 continue
             block_streak = 0
 
@@ -1020,15 +1270,25 @@ def _is_valid_place(entry: dict) -> bool:
 
 def _merge_reviews(existing: list[dict], new: list[dict]) -> list[dict]:
     """
-    Combine two review lists, deduplicating by first 80 chars of text.
-    Keeps all unique reviews from both sources.
+    รวมรีวิว 2 ชุดโดยกันซ้ำด้วย "กติกาเดียวกับ DB" — md5 ของข้อความที่ล้างแล้ว
+
+    ⚠️ เดิมใช้ text[:80] ของข้อความ "ดิบ" ซึ่งมีวันที่สัมพัทธ์ฝังอยู่ต้นข้อความ
+    พอ scrape รอบใหม่วันที่เลื่อน ("4 เดือนที่แล้ว" → "5 เดือนที่แล้ว")
+    80 ตัวอักษรแรกก็เปลี่ยน → มองเป็นรีวิวใหม่แล้ว append ซ้ำเข้าไปเรื่อย ๆ
+    (สะสมจนไฟล์ master พองเกินจริง 7,084 รายการ ทั้งที่ DB ถูกต้องอยู่แล้ว)
+    เป็นบั๊กชนิดเดียวกับที่เคยทำให้ DB มีรีวิวซ้ำ 3,453 แถว — ดู review_text_hash()
     """
-    seen = {r["text"][:80] for r in existing}
+    def _key(r: dict) -> str:
+        t = (r.get("text") or "").strip()
+        return review_text_hash(t) if t else ""
+
+    seen = {_key(r) for r in existing}
+    seen.discard("")
     combined = list(existing)
     for r in new:
-        key = r.get("text", "")[:80]
-        if key and key not in seen:
-            seen.add(key)
+        k = _key(r)
+        if k and k not in seen:
+            seen.add(k)
             combined.append(r)
     return combined
 
