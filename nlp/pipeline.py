@@ -41,9 +41,31 @@ def _severity_for(sentiment: str, category: str, rating: int | None) -> str:
 
 async def _load_unanalyzed(session: AsyncSession, batch_size: int) -> list[dict]:
     """Fetch reviews without a matching analyzed_reviews row."""
+    # ⚠️ ต้องใช้ r.text_clean ไม่ใช่ r.text
+    #
+    # r.text คือข้อความดิบจากหน้าเว็บ มีขยะปนอยู่: ชื่อคนรีวิว, "Local Guide · 536
+    # รีวิว · 2,957 รูปภาพ", วันที่สัมพัทธ์ ("3 ปีที่แล้ว"), ปุ่ม "ชอบ"/"แชร์",
+    # "คำตอบจากเจ้าของ" และป้ายคะแนนย่อยของ Google ("อาหาร: 5  บริการ: 5  บรรยากาศ: 5")
+    #
+    # บั๊กนี้เคยทำให้ (วัดเมื่อ 2026-09-26):
+    #   - keywords 32% มีคำว่า "ชอบ" / 29% มีคำว่า "แชร์" / 49% มีคำว่า "ปี"
+    #     ทั้งที่ไม่มีคำเหล่านั้นใน text_clean เลย
+    #   - หมวด pain point เพี้ยน 5.9% — "ราคาและความคุ้มค่า" พองเกินจริง 18%,
+    #     "การบริการและเจ้าหน้าที่" 11%, "การเดินทางและที่จอดรถ" 6%
+    #     (เพราะป้าย "บริการ: 5" ถูกนับเป็นคำบ่นเรื่องบริการ)
+    #   - รีวิวที่ให้ดาวอย่างเดียว (ไม่มีข้อความ) 3,494 แถว ถูกติดป้าย pain point
+    #     จากคำในป้าย UI ทั้งที่ผู้รีวิวไม่ได้เขียนอะไรเลย
+    #
+    # scripts/reanalyze_all.py ใช้ text_clean ถูกต้องอยู่แล้ว — บั๊กอยู่เฉพาะ
+    # เส้นทาง incremental นี้ (analyze.py / auto_refresh เรียกตัวนี้)
+    #
+    # ยังคงดึงรีวิวที่ text_clean ว่างมาด้วย (ไม่กรองออก) เพราะถ้าข้ามไป
+    # _load_unanalyzed จะหยิบมันมาซ้ำทุกครั้งไม่จบ — จัดการที่ปลายทางแทน
+    # โดยบันทึกแถวที่ pain_point_category = NULL (ดู _empty_row)
     result = await session.execute(
         text("""
-            SELECT r.id, r.place_id, r.rating, r.text,
+            SELECT r.id, r.place_id, r.rating,
+                   COALESCE(r.text_clean, '') AS text,
                    p.name AS place_name
             FROM reviews r
             JOIN places p ON p.id = r.place_id
@@ -111,6 +133,31 @@ def _sentiment_from_rating(rating: int | None) -> str:
     return "negative"  # 1-2 ดาว
 
 
+def _empty_row(review: dict) -> dict:
+    """
+    แถวสำหรับรีวิวที่ให้ดาวอย่างเดียว (ไม่มีข้อความหลังล้าง)
+
+    ต้องบันทึกแถวไว้ ไม่ใช่ข้ามไป เพราะ _load_unanalyzed หยิบ "รีวิวที่ยังไม่มีแถว
+    ใน analyzed_reviews" ถ้าข้ามจะถูกหยิบมาซ้ำทุกครั้งไม่จบ
+
+    pain_point_category = NULL โดยเจตนา — ไม่มีข้อความก็ไม่มีทางรู้ว่าติเรื่องอะไร
+    เดิมโค้ดใส่หมวดให้จากคำในป้าย UI ที่ติดมากับข้อความดิบ ("บริการ: 5" -> หมวดบริการ)
+    ทำให้ 3,494 แถวมีหมวดทั้งที่ผู้รีวิวไม่ได้เขียนอะไร
+
+    sentiment ยังประเมินจากดาวได้ เพราะดาวเป็นข้อมูลจริงที่ผู้รีวิวให้มา
+    """
+    rating = review.get("rating")
+    return {
+        "review_id": review["id"],
+        "sentiment": _sentiment_from_rating(rating),
+        "pain_point_category": None,
+        "pain_point_thai": None,
+        "severity": severity_from_rating(rating),
+        "keywords": [],
+        "model_used": "rating-only",
+    }
+
+
 def _analyze_rule_based(review: dict) -> dict:
     """Fallback: rule-based category + severity from rating."""
     _, tokens = preprocess(review["text"])
@@ -140,12 +187,24 @@ async def run_analysis(
     Returns {"analyzed": int, "duration_sec": float}
     """
     t0 = time()
-    reviews = await _load_unanalyzed(session, batch_size)
+    all_reviews = await _load_unanalyzed(session, batch_size)
 
-    if not reviews:
+    if not all_reviews:
         return {"analyzed": 0, "duration_sec": 0.0}
 
-    analyzed_rows: list[dict] = []
+    # แยกรีวิวที่ให้ดาวอย่างเดียวออกก่อนเข้าโมเดล — ไม่มีข้อความก็ไม่มีอะไรให้วิเคราะห์
+    # และห้ามให้โมเดลเดาหมวดจากสตริงว่าง (เดิมส่ง text ดิบเข้าไปจึงได้หมวดจากขยะ)
+    reviews = [r for r in all_reviews if (r["text"] or "").strip()]
+    rating_only = [r for r in all_reviews if not (r["text"] or "").strip()]
+
+    analyzed_rows: list[dict] = [_empty_row(r) for r in rating_only]
+    if rating_only:
+        print(f"[nlp] รีวิวให้ดาวอย่างเดียว {len(rating_only)} อัน "
+              f"— บันทึกโดยไม่ระบุหมวด")
+
+    if not reviews:
+        saved = await _save_analyzed(session, analyzed_rows)
+        return {"analyzed": saved, "duration_sec": round(time() - t0, 2)}
 
     # -----------------------------------------------------------------------
     # Strategy A: WangchanBERTa ที่ fine-tune เองแล้ว (อารมณ์ + หมวดหมู่)
@@ -174,7 +233,7 @@ async def run_analysis(
                 "keywords": tokens[:10],
                 "model_used": "wangchanberta-finetuned",
             })
-        print(f"[nlp] WangchanBERTa (fine-tuned) analyzed {len(analyzed_rows)} reviews")
+        print(f"[nlp] WangchanBERTa (fine-tuned) analyzed {len(reviews)} reviews")
 
     # -----------------------------------------------------------------------
     # Strategy B: Claude API (ใช้เมื่อโมเดล WangchanBERTa ไม่พร้อม + มี API key)
@@ -213,7 +272,7 @@ async def run_analysis(
                     for review in batch:
                         analyzed_rows.append(_analyze_rule_based(review))
 
-        print(f"[nlp] Claude analyzed {len(analyzed_rows)} reviews")
+        print(f"[nlp] Claude analyzed {len(reviews)} reviews")
 
     # -----------------------------------------------------------------------
     # Strategy C: Pure rule-based (no model, no API key)
@@ -221,7 +280,7 @@ async def run_analysis(
     else:
         for review in reviews:
             analyzed_rows.append(_analyze_rule_based(review))
-        print(f"[nlp] Rule-based analyzed {len(analyzed_rows)} reviews")
+        print(f"[nlp] Rule-based analyzed {len(reviews)} reviews")
 
     inserted = await _save_analyzed(session, analyzed_rows)
     await session.commit()

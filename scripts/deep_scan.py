@@ -12,6 +12,15 @@ deep_scan.py — เก็บรีวิวย้อนหลังให้ค
   shallow  จำนวนรีวิว >= 50 และช่วงวันที่ของรีวิวแคบกว่า 730 วัน (เก็บได้แค่ช่วงล่าสุด)
   all      รวมทั้ง 3 กลุ่ม
 
+  gap      ใช้ google_reviews_total เป็นเฉลย — เลือกร้านที่ยังขาดรีวิวจริง
+           และเรียงตาม "จำนวนที่เก็บคืนได้" ไม่ใช่ "จำนวนที่มีอยู่"
+
+⚠️ --targets gap ต่างจากอีก 4 ตัวสองเรื่อง (ดูเหตุผลใน load_targets)
+   1. **ไม่บังคับ deep_scanned_at IS NULL** — ครอบร้านที่ถูกตี deep_scanned_at
+      ไว้แล้วแต่เก็บได้แค่ ~200 ด้วย (33 ร้าน ~11,000 รีวิวที่เกณฑ์อื่นมองไม่เห็น)
+   2. **เรียงด้วยช่องว่าง** ไม่ใช่ ORDER BY cnt DESC — ร้านใหม่ที่มี 0 รีวิว
+      แต่ Google มี 1,705 อัน ต้องมาก่อนร้านที่เก็บไปแล้ว 800 และเหลืออีก 50
+
 รัน:
   uv run python scripts/deep_scan.py --dry-run          # ดูรายชื่อร้านก่อน ไม่แตะเน็ต
   uv run python scripts/deep_scan.py                    # capped ทีละ 5 ร้าน พัก 20 นาที
@@ -34,17 +43,38 @@ from sqlalchemy import text
 
 from db.database import AsyncSessionLocal
 from scraper.scraper import DEEP_MAX_ATTEMPTS, run_deep_scan
+from scraper.scraper_core import MAX_REVIEWS_PER_PLACE
 
 MAX_ROUNDS = 60                      # กันวนไม่รู้จบ (94 ร้าน ÷ 5 = ~19 รอบ)
 BLOCK_BACKOFF_HOURS = [2, 4, 6]      # เจอบล็อก → พักยาวขึ้นเรื่อยๆ แล้วลองใหม่
 
 # เกณฑ์เลือกร้าน — ใช้ใน HAVING (ทุกกลุ่มบังคับ deep_scanned_at IS NULL ใน WHERE อยู่แล้ว)
+# เพดานที่ Google เสิร์ฟให้ต่อร้านผ่านการ scroll (วัดจากร้านที่ deep สำเร็จ 26 ร้าน:
+# ต่ำสุด 433 · มัธยฐาน 785 · สูงสุด 890) — ใช้เป็นตัวตั้งของ "ช่องว่างที่เก็บคืนได้"
+# ถ้าเทียบกับ google_reviews_total ตรง ๆ ร้านใหญ่จะดูขาดตลอดไป
+# (วัดพระศรีฯ deep แล้วได้ 832/10,058 = 8% ซึ่งคือเต็มที่แล้ว ไม่ใช่ล้มเหลว)
+SERVE_CEILING = 850
+# ช่องว่างต่ำกว่านี้ไม่คุ้มเวลา deep (ร้านละ ~3 นาที)
+GAP_MIN = 50
+
 TARGET_CONDITIONS = {
     "capped": "COUNT(r.id) >= 190",
     "zero": "COUNT(r.id) = 0",
     "shallow": (
         "COUNT(r.id) >= 50 AND "
         "(MAX(r.review_date_approx) - MIN(r.review_date_approx)) < 730"
+    ),
+    # ต้องมีเฉลยก่อนจึงคำนวณช่องว่างได้ — ร้านที่ Places API หาไม่เจอจะถูกข้าม
+    #
+    # ⚠️ ต้องกรองร้านที่ refresh ทำเองได้ออกด้วย (เพดาน MAX_REVIEWS_PER_PLACE)
+    #   ร้านที่ Google มี <= 200 รีวิว: refresh เก็บได้ 94% ใน 14 วินาที
+    #   ถ้าเอามา deep จะใช้ 3 นาทีเพื่อผลเท่าเดิม = เสียเวลา 13 เท่าเปล่า ๆ
+    #   (วัดจากข้อมูลจริง: กลุ่ม 50-199 รีวิว refresh ได้ 94% · deep ได้ 95%)
+    #   deep คุ้มเฉพาะร้านที่ refresh ตัดทิ้ง คือร้านที่มีเกินเพดาน 200
+    "gap": (
+        f"MAX(p.google_reviews_total) IS NOT NULL AND "
+        f"LEAST(MAX(p.google_reviews_total), {SERVE_CEILING}) > {MAX_REVIEWS_PER_PLACE} AND "
+        f"LEAST(MAX(p.google_reviews_total), {SERVE_CEILING}) - COUNT(r.id) >= {GAP_MIN}"
     ),
 }
 
@@ -60,7 +90,10 @@ def log(msg: str) -> None:
 
 def _having(targets: str) -> str:
     if targets == "all":
-        return " OR ".join(f"({c})" for c in TARGET_CONDITIONS.values())
+        # ไม่รวม gap เพราะมันใช้ WHERE คนละแบบ (ไม่บังคับ deep_scanned_at IS NULL)
+        # ถ้ารวมเข้ามาจะได้ผลผิด — ต้องเรียก --targets gap แยก
+        return " OR ".join(f"({c})" for k, c in TARGET_CONDITIONS.items()
+                           if k != "gap")
     return TARGET_CONDITIONS[targets]
 
 
@@ -79,16 +112,39 @@ async def load_targets(session, targets: str, limit: int | None, skip: set[str],
       จึงคิวรีนับ "เก็บสำเร็จ / ยอมแพ้ / ยังอยู่ในคิว" ออกจากกันได้
     """
     attempts_cmp = ">=" if given_up else "<"
+
+    # ── เกณฑ์ gap ต่างจากอีก 4 ตัวสองเรื่อง ──
+    #
+    # 1. ไม่บังคับ deep_scanned_at IS NULL
+    #    เพราะ 33 ร้านถูกตี deep_scanned_at ไว้แล้วแต่เก็บได้แค่ ~200 อัน
+    #    (เช่น ฟ้าไทยฟาร์ม 199/1,950 · National Museum Buddha 200/2,912)
+    #    เกิดจากเกณฑ์ผ่านเดิมที่ดูแค่ "collected > 0" ไม่ได้ดูว่าครบไหม
+    #    เกณฑ์อื่นใช้ WHERE deep_scanned_at IS NULL จึงข้ามร้านกลุ่มนี้ถาวร
+    #    = ~11,000 รีวิวที่เข้าถึงไม่ได้เลย
+    #
+    # 2. เรียงด้วยช่องว่าง ไม่ใช่ ORDER BY cnt DESC
+    #    cnt = จำนวนที่ "มีอยู่แล้ว" ซึ่งกลับหัวกับผลตอบแทน — ร้านใหม่ที่มี 0 รีวิว
+    #    แต่ Google มี 1,705 อัน จะอยู่ท้ายคิวสุด หลังร้านที่เก็บไปแล้ว 800
+    #    และเหลืออีกแค่ 50 ต้องเรียงด้วย min(google,850) - cnt แทน
+    if targets == "gap":
+        where_deep = ""      # ครอบทั้งร้านที่ deep แล้วและยังไม่ deep
+        order_by = (f"LEAST(MAX(p.google_reviews_total), {SERVE_CEILING}) "
+                    f"- COUNT(r.id) DESC, p.name")
+    else:
+        where_deep = "p.deep_scanned_at IS NULL AND"
+        order_by = "cnt DESC, p.name"
+
     sql = f"""
         SELECT p.name, COUNT(r.id) AS cnt
         FROM places p
         LEFT JOIN reviews r ON r.place_id = p.id
-        WHERE p.deep_scanned_at IS NULL
-          AND COALESCE(p.deep_attempts, 0) {attempts_cmp} :max_attempts
+        WHERE {where_deep}
+              COALESCE(p.deep_attempts, 0) {attempts_cmp} :max_attempts
+          AND NOT p.scrape_excluded
           AND NOT (p.name = ANY(:skip))
         GROUP BY p.id, p.name
         HAVING {_having(targets)}
-        ORDER BY cnt DESC, p.name
+        ORDER BY {order_by}
     """
     params: dict = {"skip": list(skip), "max_attempts": DEEP_MAX_ATTEMPTS}
     if limit:
@@ -193,7 +249,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Deep scan — เก็บรีวิวให้ครบสำหรับร้านที่เก็บไม่ครบ"
     )
-    parser.add_argument("--targets", choices=["capped", "zero", "shallow", "all"],
+    parser.add_argument("--targets",
+                        choices=["capped", "zero", "shallow", "all", "gap"],
                         default="capped", help="กลุ่มร้านที่จะทำ (default capped)")
     parser.add_argument("--limit", type=int, default=5, help="ร้านต่อรอบ (default 5)")
     parser.add_argument("--wait", type=int, default=20, help="นาทีที่พักระหว่างรอบ (default 20)")

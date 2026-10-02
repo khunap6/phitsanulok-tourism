@@ -35,6 +35,37 @@ DEEP_BLOCK_STREAK_STOP = 2
 # (ยอมแพ้ = ไม่ตั้ง deep_scanned_at แต่ deep_attempts >= ค่านี้ → คิวรีแยกออกจาก "เก็บสำเร็จ" ได้)
 DEEP_MAX_ATTEMPTS = 3
 
+# เกณฑ์ขั้นต่ำก่อนตี deep_scanned_at — ต้องได้เท่านี้ของเพดานที่ทำได้
+#
+# เดิมใช้แค่ collected > 0 ซึ่งอ่อนเกินไป (พบ 2026-10-01):
+#   พระพุทธชินราช      Google 7,028  ดึงมาได้ 14  = 2%   ← ถูกตีว่าเสร็จ
+#   พระราชวังจันทน์     Google 1,424  ดึงมาได้ 21  = 2%   ← ถูกตีว่าเสร็จ
+#   ร้านแกงบ้านเรา      Google   466  ดึงมาได้ 10  = 2%   ← ถูกตีว่าเสร็จ
+#   ข้าวมันไก่พังกี่    Google   205  ดึงมาได้ 10  = 5%   ← ถูกตีว่าเสร็จ
+# ทั้งหมดมี deep_attempts = 0 คือไม่เคยถูกนับว่าล้มเหลว และตรวจแล้วไม่มีแถวแฝด
+# ที่เก็บรีวิวไว้ — รีวิวยังไม่ถูกเก็บจริง
+#
+# กลไก: deep scroll ได้หน้าแรกราว 10 การ์ด แล้ว Google ไม่ส่งมาเพิ่ม
+# ตัวนับ node ไม่โต → ชน DEEP_NO_GROWTH_LIMIT → หยุด → collected = 10 > 0
+#
+# ทำไม 0.5: ร้านที่ deep สำเร็จจริงได้เฉลี่ย 86% ของเพดาน (มัธยฐาน 94%)
+# วัดจาก 117 ร้านที่ deep แล้ว ดังนั้น 50% เป็นพื้นที่หย่อนพอจะไม่ตีร้านที่
+# Google เสิร์ฟให้ไม่เต็มว่าล้มเหลว แต่ยังจับเคส 2-13% ได้หมด
+#
+# ร้านที่ไม่ผ่านเกณฑ์นี้จะถูกนับ deep_attempts แล้วลองใหม่ได้ถึง DEEP_MAX_ATTEMPTS
+# ครั้ง เกินนั้นย้ายไปกลุ่ม "ยอมแพ้" ซึ่ง deep_scan.py --given-up ยังมองเห็นได้
+# ต่างจากเดิมที่ถูกตี deep_scanned_at แล้วหายไปจากทุกเกณฑ์ยกเว้น gap
+DEEP_MIN_RATIO = 0.5
+
+# เพดานที่ Google เสิร์ฟผ่าน scroll ได้ต่อร้าน — ต้องตรงกับ SERVE_CEILING
+# ใน scripts/deep_scan.py และ scripts/requeue_shortfall.py
+SERVE_CEILING_DEEP = 850
+
+# ร้านที่ refresh "เข้าไม่ถึงหน้ารีวิว" ให้คืนเข้าคิวได้ไม่เกินกี่ครั้ง
+# เกินนี้ยอมรับว่าเก็บไม่ได้จริงและปล่อยให้ scraped_at ค้างไว้ กันวน scrape ไม่รู้จบ
+# (ใช้คอลัมน์ refresh_shortfalls ร่วมกับ scripts/requeue_shortfall.py)
+REFRESH_MAX_SHORTFALLS = 3
+
 
 # ---------------------------------------------------------------------------
 # DB helpers
@@ -43,7 +74,8 @@ DEEP_MAX_ATTEMPTS = 3
 async def load_existing_places(session: AsyncSession) -> list[str]:
     """Load all place names from DB (ordered oldest scraped_at first)."""
     result = await session.execute(
-        text("SELECT name FROM places ORDER BY scraped_at ASC NULLS FIRST")
+        text("SELECT name FROM places WHERE NOT scrape_excluded "
+             "ORDER BY scraped_at ASC NULLS FIRST")
     )
     return [row[0] for row in result.fetchall()]
 
@@ -58,18 +90,23 @@ async def load_places_to_refresh(session: AsyncSession) -> list[str]:
       ไม่มีรีวิวใหม่ 3 ครั้งขึ้นไป    → เว้น 30 วัน  (ร้านนิ่ง ไม่ต้องตามบ่อย)
 
     ร้านที่ยังไม่เคย scan (scraped_at NULL) มาก่อนเสมอ
+
+    ⚠️ เกณฑ์ตรงนี้ต้องเหมือน auto_refresh.eligible_count() เป๊ะ รวมตัวกรอง
+      NOT scrape_excluded ไม่งั้น auto_refresh จะนับว่ามีงานเหลือแต่ฟังก์ชันนี้
+      ไม่หยิบร้านไหนมาทำ → loop วนไม่จบ
     """
     result = await session.execute(
         text("""
             SELECT name FROM places
-            WHERE scraped_at IS NULL
+            WHERE NOT scrape_excluded
+              AND (scraped_at IS NULL
                OR scraped_at < NOW() - (
                     CASE
                         WHEN COALESCE(consecutive_no_change, 0) >= 3 THEN INTERVAL '30 days'
                         WHEN COALESCE(consecutive_no_change, 0) = 2  THEN INTERVAL '14 days'
                         ELSE INTERVAL '7 days'
                     END
-                  )
+                  ))
             ORDER BY scraped_at ASC NULLS FIRST
         """)
     )
@@ -97,12 +134,49 @@ async def load_known_hashes(session: AsyncSession, place_names: list[str]) -> di
     return out
 
 
+async def load_place_ids(session: AsyncSession, place_names: list[str]) -> dict[str, str]:
+    """แมป {ชื่อร้าน: google_place_id} ของร้านที่มี place_id
+
+    ใช้ให้ scraper เปิดหน้าร้านตรง ๆ แทนการค้นด้วยชื่อ
+
+    ⚠️ ทำไมสำคัญ (วัดจากหน้าจริง 2026-10-02)
+      ค้นด้วยชื่อ 'OASIS CAFE' บน Google Maps ได้รายการ 7 ลิงก์ แล้วคลิกผลแรก
+      ไปโผล่ที่ 'โอเอซิส คอฟฟี่ (รางน้ำ)' ราชเทวี กรุงเทพ — คนละร้าน คนละจังหวัด
+      ถ้าร้านที่โผล่มาบังเอิญอยู่ในกรอบจังหวัดพิษณุโลก is_in_phitsanulok()
+      จะปล่อยผ่าน แล้วรีวิวของร้านอื่นถูกบันทึกให้ร้านนี้โดยไม่มีอะไรจับได้
+
+      เปิดด้วย place_id ได้ร้านถูกตัวเสมอ และ URL เป็น 17z จึงอ่านพิกัดถูกด้วย
+
+    ร้านที่ไม่มี place_id ไม่อยู่ในแมป → scraper ค้นด้วยชื่อเหมือนเดิม
+    """
+    if not place_names:
+        return {}
+    rows = (await session.execute(
+        text("""
+            SELECT name, google_place_id
+            FROM places
+            WHERE name = ANY(:names) AND google_place_id IS NOT NULL
+        """),
+        {"names": place_names},
+    )).fetchall()
+    return {r[0]: r[1] for r in rows}
+
+
 async def update_scan_stats(session: AsyncSession, place_names: list[str]) -> None:
     """
     บันทึกค่าอ้างอิงหลัง scan เสร็จ:
       - last_review_count      = จำนวนรีวิวที่มีตอนนี้
       - last_scan_new_reviews  = รอบนี้ได้ใหม่กี่อัน (เทียบกับค่าอ้างอิงเดิม)
       - consecutive_no_change  = ไม่มีของใหม่ติดกันกี่รอบ (+1 หรือ reset 0)
+
+    ⚠️ place_names ต้องเป็น "ร้านที่บันทึกลงฐานสำเร็จจริง" ไม่ใช่ร้านที่ขอไปทั้งชุด
+      บั๊กเดิม (พบ 2026-09-27): run_refresh ส่ง place_names ทั้งชุดเข้ามา ทำให้
+      ร้านที่ scrape_place คืน None (หน้าเว็บโหลดไม่ขึ้น) ถูกบวก
+      consecutive_no_change ทุกรอบ ทั้งที่ save_to_db ไม่ได้แตะมันเลย
+      → scraped_at คง NULL (ค้างหัวคิวเพราะ ORDER BY ... NULLS FIRST)
+        แต่ cnc พุ่งถึง 43 อย่างไร้ความหมาย
+      วัดความเสียหาย: 18 ร้านกินสล็อตทุกรอบโดยไม่เคยสำเร็จ ปิดกั้น 3,932 รีวิว
+      และทำให้ 12 รอบติดกันได้รีวิวใหม่ 0 อัน
     """
     if not place_names:
         return
@@ -458,8 +532,13 @@ async def _run_with_fallback(
     max_reviews: int = MAX_REVIEWS_PER_PLACE,
     known_hashes_by_place: dict[str, set[str]] | None = None,
     deep: bool = False,
+    place_ids: dict[str, str] | None = None,
 ) -> list[dict]:
-    """Try Playwright up to 3 times. On repeated failure, use Selenium fallback."""
+    """Try Playwright up to 3 times. On repeated failure, use Selenium fallback.
+
+    place_ids ส่งต่อให้ Playwright เท่านั้น — Selenium fallback ยังค้นด้วยชื่อ
+    เพราะเป็นทางสำรองที่ใช้เมื่อ Playwright ล้ม 3 ครั้ง ไม่คุ้มจะแก้ตามทั้งคู่
+    """
     last_exc = None
     for attempt in range(1, 4):
         try:
@@ -471,6 +550,7 @@ async def _run_with_fallback(
                 max_reviews=max_reviews,
                 known_hashes_by_place=known_hashes_by_place,
                 deep=deep,
+                place_ids=place_ids,
             )
         except Exception as e:
             last_exc = e
@@ -600,21 +680,143 @@ async def run_refresh(
         print(f"[incremental] โหลดรีวิวเดิม {n_known:,} อัน จาก {len(known_hashes)} ร้าน "
               f"(ร้านใหม่ {len(place_names) - len(known_hashes)} ร้าน = scan เต็ม)")
 
+        place_ids = await load_place_ids(session, place_names)
+        print(f"[place_id] เปิดตรงด้วย place_id {len(place_ids)}/{len(place_names)} ร้าน "
+              f"(ที่เหลือค้นด้วยชื่อ)")
+
         results = await _run_with_fallback(
             places=place_names,
             headless=headless,
             max_places=max_places,
             auto_discover=False,
             known_hashes_by_place=known_hashes,
+            place_ids=place_ids,
         )
 
         # B3: ถ้า scraper เจอบล็อกจริง → คืน flag ให้ auto_refresh พักแล้วลองใหม่
         blocked_signal = next((r["_blocked"] for r in results if r and r.get("_blocked")), None)
 
         places_count, reviews_new = await save_to_db(results, session)
-        # อัปเดตค่าอ้างอิงเฉพาะร้านที่ scrape สำเร็จจริง (ไม่นับรอบที่โดนบล็อก)
+
+        # ── แยก "ร้านที่ขอไป" ออกจาก "แถวที่ถูกเขียนจริง" ──
+        #
+        # save_to_db upsert ด้วย ON CONFLICT (name) โดยใช้ result["place_name"]
+        # ซึ่งเป็น**ชื่อจริงบนหน้าเว็บ** ไม่ใช่ชื่อที่ใช้ค้น สองค่านี้ไม่ตรงกันบ่อย
+        # เพราะการค้นด้วยชื่อบน Google Maps พาไปร้านอื่นได้ (วัดจริง: ขอ
+        # 'ร้านอาหารปักษ์ใต้' ไปลงร้านที่ห่าง 8.8 กม. · ขอ 'Pizza Hut' ได้หน้า
+        # 'พิซซ่าฮัท สาขา พิษณุโลก' ห่าง 1.9 กม.)
+        #
+        # ผลคือแถวที่คิวขอไปไม่เคยถูกแตะ scraped_at คง NULL แล้วค้างหัวคิวถาวร
+        # result["search_query"] เก็บชื่อที่ขอไว้ จึงใช้จับคู่กลับได้
+        served = {r["search_query"] for r in results
+                  if r and r.get("search_query")}
+        landed_elsewhere = {
+            r["search_query"] for r in results
+            if r and r.get("search_query") and r.get("place_name")
+            and r["search_query"] != r["place_name"]
+        }
+        missed = [n for n in place_names if n not in served]
+
+        # อัปเดตค่าอ้างอิงเฉพาะร้านที่บันทึกลงฐานสำเร็จจริง
+        # (ทั้งชื่อที่ขอไปและชื่อจริงบนหน้าเว็บ — แถวไหนมีอยู่ก็อัปเดตแถวนั้น)
         if not blocked_signal:
-            await update_scan_stats(session, place_names)
+            saved_names = sorted(
+                {r["place_name"] for r in results if r and r.get("place_name")}
+                | served
+            )
+            await update_scan_stats(session, saved_names)
+
+        # ── แถวที่ขอไปแต่ผลลัพธ์ไป landed ที่แถวอื่น: ปิดงานให้ด้วย ──
+        #
+        # ไม่ตี scraped_at ให้ = ค้างหัวคิวตลอดไป ทั้งที่ scrape สำเร็จแล้ว
+        # (รีวิวถูกบันทึกไว้ใต้แถวชื่อจริงเรียบร้อย)
+        # ตีเป็น NOW() เพื่อให้เข้า cooldown ปกติ แล้ว merge_duplicate_places.py
+        # จะรวมสองแถวทีหลังตามพิกัด
+        if landed_elsewhere and not blocked_signal:
+            res = await session.execute(
+                text("""
+                    UPDATE places SET scraped_at = NOW()
+                    WHERE name = ANY(:names) AND scraped_at IS NULL
+                    RETURNING id
+                """),
+                {"names": sorted(landed_elsewhere)},
+            )
+            n_closed = len(res.fetchall())
+            if n_closed:
+                print(f"[refresh] {n_closed} แถวที่ขอไปแต่หน้าเว็บเป็นชื่ออื่น "
+                      f"— ปิดงานให้แล้ว (รีวิวอยู่ใต้แถวชื่อจริง) "
+                      f"ดู merge_duplicate_places.py")
+            await session.commit()
+
+        # ── ร้านที่ไม่คืนผลลัพธ์เลย (scrape_place คืน None): ต้องนับด้วย ──
+        #
+        # เดิมกลุ่มนี้หลุดทุกตัวกรอง — ไม่อยู่ใน results จึงไม่มี _reviews_failed
+        # ให้อ่าน และ save_to_db ไม่แตะ scraped_at → ค้างหัวคิวโดยไม่มีตัวนับ
+        # 17 จาก 18 ร้านที่ติดลูปมี refresh_shortfalls = 0 เพราะช่องโหว่นี้
+        #
+        # นับเข้า refresh_shortfalls ชุดเดียวกับเคส "เก็บได้ 0 รีวิว" เพื่อให้
+        # เพดาน REFRESH_MAX_SHORTFALLS ทำงาน = ร้านที่พังจริงเลิกตามเองหลัง 3 ครั้ง
+        if missed and not blocked_signal:
+            res = await session.execute(
+                text("""
+                    UPDATE places SET
+                        refresh_shortfalls = COALESCE(refresh_shortfalls, 0) + 1,
+                        scraped_at = CASE
+                            WHEN COALESCE(refresh_shortfalls, 0) + 1 < :cap
+                            THEN scraped_at ELSE NOW() END
+                    WHERE name = ANY(:names)
+                    RETURNING id, scraped_at IS NULL AS still_queued
+                """),
+                {"names": missed, "cap": REFRESH_MAX_SHORTFALLS},
+            )
+            rows = res.fetchall()
+            gave_up = sum(1 for x in rows if not x.still_queued)
+            print(f"[refresh] ไม่ได้ผลลัพธ์เลย {len(missed)} ร้าน "
+                  f"— ยังอยู่ในคิว {len(rows) - gave_up} | "
+                  f"เลิกตาม {gave_up} (ครบ {REFRESH_MAX_SHORTFALLS} ครั้ง)")
+            await session.commit()
+
+        # ── ร้านที่เข้าไม่ถึงหน้ารีวิว: คืนเข้าคิว ไม่ให้ถือว่าสำเร็จ ──
+        #
+        # save_to_db ตี scraped_at = NOW() ให้ทุกผลลัพธ์ที่ไม่ถูกบล็อก และ
+        # update_scan_stats เพิ่ม consecutive_no_change → ร้านเข้า cooldown 7-30 วัน
+        # แม้จะเก็บรีวิวไม่ได้เลย
+        #
+        # เดิม _reviews_failed มีแค่ run_deep_scan อ่าน ส่วน run_refresh ไม่อ่านเลย
+        # ผลคือ (วัดเมื่อ 2026-09-26) 72 ร้านมีรีวิว <= 5 อันทั้งที่ Google บอกมี
+        # 200-7,028 และถูกตี scraped_at ไปแล้ว — ต้องใช้สคริปต์แยกมากู้คิวทีหลัง
+        #
+        # Google ส่งหน้าร้านแบบ "ไม่ render ส่วนรีวิว" มาเป็นบางครั้ง โดยไม่ขึ้น
+        # CAPTCHA และไม่ขึ้นหน้า sorry — ตัวตรวจจับบล็อกจึงไม่ทำงาน รันสดยืนยันแล้ว
+        # ว่าร้านเดียวกันรอบหนึ่งได้การ์ดรีวิว 8 อัน อีกรอบได้ 0
+        #
+        # ใช้ refresh_shortfalls เป็นเพดานกันวนไม่รู้จบ — ร้านที่ Google ไม่ยอม
+        # เสิร์ฟรีวิวให้จริง ๆ จะหยุดพยายามหลังครบ REFRESH_MAX_SHORTFALLS ครั้ง
+        failed_names = [
+            r["place_name"] for r in results
+            if r and r.get("_reviews_failed") and r.get("place_name")
+        ]
+        if failed_names:
+            res = await session.execute(
+                text("""
+                    UPDATE places SET
+                        refresh_shortfalls = COALESCE(refresh_shortfalls, 0) + 1,
+                        consecutive_no_change = 0,
+                        scraped_at = CASE
+                            WHEN COALESCE(refresh_shortfalls, 0) + 1 < :cap
+                            THEN NULL ELSE scraped_at END
+                    WHERE name = ANY(:names)
+                    RETURNING id, scraped_at IS NULL AS requeued
+                """),
+                {"names": failed_names, "cap": REFRESH_MAX_SHORTFALLS},
+            )
+            rows = res.fetchall()
+            back = sum(1 for x in rows if x.requeued)
+            print(f"[refresh] เข้าไม่ถึงหน้ารีวิว {len(failed_names)} ร้าน "
+                  f"— คืนเข้าคิว {back} | ยอมแพ้ {len(rows) - back} "
+                  f"(ครบ {REFRESH_MAX_SHORTFALLS} ครั้ง)")
+            await session.commit()
+
         duration = round(time() - t0, 1)
 
         job_status = "blocked" if blocked_signal else "done"
@@ -685,6 +887,7 @@ async def run_deep_scan(
                 auto_discover=False,
                 max_reviews=DEEP_REVIEW_CAP,
                 deep=True,
+                place_ids=await load_place_ids(session, [name]),
             )
 
             sig = next((r["_blocked"] for r in results if r and r.get("_blocked")), None)
@@ -702,15 +905,36 @@ async def run_deep_scan(
             reviews_new += r_cnt
             pending_commit += r_cnt
 
+            # ── เพดานที่ทำได้ของแถวที่ถูกเขียนจริง ──
+            # อ่านจาก saved_ids ไม่ใช่จากชื่อที่ส่งเข้ามา เพราะชื่อจริงบนหน้าเว็บ
+            # อาจไม่ตรงกับชื่อที่ขอ แล้ว save_to_db ไปเขียนแถวอื่น
+            ceil = 0
+            if saved_ids:
+                ceil = int((await session.execute(
+                    text("""
+                        SELECT COALESCE(MAX(LEAST(google_reviews_total, :sc)), 0)
+                        FROM places WHERE id = ANY(:ids)
+                    """),
+                    {"ids": saved_ids, "sc": SERVE_CEILING_DEEP},
+                )).scalar() or 0)
+
+            # ดึงมาได้มากพอเมื่อเทียบกับเพดานหรือยัง
+            #
+            # ceil = 0 → ไม่มีเฉลย (Places API ไม่มี google_reviews_total ให้)
+            #   ตัดสินสัดส่วนไม่ได้ จึงยอมรับตามเกณฑ์เดิม collected > 0
+            enough = collected > 0 and (
+                ceil == 0 or collected >= DEEP_MIN_RATIO * ceil
+            )
+
             # เกณฑ์ "scrape สำเร็จ" ก่อนตี deep_scanned_at — ต้องครบทุกข้อ:
             #   1. มี id จาก RETURNING  (หน้าร้านโหลดขึ้น อยู่ในพื้นที่ บันทึกลง DB แล้ว)
             #   2. ไม่โดนบล็อก
             #   3. เข้าถึงหน้ารีวิวได้จริง (ไม่ใช่กดแท็บไม่ติด / feed ไม่ render)
-            #   4. ดึงรีวิวมาได้อย่างน้อย 1 อัน
+            #   4. ดึงรีวิวมาได้ถึงสัดส่วนขั้นต่ำของเพดาน (ดู DEEP_MIN_RATIO)
             # ข้อ 3-4 ทำให้ "ร้านไม่มีรีวิว" กับ "เข้าไม่ถึงหน้ารีวิว" ไม่ถูกเหมารวมกัน —
             # ทั้งคู่ไม่ถูกมาร์ค จึงถูกหยิบมาลองใหม่ได้เสมอ (เดิมเงื่อนไข existing == 0
             # จะมาร์คร้านกลุ่ม zero ที่กดแท็บไม่ติดว่าเสร็จถาวร ซึ่งคือกลุ่มที่ตั้งใจจะไปกู้)
-            scraped_ok = bool(saved_ids) and not sig and not reviews_failed and collected > 0
+            scraped_ok = bool(saved_ids) and not sig and not reviews_failed and enough
 
             if scraped_ok:
                 await session.execute(
@@ -725,8 +949,11 @@ async def run_deep_scan(
                 # นับ deep_attempts เฉพาะ "เข้าไม่ถึงหน้ารีวิว" ซึ่งเป็นความผิดของหน้าเว็บ
                 # ไม่นับตอนโดนบล็อก (กิ่งนี้ไม่รวมกรณี sig อยู่แล้ว) — โดนบล็อก 3 รอบติด
                 # ต้องไม่ทำให้ร้านที่ไม่ผิดอะไรถูกทิ้งถาวร
+                # นับเคส "ดึงมาได้แต่ไม่ถึงสัดส่วน" ด้วย ไม่ใช่แค่เข้าไม่ถึงหน้ารีวิว
+                # ไม่งั้นร้านกลุ่มนี้จะถูกลองใหม่ไม่รู้จบโดยไม่มีเพดาน
+                partial = bool(saved_ids) and not reviews_failed and not enough
                 attempts = None
-                if reviews_failed and saved_ids:
+                if (reviews_failed or partial) and saved_ids:
                     r = await session.execute(
                         text("""
                             UPDATE places SET deep_attempts = COALESCE(deep_attempts, 0) + 1
@@ -740,8 +967,12 @@ async def run_deep_scan(
                     why = f"เข้าไม่ถึงหน้ารีวิว ({reviews_failed})"
                 elif not saved_ids:
                     why = "หน้าร้านโหลดไม่ขึ้น/นอกพื้นที่พิษณุโลก"
-                else:
+                elif collected == 0:
                     why = "เข้าหน้ารีวิวได้แต่ดึงมาได้ 0 อัน"
+                else:
+                    why = (f"ดึงมาได้ {collected} จากเพดาน {ceil} = "
+                           f"{collected / ceil * 100:.0f}% "
+                           f"(ต้องได้ {DEEP_MIN_RATIO * 100:.0f}% ขึ้นไป)")
 
                 if attempts is not None and attempts >= DEEP_MAX_ATTEMPTS:
                     print(f"   ⛔ ไม่นับว่าสำเร็จ — {why} | ล้มเหลวครบ {attempts}/{DEEP_MAX_ATTEMPTS} ครั้ง "

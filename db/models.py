@@ -4,6 +4,7 @@ from typing import Optional
 from geoalchemy2 import Geometry
 from sqlalchemy import (
     ARRAY,
+    Boolean,
     CheckConstraint,
     Date,
     ForeignKey,
@@ -52,6 +53,37 @@ class Place(Base):
     # นับครั้งที่ deep scan ล้มเหลวเพราะ "เข้าไม่ถึงหน้ารีวิว" (ไม่นับตอนโดนบล็อก)
     # ครบ DEEP_MAX_ATTEMPTS แล้วยัง deep_scanned_at IS NULL = ยอมแพ้
     deep_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # ── ข้อมูลจาก Google Places API (migration 012) ──
+    # แยกจากคอลัมน์ที่มาจาก scrape ข้างบนโดยเจตนา ไม่ทับกัน — เทียบกันได้ว่าเพี้ยนไหม
+    # NULL = ยังไม่เคยดึงผ่าน API (ร้านที่ scrape มาก่อนเป็น NULL ทั้งหมด)
+    google_place_id: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, unique=True
+    )
+    # types[] เก็บเป็น CSV เช่น "cafe,bakery,food" — ใช้แทน google_category
+    # (ข้อความไทยอิสระ 65 ค่า มีภาษาญี่ปุ่นปน + มีข้อความปุ่ม UI หลุดมา)
+    google_types: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    formatted_address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    google_rating: Mapped[Optional[float]] = mapped_column(Numeric(2, 1), nullable=True)
+    # ⚠️ จำนวนรีวิวที่ Google *มี* ไม่ใช่จำนวนที่เรา *เก็บได้*
+    # ห้ามใช้เป็นตัวส่วนของ pain rate / share เด็ดขาด — ตัวเศษของเรามาจาก reviews
+    # ที่ผ่านตัวกรอง (date + status + text_clean <> '' + มีแถว analyzed) ตัวส่วนที่
+    # ไม่ผ่านตัวกรองชุดเดียวกันผิดกฎข้อ 1 และทำให้ทุก % ต่ำกว่าจริงโดยไม่มีอะไรฟ้อง
+    # ใช้ได้ทางเดียว: ตัวส่วนของ "ความครบถ้วนการเก็บ" (เก็บได้ / ค่านี้) ซึ่งคนละเมตริก
+    google_reviews_total: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    api_fetched_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    # 'scrape' = มาจาก Playwright | 'api' = ค้นเจอด้วย Places API
+    discovered_by: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
+    # True = อยู่นอกขอบเขตงาน ไม่ต้องเก็บรีวิวเพิ่ม (โรงแรม/เชน/ห้าง)
+    # ข้อมูลระดับร้านยังอยู่ครบและรีวิวที่เก็บมาแล้วไม่ถูกลบ ถอนกลับได้
+    # ⚠️ ไม่ใช่ตัวกรองของสถิติ pain point — ดู migration 017
+    scrape_excluded: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    scrape_excluded_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     updated_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )

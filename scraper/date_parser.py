@@ -31,6 +31,10 @@ _ARTICLE_ONE = {"a", "an", "หนึ่ง", ""}
 
 _THAI_DIGITS = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
 
+# คำที่บอกว่าเป็นวลี "อดีตแบบสัมพัทธ์" — ต้องมีอย่างน้อยหนึ่งคำ
+# ไม่งั้นจะจับ false positive จากเนื้อรีวิว เช่น "อายุ 93 ปี", "ตั้งแต่ปี 2003"
+_PAST_MARKERS = ("ที่แล้ว", "ที่ผ่านมา", "ago")
+
 
 def parse_relative_date(
     text: str | None,
@@ -65,10 +69,15 @@ def parse_relative_date(
     if "เมื่อวาน" in t or "yesterday" in t:
         return ref_date - timedelta(days=1)
 
-    # ต้องเป็นวลี relative-past จริงๆ (มี "ที่แล้ว" หรือ "ago")
+    # ต้องเป็นวลี relative-past จริงๆ
     # ป้องกัน false positive จากข้อความรีวิวที่มีคำว่า ปี/เดือน
     # เช่น "อายุ 93 ปี", "กินมาตั้งแต่ปี 2003"
-    if "ที่แล้ว" not in t and "ago" not in t:
+    #
+    # ⚠️ Google ใช้ "ที่ผ่านมา" ด้วย ไม่ใช่แค่ "ที่แล้ว"
+    # พบว่าใช้กับรีวิวใหม่ ๆ ("2 วันที่ผ่านมา") ขณะที่รีวิวเก่าใช้ "ที่แล้ว"
+    # เดิมรับแค่ "ที่แล้ว"/"ago" ทำให้ 368 รีวิวไม่มี review_date_approx
+    # และหายไปจากทุกหน้าที่กรองช่วงวันที่ (พบ 2026-09-26)
+    if not any(k in t for k in _PAST_MARKERS):
         return None
 
     # หาหน่วยเวลา (เดือน/สัปดาห์/ปี/วัน หรือ month/week/year/day)

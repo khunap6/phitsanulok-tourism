@@ -31,6 +31,39 @@ MAX_REVIEWS_PER_PLACE = 200
 # ชื่อ/พิกัด/หมวดหมู่/เวลาทำการ/สถานะร้าน มาจาก discover ส่วนรีวิวมาจาก refresh ทีหลัง
 DISCOVER_MAX_REVIEWS = 0
 
+# ข้อความ "ปุ่มชวนแก้ไขข้อมูล" ที่ Google วางไว้ตำแหน่งเดียวกับหมวดหมู่ร้าน
+# เมื่อเจ้าของยังไม่ได้ยืนยันข้อมูล — ไม่ใช่หมวดหมู่ ต้องทิ้ง
+#
+# เก็บที่นี่เพื่อให้ scripts/fix_place_category.py ใช้ชุดเดียวกันได้
+# ถ้าแยกสองที่ รายการจะเพี้ยนกันเมื่อ Google เพิ่มปุ่มใหม่
+UI_BUTTON_PREFIXES = (
+    "เพิ่มเว็บไซต์",
+    "เพิ่มเวลาทำการ",
+    "เพิ่มหมายเลขโทรศัพท์",
+    "เพิ่มรูปภาพ",
+    "เพิ่มข้อมูล",
+    "อ้างสิทธิ์",
+    "แนะนำการแก้ไข",
+    "ยืนยันธุรกิจนี้",
+    "Add a website",
+    "Add hours",
+    "Add phone",
+    "Claim this",
+    "Suggest an edit",
+)
+
+
+def _is_ui_button_text(text: str) -> bool:
+    """ข้อความนี้เป็นปุ่มชวนแก้ไขข้อมูล ไม่ใช่หมวดหมู่ร้านใช่ไหม
+
+    เทียบแบบ startswith ไม่ใช่ตรงตัว เพราะข้อความปุ่มบางอันมีส่วนต่อท้าย
+    แต่ไม่ใช้คำนำหน้ากว้างอย่าง "เพิ่ม" เฉย ๆ เพราะจะทิ้งหมวดจริงที่ขึ้นต้น
+    ด้วยคำเดียวกันไปด้วย
+    """
+    t = (text or "").strip()
+    return any(t.startswith(pre) for pre in UI_BUTTON_PREFIXES)
+
+
 # Bounding box ของจังหวัดพิษณุโลก (lat/lng)
 PHITSANULOK_BBOX = {
     "lat_min": 16.35,
@@ -201,15 +234,53 @@ async def random_delay(min_sec: float = 2.0, max_sec: float = 5.0):
 
 
 async def scroll_reviews(page: Page, times: int = 5):
-    """Scroll the reviews panel to load more reviews."""
+    """เลื่อนกล่องรายการรีวิวเพื่อโหลดรีวิวเพิ่ม
+
+    ⚠️ ต้องหากล่องจาก "การ์ดรีวิวจริง" ไม่ใช่ไล่ selector ตามลำดับคงที่
+      (บั๊กที่เจอ 2026-10-01 — ต้นเหตุของช่องว่างรีวิวที่ใหญ่สุดในโปรเจกต์)
+
+      เดิมไล่ selector ตามลำดับแล้วหยุดที่ตัวแรกที่ scrollHeight > clientHeight
+      บนหน้าพระพุทธชินราช `[role="feed"]` **มีอยู่แต่ไม่ใช่กล่องรายการรีวิว**:
+
+        [role="feed"]                        sh=1626 ch=775  <- เดิมเลือกตัวนี้
+        .m6QErb.DxyBCb.kA9KIf.dS8AEf         sh= 812 ch=812  (เลื่อนไม่ได้)
+        .m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde sh=5973 ch=787  <- กล่องจริง
+
+      เลื่อนผิดตัว → รีวิวไม่โหลดเพิ่ม → ตัวนับไม่โต → ลูป deep สรุปว่า
+      "โหลดครบ" หลัง scroll 3 รอบใน 5 วินาที → ได้แค่หน้าแรก ~10 อัน
+
+      ความเสียหายที่วัดได้: พระพุทธชินราช 7,028 -> 14 · พระราชวังจันทน์
+      1,424 -> 21 · ร้านแกงบ้านเรา 466 -> 10 (11 ร้าน ปิดกั้น 5,517 รีวิว)
+
+      ร้านที่ deep สำเร็จคือร้านที่ `[role="feed"]` ไม่มีอยู่ จึงตกไปใช้
+      selector ตัวถัดไปที่ตรงกับกล่องจริงพอดี — บังเอิญถูก ไม่ใช่เพราะถูกออกแบบ
+
+      วิธีใหม่: ไล่จาก [data-review-id] ขึ้นไปหา ancestor ตัวแรกที่เลื่อนได้
+      ยึดกับโครงสร้างที่ Google ต้องมีอยู่แล้ว (การ์ดต้องอยู่ในกล่องที่เลื่อนได้)
+      ไม่ผูกกับชื่อคลาสที่ Google เปลี่ยนบ่อย ทดสอบแล้วได้ 20→30→...→70
+      ทั้งหน้าที่เคยพังและหน้าที่เคยทำงาน
+
+      selector เดิมเก็บไว้เป็นทางสำรอง ใช้ตอนยังไม่มีการ์ดรีวิวใน DOM เลย
+    """
     try:
         for _ in range(times):
-            scrolled = await page.evaluate("""
+            await page.evaluate("""
                 () => {
-                    // ลอง selector หลายแบบ (Google Maps เปลี่ยน HTML บ่อย)
+                    // ชั้น 1: ไล่จากการ์ดรีวิวจริงขึ้นไปหากล่องที่เลื่อนได้
+                    const card = document.querySelector('[data-review-id]');
+                    let n = card;
+                    while (n && n !== document.body) {
+                        if (n.scrollHeight > n.clientHeight + 20) {
+                            n.scrollTo(0, n.scrollHeight);
+                            return 'card-anchor';
+                        }
+                        n = n.parentElement;
+                    }
+                    // ชั้น 2: ยังไม่มีการ์ด — ใช้ selector เดิม
                     const selectors = [
-                        '[role="feed"]',
+                        '.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde',
                         '.m6QErb.DxyBCb.kA9KIf.dS8AEf',
+                        '[role="feed"]',
                         '.m6QErb[aria-label]',
                         '.DxyBCb',
                         'div[tabindex="-1"] > div[aria-label]',
@@ -218,10 +289,9 @@ async def scroll_reviews(page: Page, times: int = 5):
                         const el = document.querySelector(sel);
                         if (el && el.scrollHeight > el.clientHeight) {
                             el.scrollTo(0, el.scrollHeight);
-                            return sel;   // คืนค่า selector ที่ใช้ได้
+                            return sel;
                         }
                     }
-                    // fallback: เลื่อนหน้าทั้งหมด
                     window.scrollBy(0, 800);
                     return 'window';
                 }
@@ -231,14 +301,61 @@ async def scroll_reviews(page: Page, times: int = 5):
         pass
 
 
+# URL ของ Google Maps มีพิกัด 2 ชุดที่คนละความหมาย
+#
+#   /maps/place/<ชื่อ>/@<lat>,<lng>,<zoom>z/data=...!3d<lat>!4d<lng>!...
+#                      ^^^^^^^^^^^^^^^^^^^^        ^^^^^^^^^^^^^^^^^^
+#                      จุดกลางหน้าจอแผนที่           พิกัดร้านจริง
+#
+# ⚠️ @lat,lng ใช้แทนพิกัดร้านไม่ได้ (บั๊กที่เจอ 2026-10-01)
+#   เมื่อ Google เปิดหน้าร้านแบบซูมออก จุดกลางหน้าจออยู่ห่างจากร้านมาก
+#   วัดจากหน้าจริง:
+#     พระบรมราชานุสาวรีย์ฯ  8z  @ 97.884  vs จริง 100.191  ห่าง 247 กม.
+#     OASIS CAFE           7z  @ 95.673  vs จริง 100.288  ห่าง ~500 กม.
+#     พระพุทธชินราช        16z @100.2531 vs จริง 100.2621 ห่าง 964 ม.
+#   ละติจูดมักตรง (แผงด้านซ้างเบียดแผนที่ในแนวนอน) จึงดูเหมือนพิกัดถูก
+#   ทั้งที่ลองจิจูดเพี้ยน — ตรวจด้วยตาเปล่าจับไม่ได้
+#
+#   ผลที่เกิดจริง: พระบรมราชานุสาวรีย์ฯ deep scan ได้ 321 รีวิว แล้วถูก
+#   is_in_phitsanulok() ปฏิเสธเพราะ lng 97.88 อยู่นอกกรอบจังหวัด → ทิ้งทั้งชุด
+#
+#   ที่อันตรายกว่าคือถ้าลองจิจูดที่เพี้ยนบังเอิญตกในกรอบ จะถูกบันทึกเป็น
+#   พิกัดร้านจริง แล้ว zone/distance_nu_km คำนวณผิดตามไปทั้งหมด
+_RE_PLACE_COORDS = re.compile(r"!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)")
+_RE_VIEWPORT = re.compile(r"@(-?\d+\.\d+),(-?\d+\.\d+),(\d+(?:\.\d+)?)z")
+_RE_VIEWPORT_NOZOOM = re.compile(r"@(-?\d+\.\d+),(-?\d+\.\d+)")
+# ระดับซูมต่ำสุดที่ยอมใช้จุดกลางหน้าจอแทนพิกัดร้าน (ที่ 16z คลาด ~1 กม.)
+_MIN_TRUSTED_ZOOM = 15.0
+
+
 async def extract_place_coords(page: Page) -> tuple[float, float] | None:
-    """Extract lat/lng from Google Maps URL."""
+    """อ่านพิกัดร้านจาก URL — เอา !3d!4d ก่อนเสมอ
+
+    ลำดับ:
+      1. !3d!4d          พิกัดร้านจริงที่ Google ฝังไว้ใน data blob
+      2. @lat,lng,>=15z  จุดกลางหน้าจอตอนซูมใกล้ (คลาดราว 1 กม.)
+      3. ไม่คืนค่า       ซูมออกเกินไป เชื่อไม่ได้ ปล่อยให้ผู้เรียกข้ามร้านนี้
+         ดีกว่าคืนพิกัดผิดแล้วถูกบันทึกเป็นของจริง
+    """
     try:
-        url = page.url
-        # Pattern: @16.8211839,100.2658516
-        match = re.search(r"@(-?\d+\.\d+),(-?\d+\.\d+)", url)
-        if match:
-            return float(match.group(1)), float(match.group(2))
+        url = page.url or ""
+
+        m = _RE_PLACE_COORDS.search(url)
+        if m:
+            return float(m.group(1)), float(m.group(2))
+
+        m = _RE_VIEWPORT.search(url)
+        if m:
+            if float(m.group(3)) >= _MIN_TRUSTED_ZOOM:
+                return float(m.group(1)), float(m.group(2))
+            print(f"  ⚠️  พิกัดเชื่อไม่ได้ — URL ซูมออกที่ {m.group(3)}z "
+                  f"จุดกลางหน้าจอไม่ใช่พิกัดร้าน (ไม่พบ !3d!4d)")
+            return None
+
+        # ไม่มีระดับซูมใน URL — ของเดิมเคยยอมรับ เก็บพฤติกรรมไว้
+        m = _RE_VIEWPORT_NOZOOM.search(url)
+        if m:
+            return float(m.group(1)), float(m.group(2))
     except Exception:
         pass
     return None
@@ -438,6 +555,33 @@ DEEP_MAX_SCROLLS = 400          # กันวนไม่รู้จบ
 DEEP_NO_GROWTH_LIMIT = 3        # จำนวน node ไม่โตติดกันกี่รอบถือว่าจบ
 DEEP_TIME_BUDGET_SEC = 600      # เพดานเวลาต่อร้าน
 DEEP_BLOCK_CHECK_EVERY = 20     # เช็คสัญญาณบล็อกทุกกี่ scroll
+# จำนวนครั้งที่ "โหลดหน้าใหม่ทั้งหน้า" เพิ่มเติม เมื่อเปิดแท็บรีวิวไม่สำเร็จ
+#
+# ⚠️ ทำไมต้องมี (วัดเมื่อ 2026-10-02)
+#   Google เสิร์ฟหน้าร้านแบบ "ไม่มีแท็บรีวิว" เป็นบางครั้งโดยไม่มีสัญญาณบล็อก
+#   วัดด้วยการโหลดหน้าเดิมซ้ำ 3 รอบด้วยชุดเดียวกับ scraper:
+#     แพตามสั่งนั่งชิว  3/3 ครั้ง เจอแท็บ
+#     OASIS CAFE       3/3
+#     ก.ข้าวต้มกุ๊ย     2/3   <- พลาด 1 ครั้งแบบสุ่ม
+#   เบราว์เซอร์ของผู้ใช้ที่ล็อกอิน Google อยู่เจอแท็บเสมอ ส่วน scraper ที่เปิด
+#   แบบไม่ล็อกอินและคุกกี้ว่าง เจอบ้างไม่เจอบ้าง — เป็นเรื่องความน่าเชื่อถือของ
+#   client ที่เราควบคุมไม่ได้ จึงต้องรับมือด้วยการลองซ้ำ
+#
+#   open_reviews_tab() มี 4 ชั้นแต่ทั้ง 4 ชั้นทำงานบนหน้าเดียวกัน และ reload
+#   แค่ 1 ครั้ง = ได้ request ใหม่แค่ 2 ครั้ง ร้านที่เรานับว่า "เข้าไม่ถึงหน้ารีวิว"
+#   คือร้านที่ซวยติดกัน 2 ครั้งพอดี
+#
+#   ถ้าโอกาสเจอแท็บต่อการโหลด 1 ครั้งราว 70%:
+#     โหลด 2 ครั้ง (เดิม) -> 91%   โหลด 4 ครั้ง -> 99%
+#
+#   ใช้ page.goto() ไม่ใช่ page.reload() เพราะต้องการ request ใหม่หมด
+#   ซึ่งเป็นตัวแปรที่ตัดสินผล ไม่ใช่การ render ซ้ำจาก cache
+#
+#   ต้นทุน: ร้านที่สำเร็จตั้งแต่ครั้งแรก (ส่วนใหญ่) ไม่เสียเวลาเพิ่มเลย
+OPEN_TAB_RETRIES = 2
+# หน่วงก่อนลองใหม่ — ยิงรัว ๆ ยิ่งทำให้ Google ไม่เชื่อถือมากขึ้น
+OPEN_TAB_RETRY_DELAY = (5.0, 8.0)
+
 DEEP_REVIEW_CAP = 100_000       # cap ตอนดึงรีวิวครั้งเดียวหลังจบลูป (สูงจนเสมือนไม่จำกัด)
 
 
@@ -514,12 +658,31 @@ async def _extract_visible_reviews(page: Page, cap: int) -> list[dict]:
                             const key = text.substring(0, 60);
                             if (text.length >= 40 && text.length <= 1200 && !hasUI && !seen.has(key)) {{
                                 seen.add(key);
+                                // หาวันที่รีวิว — ต้องมีคำบอก "อดีตสัมพัทธ์" ไม่ใช่แค่มีคำว่าวัน/เดือน/ปี
+                                //
+                                // บั๊กเดิม 2 จุด (แก้ 2026-09-26 หลังพบ 908 รีวิวไม่มีวันที่):
+                                //  1) เงื่อนไขจับคำว่า "วัน" เปล่า ๆ ทำให้ป้าย "มื้อที่ไป" ของ Google
+                                //     เข้าเงื่อนไขด้วย: "วันธรรมดา" / "วันเสาร์-อาทิตย์" /
+                                //     "วันหยุดนักขัตฤกษ์" และ "อาหารกลางวัน" (มี "วัน" อยู่ข้างใน)
+                                //  2) ใช้ forEach + dateText = t โดยไม่ break ทำให้ span สุดท้ายชนะ
+                                //     Google วางวันที่ไว้ก่อน แล้ววางป้าย "มื้อที่ไป" ทีหลัง
+                                //     ป้ายจึงเขียนทับวันที่ทุกครั้งที่รีวิวนั้นระบุมื้ออาหาร
+                                //
+                                // เกณฑ์เดียวกับ _PAST_MARKERS ใน scraper/date_parser.py
+                                // ถ้าแก้ที่นี่ต้องแก้ที่นั่นด้วย
                                 let dateText = '';
-                                container.querySelectorAll('span').forEach(s => {{
-                                    const t = (s.innerText || '').trim();
-                                    if (/(เดือน|สัปดาห์|วัน|ปี|ago|month|week|year)/i.test(t) && t.length < 35)
-                                        dateText = t;
-                                }});
+                                const _spans = container.querySelectorAll('span');
+                                for (let si = 0; si < _spans.length; si++) {{
+                                    const t = (_spans[si].innerText || '').trim();
+                                    if (t.length >= 35) continue;
+                                    const isPast = /(ที่แล้ว|ที่ผ่านมา|ago)/i.test(t)
+                                        && /(วัน|สัปดาห์|เดือน|ปี|day|week|month|year)/i.test(t);
+                                    const isToday = /(เมื่อวาน|วันนี้|yesterday|today)/i.test(t);
+                                    if (isPast || isToday) {{
+                                        dateText = t;   // เอาอันแรกที่เจอ แล้วหยุด
+                                        break;
+                                    }}
+                                }}
                                 results.push({{ rating, text: text.substring(0, 600), date: dateText }});
                                 break;
                             }}
@@ -534,6 +697,158 @@ async def _extract_visible_reviews(page: Page, cap: int) -> list[dict]:
         return []
 
 
+async def _extract_cards_fallback(page: Page, cap: int) -> list[dict]:
+    """ดึงรีวิวโดยยึด [data-review-id] แทน aria-label "N ดาว"
+
+    ใช้เป็น**ทางสำรอง**เท่านั้น — เรียกเมื่อ _extract_visible_reviews() ได้ 0
+
+    ปัญหาที่ต้องมีทางสำรอง (พบ 2026-09-27 จากข้อสังเกตของผู้ใช้):
+      ร้านที่ Google จัดเป็น lodging จะได้ listing แบบโรงแรม ซึ่ง**ไม่ render
+      ไอคอนดาว** ใช้ข้อความ "4/5" แทน และมีคะแนนย่อย ห้องพัก/บริการ/สถานที่ตั้ง
+      _extract_visible_reviews() เริ่มค้นจาก element ที่มี aria-label "N ดาว"
+      จึงหาจุดเริ่มไม่ได้เลย
+
+      วัดจากหน้าจริง (โจ๊กอัมรินทร์นคร เจ้าเก่า):
+        การ์ดรีวิว [data-review-id]      112 ใบ
+        element ที่มี aria-label "N ดาว"   5   <- ฮิสโตแกรม 1-5 ดาว ไม่ใช่การ์ดรีวิว
+        ข้อความคะแนน "N/5"                10
+      ร้านปกติ (ร้านอาหารลุงแย้ม) ได้ star 15 = ฮิสโตแกรม 5 + การ์ดรีวิว 10
+
+      ความเสียหาย: 26 ร้านที่ Google มี >=50 รีวิว แต่เก็บได้ 0 = 5,650 รีวิว
+
+    ⚠️ ทำไมเป็นทางสำรอง ไม่ใช่แทนที่ของเดิม
+      ของเดิมไต่ parent ขึ้นไปหา container ที่ข้อความยาว 40-1200 ตัว ส่วนตัวนี้
+      ยึดที่ตัวการ์ดตรง ๆ ข้อความที่ได้จึงไม่เหมือนกัน → text_hash ไม่เหมือนกัน
+      ถ้าเปลี่ยนตัวหลัก รีวิวที่เก็บมาแล้วทั้งหมดจะถูก INSERT ซ้ำเป็นแถวใหม่
+      (บั๊กเดียวกับที่เคยทำให้มีรีวิวซ้ำ 3,453 แถว)
+
+      เรียกเฉพาะตอนของเดิมได้ 0 → แตะแค่หน้าที่ปัจจุบันเก็บไม่ได้อยู่แล้ว
+      26 ร้านนั้นมี 0 แถวในฐาน ความเสี่ยงซ้ำจึงเป็นศูนย์
+      และไม่ต้องแก้ review_text_hash() เลย
+
+    ⚠️ ตรรกะหาวันที่ต้องเหมือน _extract_visible_reviews() เป๊ะ
+      (ต้องมีคำบอกอดีตสัมพัทธ์ + เอา span แรกที่เจอ) เกณฑ์เดียวกับ
+      _PAST_MARKERS ใน scraper/date_parser.py — แก้ที่ไหนต้องแก้ทั้ง 3 ที่
+    """
+    try:
+        return await page.evaluate(rf"""
+            () => {{
+                const results = [];
+                const seenId = new Set();
+                const seenKey = new Set();
+
+                // ── บรรทัดที่เป็นโครงสร้าง ไม่ใช่เนื้อรีวิว ──
+                // ตัวล้างข้อความใน nlp/text_cleaner.py ไม่รู้จักพวกนี้ และแก้ที่นั่น
+                // ไม่ได้ เพราะ review_text_hash() เรียก clean_review_text()
+                // -> เปลี่ยนตัวล้าง = hash ของรีวิวที่เก็บมาแล้วเปลี่ยนทั้งหมด
+                // -> รีวิวเดิมถูก INSERT ซ้ำ (บั๊กเดิมที่เคยทำให้ซ้ำ 3,453 แถว)
+                // จึงต้องตัดที่นี่ ในเส้นทางสำรองเท่านั้น
+                const DROP_LINE = [
+                    /^[1-5]\s*\/\s*5$/,                          // คะแนนแบบเศษส่วน
+                    /^(ห้องพัก|บริการ|สถานที่ตั้ง|ความสะอาด|ความคุ้มค่า)\s*:/,
+                    /^(Rooms|Service|Location|Cleanliness|Value)\s*:/i,
+                    /^(ประเภทการเดินทาง|กลุ่มท่องเที่ยว|คืนที่พัก)\s*:?$/,
+                    /^(Trip type|Travel group|Nights stayed)\s*:?$/i,
+                    /^(Google|Tripadvisor|Booking\.com|Expedia|Agoda)$/i,
+                    /^ดูคำแปล/, /^เพิ่มเติม$/, /^ดูเพิ่มเติม$/,
+                    /^(ชอบ|แชร์)$/,
+                ];
+
+                // วันที่แบบสัมพัทธ์ — เกณฑ์เดียวกับ _PAST_MARKERS ใน date_parser.py
+                const isDateLine = (t) => {{
+                    const past = /(ที่แล้ว|ที่ผ่านมา|ago)/i.test(t)
+                        && /(วัน|สัปดาห์|เดือน|ปี|day|week|month|year)/i.test(t);
+                    return past || /^(เมื่อวาน|วันนี้|yesterday|today)/i.test(t);
+                }};
+                // ดึงเฉพาะวลีวันที่ ตัดหางอย่าง " ใน Google" / " ใน Tripadvisor" ออก
+                const dateOnly = (t) => {{
+                    const m = t.match(
+                        /((?:\d+|a|an)\s*(?:วัน|สัปดาห์|เดือน|ปี|day|week|month|year)s?\s*(?:ที่แล้ว|ที่ผ่านมา|ago))/i);
+                    if (m) return m[1].trim();
+                    const m2 = t.match(/(เมื่อวาน\S*|วันนี้|yesterday|today)/i);
+                    return m2 ? m2[1].trim() : '';
+                }};
+
+                const cards = document.querySelectorAll('[data-review-id]');
+                for (const card of cards) {{
+                    try {{
+                        // ── ใบเดียวกันมีหลาย element ที่ถือ data-review-id ตัวเดียวกัน ──
+                        // (ตัวนอกคือการ์ดเต็ม ตัวในคือบล็อกชื่อผู้รีวิว)
+                        // querySelectorAll คืนตามลำดับเอกสาร = ตัวนอกมาก่อน
+                        // เอาตัวแรกของแต่ละ id เท่านั้น ไม่งั้นได้รีวิวซ้ำ 2 เท่า
+                        const rid = card.getAttribute('data-review-id') || '';
+                        if (!rid || seenId.has(rid)) continue;
+                        seenId.add(rid);
+
+                        // ── คะแนน: ลองดาวก่อน ถ้าไม่มีค่อยอ่าน "N/5" ──
+                        let rating = null;
+                        const starEl = Array.from(card.querySelectorAll('[aria-label]'))
+                            .find(e => /^[1-5]\s*(ดาว|star)/.test(
+                                e.getAttribute('aria-label') || ''));
+                        if (starEl) {{
+                            const m = (starEl.getAttribute('aria-label') || '')
+                                .match(/^([1-5])/);
+                            rating = m ? parseInt(m[1]) : null;
+                        }}
+
+                        const rawLines = (card.innerText || '').split('\n')
+                            .map(x => x.trim());
+
+                        // ── หาวันที่ และตัดหัวการ์ด (ชื่อผู้รีวิว/เมตา/คะแนน) ออก ──
+                        let dateText = '';
+                        let bodyStart = 0;
+                        for (let i = 0; i < rawLines.length; i++) {{
+                            const t = rawLines[i];
+                            if (!t || t.length >= 35) continue;
+                            if (rating === null) {{
+                                const mf = t.match(/^([1-5])\s*\/\s*5$/);
+                                if (mf) rating = parseInt(mf[1]);
+                            }}
+                            if (!dateText && isDateLine(t)) {{
+                                dateText = dateOnly(t);
+                                bodyStart = i + 1;   // เนื้อรีวิวอยู่หลังบรรทัดวันที่
+                            }}
+                        }}
+
+                        const body = rawLines.slice(bodyStart)
+                            .filter(t => t && !DROP_LINE.some(re => re.test(t)))
+                            .join('\n')
+                            .trim();
+                        if (!body) continue;
+
+                        const key = body.substring(0, 60);
+                        if (body.length < 40 || body.length > 1200) continue;
+                        if (seenKey.has(key)) continue;
+                        seenKey.add(key);
+
+                        results.push({{ rating, text: body.substring(0, 600),
+                                        date: dateText }});
+                        if (results.length >= {cap}) break;
+                    }} catch(e) {{}}
+                }}
+                return results;
+            }}
+        """)
+    except Exception:
+        return []
+
+
+async def _extract_reviews_any(page: Page, cap: int) -> list[dict]:
+    """ดึงรีวิวด้วยทางหลัก ถ้าได้ 0 ค่อยลองทางสำรอง
+
+    ทางหลัก (ยึดดาว) ต้องได้สิทธิ์ก่อนเสมอ เพื่อให้ text_hash ของรีวิวที่
+    เก็บมาแล้วไม่เปลี่ยน — ดู _extract_cards_fallback() สำหรับเหตุผล
+    """
+    reviews = await _extract_visible_reviews(page, cap)
+    if reviews:
+        return reviews
+    fallback = await _extract_cards_fallback(page, cap)
+    if fallback:
+        print(f"  ↷ ใช้ทางสำรอง [data-review-id] — ได้ {len(fallback)} รีวิว "
+              f"(หน้านี้ไม่ render ไอคอนดาว)")
+    return fallback
+
+
 async def _count_review_nodes(page: Page) -> int:
     """
     นับจำนวน "การ์ดรีวิว" ที่โหลดอยู่ใน DOM ตอนนี้ — ใช้เป็นสัญญาณว่า scroll แล้วโตขึ้นไหม
@@ -541,16 +856,38 @@ async def _count_review_nodes(page: Page) -> int:
     ตั้งใจให้ถูกกว่า _extract_visible_reviews มากๆ:
       - นับอย่างเดียว ไม่สร้าง array ข้อความ ไม่ไต่ parent ไม่อ่าน innerText
       - ค่าที่ได้ไม่เท่ากับจำนวนรีวิวสุดท้าย (ยังไม่ผ่านตัวกรอง) แต่ใช้ดู "การเติบโต" ได้
+
+    นับ 2 แบบแล้วเอาค่าที่มากกว่า:
+      star  = element ที่มี aria-label "N ดาว" — ใช้ได้กับ listing ปกติ
+      cards = [data-review-id] — ใช้ได้กับ listing แบบโรงแรมที่ไม่ render ดาว
+
+    ⚠️ ต้องนับทั้งสองแบบ ไม่ใช่เปลี่ยนไปใช้ cards อย่างเดียว
+      ฟังก์ชันนี้ป้อน reviews_feed_ready() ซึ่งเป็นตัวตัดสินว่าแท็บรีวิวเปิดสำเร็จ
+      ถ้านับแค่ star หน้าแบบโรงแรมจะได้ 0 -> open_reviews_tab() คืน False
+      -> scraper สรุปว่า "เก็บได้ 0 รีวิว" ทั้งที่มีรีวิวจริง 112 ใบบนหน้า
+      (วัดจริงที่ โจ๊กอัมรินทร์นคร: cards 112 · star 5 ซึ่งเป็นฮิสโตแกรม)
+
+      ค่าที่ได้ใหญ่ขึ้นกว่าเดิมสำหรับหน้าปกติด้วย แต่ผู้เรียกใช้ค่านี้เทียบ
+      "โตขึ้นไหม" ระหว่าง scroll ไม่ได้ใช้เป็นจำนวนรีวิวจริง จึงไม่กระทบ
     """
     try:
         return await page.evaluate(r"""
             () => {
-                let n = 0;
+                let stars = 0;
                 document.querySelectorAll('[aria-label]').forEach(el => {
                     const lbl = el.getAttribute('aria-label') || '';
-                    if (/^[1-5]\s*(ดาว|star)/.test(lbl)) n++;
+                    if (/^[1-5]\s*(ดาว|star)/.test(lbl)) stars++;
                 });
-                return n;
+                // ⚠️ นับ id ที่ไม่ซ้ำ ไม่ใช่จำนวน element
+                //   data-review-id ตัวเดียวกันปรากฏบนหลาย element (วัดได้ ~11
+                //   element ต่อรีวิว 1 อัน) ถ้านับ element จะได้ 113 สำหรับ
+                //   รีวิวจริง 10 อัน ทำให้ตัวเลขใน log หลงและเพี้ยนไป 11 เท่า
+                const ids = new Set();
+                document.querySelectorAll('[data-review-id]').forEach(
+                    e => ids.add(e.getAttribute('data-review-id')));
+                // การ์ดรีวิวเชื่อได้กว่า star label ซึ่งรวมฮิสโตแกรม 1-5 ดาว
+                // อีก 5 อันเข้าไปด้วย ใช้ star เป็นทางสำรองตอนไม่มีการ์ดเลย
+                return ids.size > 0 ? ids.size : stars;
             }
         """) or 0
     except Exception:
@@ -729,7 +1066,7 @@ async def _deep_scroll_collect(page: Page) -> list[dict]:
             f"scroll {scrolls} รอบแล้วไม่พบการ์ดรีวิวเลย (feed ไม่ render)"
         )
 
-    reviews = await _extract_visible_reviews(page, DEEP_REVIEW_CAP)
+    reviews = await _extract_reviews_any(page, DEEP_REVIEW_CAP)
     print(f"  🧲 deep: จบที่ scroll {scrolls} รอบ | node {node_count} "
           f"| ดึงได้ {len(reviews)} | {time.monotonic() - t0:.0f}s | {stop_reason}")
     return reviews
@@ -757,6 +1094,36 @@ async def extract_reviews(
     try:
         # Step 1: เปิดแท็บ "รีวิว" — ยืนยันด้วยผลลัพธ์ (เข้าถึง feed ได้จริง) ไม่ใช่แค่ "กดติด"
         clicked_reviews = await open_reviews_tab(page)
+
+        # ── ไม่สำเร็จ: โหลดหน้าใหม่ทั้งหน้าแล้วลองอีก (ดู OPEN_TAB_RETRIES) ──
+        #
+        # ใช้ URL ที่ resolve แล้วของหน้าร้าน ไม่ใช่ URL ตั้งต้น เพราะ URL ปลายทาง
+        # ไม่ต้อง redirect ซ้ำ จึงเร็วกว่าและได้หน้าเดียวกันแน่นอน
+        if not clicked_reviews:
+            try:
+                place_url = page.url or ""
+            except Exception:
+                place_url = ""
+            for attempt in range(1, OPEN_TAB_RETRIES + 1):
+                if not place_url or "/maps/place/" not in place_url:
+                    break
+                lo, hi = OPEN_TAB_RETRY_DELAY
+                print(f"  ↻ เปิดแท็บรีวิวไม่สำเร็จ — โหลดหน้าใหม่แล้วลองครั้งที่ "
+                      f"{attempt}/{OPEN_TAB_RETRIES}")
+                try:
+                    await asyncio.sleep(random.uniform(lo, hi))
+                    await page.goto(place_url, wait_until="domcontentloaded",
+                                    timeout=30000)
+                    await random_delay(2.0, 4.0)
+                    await dismiss_login_modal(page)
+                    await wait_for_place_loaded(page, timeout=20000)
+                except Exception as e:
+                    print(f"     โหลดหน้าใหม่พลาด: {type(e).__name__}")
+                    continue
+                clicked_reviews = await open_reviews_tab(page)
+                if clicked_reviews:
+                    print(f"  ✅ ครั้งที่ {attempt} สำเร็จ")
+                    break
 
         # เข้าไม่ถึงหน้ารีวิว = ยังอยู่หน้าภาพรวม ถ้าปล่อยผ่านจะไป scroll หน้าภาพรวม
         # แล้วคืน 0 รีวิวเงียบๆ แยกไม่ออกจาก "ร้านนี้ไม่มีรีวิวจริงๆ"
@@ -810,7 +1177,7 @@ async def extract_reviews(
             max_scrolls = max(2, min(60, max_reviews // 4))
             stop_threshold = KNOWN_STOP_SORTED if sorted_ok else KNOWN_STOP_UNSORTED
             cap = max_reviews * 3
-            raw_reviews: list[dict] = await _extract_visible_reviews(page, cap)
+            raw_reviews: list[dict] = await _extract_reviews_any(page, cap)
 
             no_growth = 0
             for _ in range(max_scrolls):
@@ -823,7 +1190,7 @@ async def extract_reviews(
 
                 before = len(raw_reviews)
                 await scroll_reviews(page, times=1)
-                raw_reviews = await _extract_visible_reviews(page, cap)
+                raw_reviews = await _extract_reviews_any(page, cap)
 
                 # scroll แล้วไม่ได้รีวิวเพิ่ม 2 รอบติด = โหลดครบแล้ว
                 if len(raw_reviews) <= before:
@@ -966,17 +1333,49 @@ async def scrape_place(
     max_reviews: int = MAX_REVIEWS_PER_PLACE,
     known_hashes: set[str] | None = None,
     deep: bool = False,
+    place_id: str | None = None,
 ) -> dict | None:
     """
     Search for a place and scrape its reviews. max_reviews ต่ำ = เร็ว (ใช้ตอน discover)
     known_hashes = hash รีวิวที่มีอยู่แล้วของร้านนี้ → เปิดโหมด incremental (หยุดเร็วถ้าไม่มีของใหม่)
     deep = True → เก็บให้ครบที่สุด (เพิกเฉย known_hashes) ดู extract_reviews
+    place_id = google_place_id ของร้าน → เปิดหน้าร้านตรง ๆ แทนการค้นด้วยชื่อ
+
+    ⚠️ ทำไมต้องนำทางด้วย place_id เมื่อมี (เพิ่ม 2026-10-02)
+
+      การค้นด้วยชื่อบน Google Maps ไม่รับประกันว่าได้ร้านที่ต้องการ ชื่อที่
+      กำกวมจะได้**รายการผลลัพธ์ทั้งประเทศ** แล้วโค้ดคลิกผลแรกไปเรื่อย
+
+      วัดจากหน้าจริง — ค้นด้วย 'OASIS CAFE':
+        ได้ 7 ลิงก์ · คลิกผลแรกไปโผล่ที่ 'โอเอซิส คอฟฟี่ (รางน้ำ)' ราชเทวี กรุงเทพ
+        พิกัดที่อ่านได้ (13.761, 100.537) · ซูม 8z
+      เปิดด้วย place_id ของร้านเดียวกัน:
+        ได้ 'OASIS CAFE' พิษณุโลก · พิกัด (16.841, 100.251) · ซูม 17z
+
+      ความเสี่ยงที่ตัวกรองจับไม่ได้: ถ้าร้านที่โผล่มาบังเอิญอยู่ในกรอบจังหวัด
+      is_in_phitsanulok() จะปล่อยผ่าน แล้วรีวิวของร้านอื่นถูกบันทึกให้ร้านนี้
+
+      ผลพลอยได้: URL ของ place_id เป็น 17z เสมอ จึงไม่เจอบั๊กพิกัดที่จุดกลาง
+      หน้าจอห่างจากร้านเป็นร้อยกิโลเมตร (ดู extract_place_coords)
     """
-    print(f"\n  Searching: {place_name}")
+    use_pid = bool(place_id)
+    if use_pid:
+        print(f"\n  เก็บให้แถว: {place_name}")
+        print(f"  เปิดด้วย place_id: {place_id}")
+    else:
+        print(f"\n  Searching: {place_name}  [ค้นด้วยชื่อ]")
 
     try:
-        # Search directly via URL for more reliable loading
-        search_url = f"https://www.google.com/maps/search/{place_name.replace(' ', '+')}"
+        # place_id → เปิดหน้าร้านตรง ๆ · ไม่มี → ค้นด้วยชื่อแบบเดิม
+        if use_pid:
+            search_url = (
+                "https://www.google.com/maps/place/?q=place_id:" + place_id
+            )
+        else:
+            search_url = (
+                "https://www.google.com/maps/search/"
+                + place_name.replace(' ', '+')
+            )
         await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
         await random_delay(2.0, 4.0)
 
@@ -987,13 +1386,17 @@ async def scrape_place(
             return {"_blocked": blocked}
 
         # If results list appears (multiple places), click first result
-        try:
-            first_result = page.locator('a[href*="/maps/place/"]').first
-            if await first_result.count() > 0:
-                await first_result.click(timeout=5000)
-                await random_delay(2.0, 3.0)
-        except Exception:
-            pass
+        #
+        # ⚠️ ข้ามขั้นนี้เมื่อเปิดด้วย place_id — หน้าร้านเปิดตรงอยู่แล้ว
+        #   การคลิกลิงก์ที่เจอจะพาออกไปร้านอื่น (เช่นร้านใกล้เคียงในแผงข้าง)
+        if not use_pid:
+            try:
+                first_result = page.locator('a[href*="/maps/place/"]').first
+                if await first_result.count() > 0:
+                    await first_result.click(timeout=5000)
+                    await random_delay(2.0, 3.0)
+            except Exception:
+                pass
 
         # Wait for place panel to load
         loaded = await wait_for_place_loaded(page, timeout=20000)
@@ -1034,13 +1437,22 @@ async def scrape_place(
                 continue
 
         # Get Google-assigned category (e.g. "ร้านกาแฟ", "ร้านอาหารไทย")
+        #
+        # ⚠️ ร้านที่เจ้าของยังไม่ได้ยืนยันข้อมูล Google จะไม่แสดงหมวดในช่องนี้
+        #   แต่เอา**ปุ่มชวนแก้ไข**มาวางที่ตำแหน่งเดียวกัน ('เพิ่มเว็บไซต์',
+        #   'เพิ่มเวลาทำการ', 'อ้างสิทธิ์ธุรกิจนี้' ฯลฯ) ตัวอ่านเดิมจึงเก็บ
+        #   ข้อความปุ่มมาเป็นหมวด — เจอจริง 4 ร้าน เช่น Nature Park Resort
+        #   ได้หมวด 'เพิ่มเว็บไซต์' ทั้งที่เป็นที่พัก
+        #
+        #   ทิ้งข้อความกลุ่มนี้แล้วปล่อยเป็น None ดีกว่าเก็บค่าผิด เพราะ
+        #   google_types จาก Places API บอกประเภทได้แม่นกว่าอยู่แล้ว
         google_category = None
         for sel in ['.DkEaL', 'button[jsaction*="category"]', '[jsaction*="pane.rating.category"]']:
             try:
                 elem = await page.query_selector(sel)
                 if elem:
                     text = (await elem.inner_text()).strip()
-                    if text and len(text) < 60:
+                    if text and len(text) < 60 and not _is_ui_button_text(text):
                         google_category = text
                         break
             except Exception:
@@ -1052,6 +1464,21 @@ async def scrape_place(
         business_status = await extract_business_status(page)
 
         print(f"  Found: {actual_name} | Rating: {overall_rating} | Category: {google_category} | Status: {business_status} | Coords: {coords}")
+
+        # ⚠️ ชื่อบนหน้าเว็บไม่ตรงกับชื่อแถวที่ขอ = save_to_db จะไปเขียนแถวอื่น
+        #
+        #   save_to_db upsert ด้วย ON CONFLICT (name) โดยใช้ actual_name
+        #   ถ้าไม่ตรงกับ place_name แถวที่คิวขอจะไม่ถูกแตะเลย ทั้งที่ scrape สำเร็จ
+        #   และตัวนับ deep_attempts / refresh_shortfalls จะขึ้นที่แถวปลายทางแทน
+        #
+        #   เกิดได้ 2 แบบ:
+        #     1. ค้นด้วยชื่อแล้วไปผิดร้าน      -> แก้ด้วยการนำทางด้วย place_id
+        #     2. ร้านเดียวกันมี 2 แถวในฐาน    -> แก้ด้วย merge_duplicate_places.py
+        #   แบบที่ 2 เกิดได้แม้นำทางด้วย place_id ถูกแล้ว จึงต้องเตือนเสมอ
+        if actual_name and actual_name != place_name:
+            print(f"  ⚠️  ชื่อบนหน้าเว็บไม่ตรงกับแถวที่ขอ — รีวิวจะถูกบันทึกลงแถวชื่อ "
+                  f"{actual_name!r} ไม่ใช่ {place_name!r}")
+            print(f"      ถ้าเป็นร้านเดียวกัน ให้รวมแถวด้วย merge_duplicate_places.py")
 
         # debug screenshot disabled (เปิดได้เมื่อต้องการ debug)
         # safe_name = re.sub(r'[^\w]', '_', actual_name)[:20]
@@ -1071,6 +1498,26 @@ async def scrape_place(
                 reviews = []
                 reviews_failed = e.reason
                 print(f"  ⚠️  เข้าไม่ถึงหน้ารีวิว: {e.reason}")
+
+            # ── เก็บได้ 0 รีวิวแต่ร้านมีคะแนนรวม = ล้มเหลว ไม่ใช่ "ร้านไม่มีรีวิว" ──
+            #
+            # DeepReviewsUnavailable ยิงเฉพาะโหมด deep=True เท่านั้น
+            # โหมด refresh ปกติ (deep=False) ที่เก็บได้ 0 รีวิวจะผ่านมาทางนี้เงียบ ๆ
+            # reviews_failed เป็น None → save_to_db ตี scraped_at = NOW() และ
+            # update_scan_stats เพิ่ม consecutive_no_change → ระบบถือว่าสำเร็จ
+            # ร้านเข้า cooldown 7-30 วันโดยที่ไม่มีรีวิวเลย
+            #
+            # วัดได้จริง 2026-09-26: 72 ร้านมีรีวิว 5 อันหรือน้อยกว่าทั้งที่ Google
+            # บอกมี 200-7,028 และ deep_attempts = 0 ทั้งหมด (ธงไม่เคยยิง)
+            # รันสดแล้วเห็น: "Collected 0 reviews" + "_reviews_failed: None"
+            #
+            # ใช้ overall_rating เป็นตัวตัดสิน — Google ไม่แสดงคะแนนรวมให้ร้านที่
+            # ไม่มีใครให้คะแนนเลย ฉะนั้นมีคะแนน = ต้องมีรีวิวอย่างน้อย 1 อัน
+            # (extract_reviews คืนรีวิวที่ให้ดาวเปล่าด้วย ไม่ได้กรองออก)
+            # ถ้ามีคะแนนแต่เก็บได้ 0 = หน้าไม่ render ส่วนรีวิว ไม่ใช่ร้านไม่มีรีวิว
+            if reviews_failed is None and not reviews and overall_rating is not None:
+                reviews_failed = "เก็บได้ 0 รีวิวทั้งที่ร้านมีคะแนนรวม"
+                print(f"  ⚠️  {reviews_failed} (คะแนน {overall_rating})")
         else:
             reviews = []
             print(f"  Skipped reviews (discover mode)")
@@ -1115,8 +1562,12 @@ async def run_scraper(
     max_reviews: int = MAX_REVIEWS_PER_PLACE,
     known_hashes_by_place: dict[str, set[str]] | None = None,
     deep: bool = False,
+    place_ids: dict[str, str] | None = None,
 ) -> list[dict]:
     """
+    place_ids: {ชื่อร้าน: google_place_id} → เปิดหน้าร้านตรง ๆ แทนการค้นด้วยชื่อ
+      ร้านที่ไม่มีในแมปนี้ยังค้นด้วยชื่อเหมือนเดิม (ดู scrape_place)
+
     Main scraper function. max_reviews ต่ำ = เก็บร้านเร็ว (โหมด discover)
     known_hashes_by_place: {ชื่อร้าน: set(hash รีวิวที่มีแล้ว)} → เปิด incremental scan
     deep=True: เก็บให้ครบที่สุด (ผู้เรียกคือ run_deep_scan ซึ่งส่งมาทีละร้าน)
@@ -1166,7 +1617,8 @@ async def run_scraper(
             print(f"\n[{i+1}/{len(places)}] Processing...")
             place_hashes = (known_hashes_by_place or {}).get(place)
             result = await scrape_place(
-                page, place, max_reviews=max_reviews, known_hashes=place_hashes, deep=deep
+                page, place, max_reviews=max_reviews, known_hashes=place_hashes,
+                deep=deep, place_id=(place_ids or {}).get(place),
             )
 
             # B3: เจอสัญญาณบล็อกจริง → หยุดทั้งรอบทันที ส่งสัญญาณให้ auto_refresh พัก

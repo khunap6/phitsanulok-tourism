@@ -123,7 +123,11 @@ async def main(limit, force_all, force_places, do_run):
         # DRY-RUN: ไม่ระบุ --limit และไม่ระบุ --all → แค่นับ
         if not do_run:
             print(f"📊 ร้านที่ต้องเติมเวลาทำการ: {n} แห่ง")
-            print(f"   ประเมินค่าใช้จ่าย: ~${n * COST_PER_PLACE:.2f} (เครดิตฟรี $200/เดือน)")
+            # ⚠️ ไม่อ้างจำนวนเครดิตฟรีตรงนี้ — เครดิต Free Trial เป็นก้อนเดียว (One-time)
+            # และมีวันหมดอายุ ไม่ใช่วงเงินรายเดือน (ข้อความเดิมเขียนว่า "$200/เดือน" ผิด)
+            # ดูของจริงที่ Billing > Credits ของบัญชีตัวเอง — ดูรายละเอียดใน GUIDE.md
+            print(f"   ประเมินค่าใช้จ่าย: ~${n * COST_PER_PLACE:.2f} "
+                  f"(เช็คเครดิต/วันหมดอายุที่ Billing > Credits)")
             print(f"   ทดสอบก่อน:  uv run python scripts/fetch_hours_api.py --limit 5")
             print(f"   ยิงเต็ม:    uv run python scripts/fetch_hours_api.py --all")
             return
