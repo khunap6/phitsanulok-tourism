@@ -168,6 +168,22 @@ async def main(apply: bool, limit: int | None, overall_dir: Path) -> None:
         await engine.dispose()
         return
 
+    # ── ล้าง aspect ที่ค้างจากรีวิว "ให้ดาวอย่างเดียว" ──
+    # รีวิวพวกนี้ text_clean ถูกตั้งเป็นค่าว่างไปแล้วโดย
+    # scripts/clear_rating_only_text.py เพราะผู้รีวิวไม่ได้เขียนอะไรจริง
+    # แต่โมเดลเดิมเคยให้หมวดไว้ และ Phase 3 คัดลอกตามมาด้วย
+    # ถ้าไม่ลบ ตัวส่วนของสถิติรายหมวดจะปนรีวิวที่ไม่มีข้อความ
+    # ซึ่งเป็นบั๊กเดียวกับที่เคยทำให้หมวด "ความคิดเห็นทั่วไป" พองขึ้น 3,944 แถว
+    async with AsyncSessionLocal() as s:
+        res = await s.execute(text("""
+            DELETE FROM review_aspects a
+             USING reviews r
+             WHERE r.id = a.review_id AND r.text_clean = ''
+        """))
+        await s.commit()
+        if res.rowcount:
+            p(f"ล้าง aspect ของรีวิวที่ไม่มีข้อความ {res.rowcount:,} แถว")
+
     mdl = Models(overall_dir)
     done, t0, n_asp = 0, time.time(), 0
     while True:
