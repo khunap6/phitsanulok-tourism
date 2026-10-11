@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Date,
+    Float,
     ForeignKey,
     Integer,
     Numeric,
@@ -137,7 +138,71 @@ class AnalyzedReview(Base):
     )
     model_used: Mapped[Optional[str]] = mapped_column(String(50))
 
+    # ── ชุด Multi-Aspect (migration 018) ──
+    # ⚠️ sentiment กับ pain_point_category ข้างบนเป็น legacy ห้ามแก้ค่า
+    #   โค้ดเดิมทั้งหมดยังอ่านสองตัวนั้นอยู่ ส่วนโค้ดใหม่ให้อ่านสองตัวข้างล่าง
+    overall_sentiment: Mapped[Optional[str]] = mapped_column(String(20))
+    primary_category_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL")
+    )
+    needs_review: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    # gold | claude_guided | claude_silver | model | human_verified
+    label_source: Mapped[Optional[str]] = mapped_column(String(20))
+
     review: Mapped["Review"] = relationship(back_populates="analysis")
+
+
+class Category(Base):
+    """หมวดหมู่ชุด v2 (11 หมวด) — เติมด้วย scripts/seed_categories.py
+
+    ⚠️ แหล่งความจริงคือ shared/categories.json ไม่ใช่ตารางนี้
+      ตารางนี้มีไว้ให้คิวรี join เอาชื่อได้โดยไม่ต้องฝังชื่อไทยลง SQL
+      ถ้าแก้ไฟล์ json ต้องรัน seed ใหม่ให้ตรงกัน
+    """
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    is_non_problem: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    version: Mapped[str] = mapped_column(String(10), server_default="v2")
+
+
+class ReviewAspect(Base):
+    """1 แถว = 1 หมวดของ 1 รีวิว พร้อมอารมณ์ของหมวดนั้น
+
+    หัวใจของงาน Multi-Aspect — ตารางนี้คือที่ที่ "รีวิวหนึ่งพูดได้หลายเรื่อง
+    และแต่ละเรื่องมีอารมณ์ของตัวเอง" ถูกเก็บจริง
+
+    ⚠️ ผลรวมรายหมวดจากตารางนี้ "มากกว่า" จำนวนรีวิวเสมอ (วัดได้ 1.9 หมวด/รีวิว)
+      เวลาคิดร้อยละต้องหารด้วยจำนวนรีวิว ไม่ใช่หารด้วยผลรวมของทุกหมวด
+      และต้องติดป้ายให้ชัดว่าหน่วยไหนคือ "รีวิว" หน่วยไหนคือ "การกล่าวถึง"
+
+    ⚠️ is_primary มีได้รีวิวละ 1 แถว ใช้ทำกราฟที่ต้องรวมได้ 100%
+    """
+    __tablename__ = "review_aspects"
+
+    review_id: Mapped[int] = mapped_column(
+        ForeignKey("reviews.id", ondelete="CASCADE"), primary_key=True
+    )
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("categories.id", ondelete="RESTRICT"), primary_key=True
+    )
+    aspect_sentiment: Mapped[str] = mapped_column(String(20), nullable=False)
+    is_primary: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    # ยังไม่บังคับกรอกในรอบนี้
+    severity: Mapped[Optional[str]] = mapped_column(String(10))
+    confidence: Mapped[Optional[float]] = mapped_column(Float)
+    label_source: Mapped[Optional[str]] = mapped_column(String(20))
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "aspect_sentiment IN ('positive','neutral','negative')",
+            name="ck_review_aspects_sentiment",
+        ),
+    )
 
 
 class StatSnapshot(Base):
@@ -170,6 +235,8 @@ class SnapshotCategory(Base):
     high_count: Mapped[int] = mapped_column(Integer, server_default="0")
     medium_count: Mapped[int] = mapped_column(Integer, server_default="0")
     low_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    # v1 = หมวด 12 ชุดเดิม, v2 = หมวด 11 ชุดใหม่ — แถวเก่าห้ามแก้ย้อนหลัง
+    category_version: Mapped[str] = mapped_column(String(10), server_default="v1")
 
 
 class SnapshotPlace(Base):
@@ -187,6 +254,7 @@ class SnapshotPlace(Base):
     complaint_count: Mapped[int] = mapped_column(Integer, server_default="0")
     praise_count: Mapped[int] = mapped_column(Integer, server_default="0")
     high_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    category_version: Mapped[str] = mapped_column(String(10), server_default="v1")
 
 
 class ScrapeJob(Base):
