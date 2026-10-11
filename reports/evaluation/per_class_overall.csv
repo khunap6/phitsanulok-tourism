@@ -1,0 +1,10 @@
+﻿วิธี,คลาส,precision,recall,f1
+baseline ทายบวกหมด,positive,0.8805,1.0,0.9364
+baseline ทายบวกหมด,neutral,0.0,0.0,0.0
+baseline ทายบวกหมด,negative,0.0,0.0,0.0
+โมเดลเดิม (wangchanberta-sentiment),positive,0.9683,0.9683,0.9683
+โมเดลเดิม (wangchanberta-sentiment),neutral,0.4444,0.2353,0.3077
+โมเดลเดิม (wangchanberta-sentiment),negative,0.619,1.0,0.7647
+โมเดลใหม่ (overall-sentiment),positive,0.9511,0.9683,0.9596
+โมเดลใหม่ (overall-sentiment),neutral,0.5556,0.2941,0.3846
+โมเดลใหม่ (overall-sentiment),negative,0.7647,1.0,0.8667
