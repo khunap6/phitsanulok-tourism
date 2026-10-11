@@ -178,3 +178,73 @@ def status_filter(status: str, alias: str = "p") -> str:
     if status == "all":
         return ""
     return f"AND COALESCE({alias}.business_status,'operational') = 'operational'"
+
+
+# ── ชั้นหมวดหมู่ v2 / ระดับ aspect (Phase 6) ──
+#
+# ⚠️ ทำไมต้องมีตัวกรองชุดที่สอง ไม่ใช้ชุดเดิม
+#   ชุดเดิมกรองที่ analyzed_reviews ซึ่งมี 1 แถว/รีวิว = 1 หมวด
+#   ชุดนี้กรองที่ review_aspects ซึ่งมีหลายแถว/รีวิว แถวละหมวดพร้อมอารมณ์ของหมวดนั้น
+#   ตัวกรองสองชุดนี้ให้ผลต่างกันโดยตั้งใจ และ "ห้ามเอามาปนกันในคิวรีเดียว"
+#   เพราะจะกลายเป็นตัวตั้งมาจากชั้นหนึ่งแต่ตัวส่วนมาจากอีกชั้นหนึ่ง (ละเมิดกฎ 1)
+#
+# ⚠️ หน่วยนับของชั้นนี้คือ "การกล่าวถึง" ไม่ใช่ "รีวิว"
+#   1 รีวิวมีได้หลายหมวด ผลรวมรายหมวดจึงมากกว่าจำนวนรีวิวเสมอ (วัดได้ 1.93 เท่า)
+#   เวลาคิดร้อยละต้องหารด้วย "จำนวนรีวิว" ไม่ใช่หารด้วยผลรวมของทุกหมวด
+#   และต้องติดป้ายให้ผู้ใช้เห็นว่าหน่วยไหนคืออะไร
+try:
+    _CAT_V2_FILE = Path(__file__).resolve().parent.parent / "shared" / "categories.json"
+    _CAT_V2 = json.loads(_CAT_V2_FILE.read_text(encoding="utf-8"))
+    CATEGORIES_V2: list[dict] = _CAT_V2["categories"]
+    CATEGORY_V2_NAME: dict[int, str] = {c["id"]: c["name"] for c in CATEGORIES_V2}
+    NON_PROBLEM_CATEGORY_IDS: list[int] = sorted(_CAT_V2.get("non_problem_ids", []))
+    # หมวดที่มีรีวิวน้อยกว่านี้ในช่วงที่เลือก = แสดงได้แต่ติดป้าย "ข้อมูลน้อย"
+    LOW_DATA_THRESHOLD: int = int(_CAT_V2.get("low_data_threshold", 10))
+except (OSError, ValueError, KeyError):
+    CATEGORIES_V2 = []
+    CATEGORY_V2_NAME = {}
+    NON_PROBLEM_CATEGORY_IDS = [2, 11]
+    LOW_DATA_THRESHOLD = 10
+
+_NONPROBLEM_IDS_IN = ", ".join(str(i) for i in NON_PROBLEM_CATEGORY_IDS) or "-1"
+
+
+def category_v2_name(cid: int | None) -> str | None:
+    """คืนชื่อหมวด v2 สำหรับแสดงผล — ไม่มีใน map ก็คืน None"""
+    return None if cid is None else CATEGORY_V2_NAME.get(cid)
+
+
+def aspect_filter(view_mode: str, alias: str = "ra") -> str:
+    """ตัวกรองระดับ aspect — คู่ขนานกับ sentiment_filter() ของชั้นรีวิว
+
+      'complaints' → การกล่าวถึงที่เป็นคำติ  + ตัดหมวดที่ไม่ใช่ปัญหา
+      'praise'     → การกล่าวถึงที่เป็นคำชม  + ตัดหมวดที่ไม่ใช่ปัญหา
+      'all' หรืออื่น → ไม่กรอง
+
+    ⚠️ ตัดหมวดที่ไม่ใช่ปัญหาทั้งสองโหมดเหมือนชั้นเดิม เพื่อให้เห็นหมวดที่มีสาระ
+      ผลคือหมวด 2 (ความคิดเห็นทั่วไป) และ 11 (อื่นๆ) จะไม่โผล่ในสองโหมดนี้
+      เห็นได้เฉพาะโหมด 'all' — พฤติกรรมเดียวกับของเดิม ไม่ใช่ของใหม่
+    """
+    if view_mode == "complaints":
+        return (f"AND {alias}.aspect_sentiment = 'negative' "
+                f"AND {alias}.category_id NOT IN ({_NONPROBLEM_IDS_IN})")
+    if view_mode == "praise":
+        return (f"AND {alias}.aspect_sentiment = 'positive' "
+                f"AND {alias}.category_id NOT IN ({_NONPROBLEM_IDS_IN})")
+    return ""
+
+
+def overall_sentiment_filter(view_mode: str, alias: str = "ar") -> str:
+    """ตัวกรองอารมณ์รวมของรีวิว — ใช้กับคอลัมน์ overall_sentiment ชุดใหม่
+
+    ⚠️ ต่างจาก sentiment_filter() ตรงที่อ่าน overall_sentiment ไม่ใช่ sentiment
+      และไม่ตัดหมวดใด ๆ เพราะเป็นตัวชี้วัดระดับรีวิว ไม่ใช่ระดับหมวด
+      ตัวเลขจากตัวกรองนี้ "รวมได้ 100%" ส่วนตัวเลขรายหมวดรวมเกิน 100%
+    """
+    if view_mode in ("positive", "neutral", "negative"):
+        return f"AND {alias}.overall_sentiment = '{view_mode}'"
+    if view_mode == "complaints":
+        return f"AND {alias}.overall_sentiment = 'negative'"
+    if view_mode == "praise":
+        return f"AND {alias}.overall_sentiment = 'positive'"
+    return ""
