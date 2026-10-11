@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import AspectPanel from '../components/AspectPanel'
 import CategoryDrilldown from '../components/CategoryDrilldown'
 import DateRangeSelector, { type DateRange } from '../components/DateRangeSelector'
 import KPICard from '../components/KPICard'
@@ -427,6 +428,11 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
       </div>
 
       {/* รายชื่อร้านของโซนนี้ — แสดงตลอดเหมือนหน้าภาพรวม (ข้อ 5) */}
+      {/* วิเคราะห์รายหมวดของโซนนี้ — ชุดข้อมูลเดียวกับหน้าภาพรวม
+          แต่กรองเฉพาะโซน ตัวส่วนจึงเป็นรีวิวในโซนนี้เท่านั้น (กฎ 1) */}
+      <AspectPanel zone={zone} status={bizStatus} dateRange={dateRange}
+                   title={`วิเคราะห์รายหมวด — ${summary.label}`} />
+
       <CategoryDrilldown
         category={drillCategory}
         zone={zone}

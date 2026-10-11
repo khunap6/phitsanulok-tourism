@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import AspectPanel from '../components/AspectPanel'
 import CategoryDrilldown from '../components/CategoryDrilldown'
 import DateRangeSelector, { type DateRange } from '../components/DateRangeSelector'
 import KPICard from '../components/KPICard'
@@ -277,6 +278,15 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* วิเคราะห์รายหมวดแบบ Multi-Aspect — ชั้นข้อมูลใหม่ (review_aspects)
+
+          ⚠️ แผงนี้ใช้ตัวเลขคนละชุดกับกราฟด้านบนโดยตั้งใจ
+            ด้านบนอ่าน analyzed_reviews (1 หมวด/รีวิว) = ของเดิม
+            แผงนี้อ่าน review_aspects (หลายหมวด/รีวิว) = ของใหม่
+            ตัวเลขสองที่จึงไม่เท่ากัน และ "ไม่ควรเท่า" — คนละหน่วยนับ
+            แผงนี้ติดป้ายหน่วยไว้ทุกจุดแล้ว ส่วนด้านบนยังเป็นของเดิมที่ยังไม่ได้ย้าย */}
+      <AspectPanel status={bizStatus} dateRange={dateRange} />
 
       {/* รายชื่อร้าน — แสดงตลอด ไม่ต้องให้ผู้ใช้กดแท่งกราฟก่อน (ข้อ 5)
           เนื้อหาเปลี่ยนตามมุมมอง: คำบ่น→ร้านที่ถูกบ่น · คำชม→ร้านที่ถูกชม · ทั้งหมด→ทั้งสองแบบ

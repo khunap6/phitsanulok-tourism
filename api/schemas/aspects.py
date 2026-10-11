@@ -22,6 +22,14 @@ class CategorySummaryItem(BaseModel):
     share_of_reviews: float
     # n_negative / n_reviews — อัตราการติของหมวดนี้โดยเฉพาะ
     negative_rate: float
+    # จำนวนรีวิวที่ "หมวดหลัก" คือหมวดนี้ — ผลรวมทุกหมวดเท่ากับจำนวนรีวิวพอดี
+    # ใช้ทำกราฟที่ต้องรวมได้ 100% ส่วน n_reviews ใช้ทำกราฟที่รวมเกิน 100%
+    n_primary: int = 0
+    share_as_primary: float = 0.0
+    # แยกอารมณ์ของ "หมวดหลัก" เพื่อให้กราฟโหมด 100% ซ้อนสีได้เหมือนกัน
+    np_positive: int = 0
+    np_neutral: int = 0
+    np_negative: int = 0
     low_data: bool
     is_non_problem: bool
 
@@ -30,6 +38,8 @@ class CategorySummaryResponse(BaseModel):
     items: list[CategorySummaryItem]
     total_reviews: int
     total_mentions: int
+    # ต้องเท่ากับ total_reviews พอดี — ถ้าไม่เท่าแปลว่ามีรีวิวที่ไม่มี is_primary
+    total_primary: int = 0
     low_data_threshold: int
     denominator_note: str
 

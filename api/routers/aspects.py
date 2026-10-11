@@ -91,6 +91,13 @@ async def category_summary(
                count(*) FILTER (WHERE ra.aspect_sentiment = 'positive')    AS n_pos,
                count(*) FILTER (WHERE ra.aspect_sentiment = 'neutral')     AS n_neu,
                count(*) FILTER (WHERE ra.aspect_sentiment = 'negative')    AS n_neg,
+               count(*) FILTER (WHERE ra.is_primary)                       AS n_primary,
+               count(*) FILTER (WHERE ra.is_primary
+                                  AND ra.aspect_sentiment = 'positive')     AS np_pos,
+               count(*) FILTER (WHERE ra.is_primary
+                                  AND ra.aspect_sentiment = 'neutral')      AS np_neu,
+               count(*) FILTER (WHERE ra.is_primary
+                                  AND ra.aspect_sentiment = 'negative')     AS np_neg,
                (SELECT n FROM tot)                                         AS total
           FROM review_aspects ra
           JOIN base b ON b.review_id = ra.review_id
@@ -110,6 +117,9 @@ async def category_summary(
             n_negative=r.n_neg,
             share_of_reviews=(r.n_reviews / total) if total else 0.0,
             negative_rate=(r.n_neg / r.n_reviews) if r.n_reviews else 0.0,
+            n_primary=r.n_primary,
+            share_as_primary=(r.n_primary / total) if total else 0.0,
+            np_positive=r.np_pos, np_neutral=r.np_neu, np_negative=r.np_neg,
             low_data=r.n_reviews < LOW_DATA_THRESHOLD,
             is_non_problem=r.category_id in NON_PROBLEM_CATEGORY_IDS,
         ))
@@ -117,6 +127,7 @@ async def category_summary(
         items=items,
         total_reviews=total,
         total_mentions=sum(i.n_reviews for i in items),
+        total_primary=sum(i.n_primary for i in items),
         low_data_threshold=LOW_DATA_THRESHOLD,
         denominator_note=(
             "share_of_reviews หารด้วยจำนวนรีวิวทั้งหมดในช่วงที่เลือก "
