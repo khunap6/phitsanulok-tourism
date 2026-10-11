@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+import { SeverityHigh, SeverityLow, SeverityMedium } from './icons'
 import { formatRateOf } from '../utils/format'
 
 interface SeverityBreakdown {
@@ -20,6 +22,14 @@ interface KPICardProps {
   unit?: string
   /** แจกแจงตามระดับความรุนแรง — แสดงใต้ตัวเลขหลัก */
   breakdown?: SeverityBreakdown
+  /**
+   * กราฟที่ฝังในการ์ด — ถ้าส่งมาจะแสดงแทนแถบชิปของ breakdown
+   *
+   * มีไว้เพราะกราฟวงกลมบอกทั้งจำนวนและสัดส่วนของสามระดับอยู่แล้ว
+   * การโชว์ชิป "สูง/กลาง/ต่ำ" ซ้ำอีกชุดคือข้อมูลเดียวกันสองที่บนการ์ดเดียว
+   * (ข้อ 3 ของรายการแก้ไข — ลดการแสดงข้อมูลซ้ำ)
+   */
+  chart?: ReactNode
   /** ร้านที่เสี่ยงสูงสุด — โชว์รายชื่อกันเข้าใจผิดว่าคอมมาจากร้านเดียว */
   riskPlaces?: RiskPlace[]
   /**
@@ -40,6 +50,7 @@ export default function KPICard({
   accentColor = '#3b82f6',
   unit,
   breakdown,
+  chart,
   riskPlaces,
   rate,
   denominator,
@@ -61,15 +72,23 @@ export default function KPICard({
         </p>
       )}
 
-      {breakdown && (
+      {chart && <div className="mt-1 -mx-2">{chart}</div>}
+
+      {breakdown && !chart && (
         <div className="flex flex-wrap gap-3 text-xs mt-1">
-          <span className="text-red-400">🔥 สูง {breakdown.high}</span>
-          <span className="text-yellow-400">⚠️ กลาง {breakdown.medium}</span>
-          <span className="text-green-400">💬 ต่ำ {breakdown.low}</span>
+          <span className="text-red-400 inline-flex items-center gap-1">
+            <SeverityHigh size={13} /> สูง {breakdown.high}
+          </span>
+          <span className="text-yellow-400 inline-flex items-center gap-1">
+            <SeverityMedium size={13} /> กลาง {breakdown.medium}
+          </span>
+          <span className="text-green-400 inline-flex items-center gap-1">
+            <SeverityLow size={13} /> ต่ำ {breakdown.low}
+          </span>
         </div>
       )}
 
-      {subtitle && !breakdown && (
+      {subtitle && !breakdown && !chart && (
         <p className="text-brand-subtext text-xs">{subtitle}</p>
       )}
 

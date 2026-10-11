@@ -61,7 +61,18 @@ export function useTopPlaces(
   })
 }
 
-export interface PositiveHighlight { category: string; count: number }
+export interface PositiveHighlight {
+  category: string
+  count: number
+  /** สัดส่วนของคำชมทั้งหมด — ตัวส่วนคือ total_praise (กฎ 1) */
+  share_of_praise?: number | null
+}
+
+/** /positive-highlights คืน object เพราะต้องพก "ตัวส่วน" มาด้วย (ดู utils/format.ts) */
+export interface PositiveHighlights {
+  items: PositiveHighlight[]
+  total_praise: number
+}
 
 export function usePositiveHighlights(
   zone?: string,
@@ -69,7 +80,7 @@ export function usePositiveHighlights(
   status = 'operational',
   dateRange?: DateRange,
 ) {
-  return useQuery<PositiveHighlight[]>({
+  return useQuery<PositiveHighlights>({
     queryKey: ['positive-highlights', zone ?? 'all', limit, status, dateKey(dateRange)],
     queryFn: () =>
       client

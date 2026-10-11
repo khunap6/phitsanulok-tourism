@@ -1,9 +1,14 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import {
+  CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from 'recharts'
 import type { DateRange } from './DateRangeSelector'
 import { formatThaiMonthYearShort } from '../utils/thaiDate'
 import { NO_DATA, formatCount, formatPercent, formatRateOf } from '../utils/format'
 import { dateKey } from '../hooks/useInsights'
+import { SeverityMedium, Trend } from './icons'
+import { categoryLabel } from '../utils/categoryLabel'
 
 interface Bucket {
   bucket: string
@@ -124,11 +129,37 @@ export default function TrendingPanel({ zone, zoneLabel, dateRange, status }: Pr
     }
   }
 
+  /**
+   * ชุดข้อมูลของเส้น "ภาพรวม"
+   *
+   * ⚠️ ใช้ bucket_negative (คำบ่นทั้งหมด) ไม่ใช่ b.total ซึ่งเป็นผลรวมของ Top 5
+   *   วัดจริง เม.ย. 69: Top 5 รวมได้ 85 แต่คำบ่นทั้งหมดคือ 104
+   *   เส้น "ภาพรวม" ต้องหมายถึงภาพรวมจริง จึงต้องใช้ bucket_negative
+   *   และตารางด้านล่างมีทั้งสองแถวแยกกันให้เทียบได้
+   *
+   * ⚠️ โหมด share: เส้นคือ "จำนวนคำบ่น" เพราะสัดส่วนของคำบ่นต่อคำบ่นเป็น 100%
+   *   ทุกเดือนซึ่งไม่มีความหมาย — เขียนกำกับไว้ในคำอธิบายเหนือกราฟแล้ว
+   */
+  const overallSeries = buckets.map(b => {
+    const neg = b.bucket_negative ?? 0
+    const base = b.bucket_total ?? 0
+    const value = mode === 'rate' ? (base > 0 ? neg / base : null) : neg
+    return {
+      label: label(b.bucket),
+      value,
+      title: mode === 'rate'
+        ? formatRateOf(base > 0 ? neg / base : null, neg, base, 'รีวิวที่มีข้อความ')
+        : `${formatCount(neg)} คอมเมนต์`,
+    }
+  })
+
   return (
     <div className="bg-brand-card rounded-xl p-5 border border-brand-border">
       <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
         <div>
-          <h3 className="text-brand-text font-semibold">📈 แนวโน้มปัญหา Top 5</h3>
+          <h3 className="text-brand-text font-semibold inline-flex items-center gap-2">
+            <Trend size={16} /> แนวโน้มของปัญหา
+          </h3>
           <p className="text-brand-subtext text-xs mt-0.5">
             รายเดือน · นับจาก<b>วันที่เขียนรีวิว</b>
             {zoneLabel ? ` · ${zoneLabel}` : ' · ทั้งจังหวัด'}
@@ -160,6 +191,40 @@ export default function TrendingPanel({ zone, zoneLabel, dateRange, status }: Pr
         </div>
       )}
 
+      {/* ── แนวโน้มรวม ──
+          ⚠️ เส้นนี้คือ "คำบ่นทั้งหมด" ของแต่ละเดือน ไม่ใช่ผลรวมของ Top 5
+          ตรงกับแถว "คำบ่นทั้งหมด" ในตาราง และเป็นตัวส่วนของโหมด % ในหมู่คำบ่น (กฎ 1) */}
+      {!isLoading && enough && (
+        <div className="mt-3">
+          <p className="text-brand-subtext text-xs mb-1">
+            ภาพรวม — {mode === 'count'
+              ? 'จำนวนคำบ่นทั้งหมดต่อเดือน'
+              : mode === 'rate'
+              ? 'สัดส่วนคำบ่นต่อรีวิวที่มีข้อความทั้งหมด'
+              : 'คำบ่นทั้งหมด (ฐานของ % ในหมู่คำบ่น)'}
+          </p>
+          <ResponsiveContainer width="100%" height={150}>
+            <LineChart data={overallSeries} margin={{ top: 5, right: 12, bottom: 0, left: 0 }}>
+              <CartesianGrid stroke="#334155" strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 11 }}
+                     axisLine={{ stroke: '#334155' }} tickLine={false} />
+              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} width={46}
+                     axisLine={false} tickLine={false}
+                     tickFormatter={(v: number) =>
+                       mode === 'rate' ? formatPercent(v, 0) : formatCount(v)} />
+              <Tooltip
+                contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
+                labelStyle={{ color: '#e2e8f0' }}
+                itemStyle={{ color: '#f87171' }}
+                formatter={(_v: number, _n, item: any) => [item?.payload?.title ?? NO_DATA, 'คำบ่น']}
+              />
+              <Line type="monotone" dataKey="value" stroke="#ef4444" strokeWidth={2}
+                    dot={{ r: 3, fill: '#ef4444' }} activeDot={{ r: 5 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
       {!isLoading && enough && (
         <div className="overflow-x-auto mt-3">
           <table className="w-full text-sm min-w-[520px]">
@@ -176,7 +241,8 @@ export default function TrendingPanel({ zone, zoneLabel, dateRange, status }: Pr
                       ? `ฐานน้อยกว่า ${minBase} รีวิว ตัวเลขอาจไม่น่าเชื่อถือ (ฐาน ${formatCount(b.bucket_total ?? 0)} รีวิว)`
                       : `ฐาน ${formatCount(b.bucket_total ?? 0)} รีวิว`}
                   >
-                    {label(b.bucket)}{b.low_confidence ? ' ⚠' : ''}
+                    {label(b.bucket)}
+                    {b.low_confidence && <SeverityMedium size={10} className="inline ml-1 -mt-0.5" />}
                   </th>
                 ))}
               </tr>
@@ -186,7 +252,7 @@ export default function TrendingPanel({ zone, zoneLabel, dateRange, status }: Pr
                 <tr key={c} className="border-b border-brand-border/50 last:border-0">
                   <td className="py-2 pr-3 text-brand-text">
                     <span className="text-brand-subtext text-xs mr-1.5">{i + 1}.</span>
-                    {c}
+                    {categoryLabel(c)}
                   </td>
                   {buckets.map((b, bi) => {
                     const cur = b.counts[c] ?? 0
@@ -208,10 +274,23 @@ export default function TrendingPanel({ zone, zoneLabel, dateRange, status }: Pr
                 </tr>
               ))}
               <tr className="text-brand-subtext text-xs">
-                <td className="py-2 pr-3 font-medium">รวมคำบ่นทั้งหมด</td>
+                {/* ⚠️ b.total = ผลรวมของ 5 หมวดที่แสดงเท่านั้น ไม่ใช่คำบ่นทั้งหมด
+                    เดิมแถวนี้เขียนว่า "รวมคำบ่นทั้งหมด" ซึ่งผิด — วัดจริง
+                    เม.ย. 69 ได้ 85 ขณะที่คำบ่นทั้งหมดคือ 104 (หมวดอันดับ 6
+                    ลงไปหายไป 19 อัน) ต้องเรียกตามสิ่งที่มันเป็นจริง */}
+                <td className="py-2 pr-3 font-medium">รวม 5 หมวดนี้</td>
                 {buckets.map(b => (
                   <td key={b.bucket} className="text-right py-2 px-2">
                     {formatCount(b.total)}
+                  </td>
+                ))}
+              </tr>
+              <tr className="text-brand-subtext text-xs">
+                {/* ตัวเลขชุดเดียวกับเส้นกราฟด้านบน และเป็นตัวส่วนของโหมด "% ในหมู่คำบ่น" */}
+                <td className="py-2 pr-3 font-medium">คำบ่นทั้งหมด</td>
+                {buckets.map(b => (
+                  <td key={b.bucket} className="text-right py-2 px-2">
+                    {formatCount(b.bucket_negative ?? 0)}
                   </td>
                 ))}
               </tr>

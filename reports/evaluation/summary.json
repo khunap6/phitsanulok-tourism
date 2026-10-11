@@ -1,0 +1,143 @@
+{
+  "category": {
+    "task": "category",
+    "n_test": 1600,
+    "accuracy": 0.698125,
+    "macro_f1": 0.5268110028693448,
+    "weighted_f1": 0.7000776490003517,
+    "per_class": {
+      "ความคิดเห็นทั่วไป (ไม่ระบุปัญหา)": {
+        "precision": 0.789,
+        "recall": 0.69,
+        "f1": 0.737,
+        "support": 672
+      },
+      "รสชาติและคุณภาพอาหาร/เครื่องดื่ม": {
+        "precision": 0.698,
+        "recall": 0.853,
+        "f1": 0.768,
+        "support": 361
+      },
+      "บรรยากาศและการตกแต่งร้าน": {
+        "precision": 0.74,
+        "recall": 0.601,
+        "f1": 0.663,
+        "support": 331
+      },
+      "การบริการและเจ้าหน้าที่": {
+        "precision": 0.667,
+        "recall": 0.836,
+        "f1": 0.742,
+        "support": 55
+      },
+      "ความสะอาดและสิ่งแวดล้อม": {
+        "precision": 0.509,
+        "recall": 0.628,
+        "f1": 0.562,
+        "support": 43
+      },
+      "สิ่งอำนวยความสะดวก": {
+        "precision": 0.477,
+        "recall": 0.512,
+        "f1": 0.494,
+        "support": 41
+      },
+      "ความแออัดและการจัดการ": {
+        "precision": 0.366,
+        "recall": 0.517,
+        "f1": 0.429,
+        "support": 29
+      },
+      "ราคาและความคุ้มค่า": {
+        "precision": 0.368,
+        "recall": 0.609,
+        "f1": 0.459,
+        "support": 23
+      },
+      "การเดินทางและที่จอดรถ": {
+        "precision": 0.474,
+        "recall": 0.529,
+        "f1": 0.5,
+        "support": 17
+      },
+      "ข้อมูลและป้ายบอกทาง": {
+        "precision": 0.259,
+        "recall": 0.583,
+        "f1": 0.359,
+        "support": 12
+      },
+      "ความปลอดภัย": {
+        "precision": 0.636,
+        "recall": 0.583,
+        "f1": 0.609,
+        "support": 12
+      },
+      "อื่นๆ": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 4
+      }
+    }
+  },
+  "sentiment": {
+    "task": "sentiment",
+    "n_test": 404,
+    "accuracy": 0.8465346534653465,
+    "macro_f1": 0.7339563750051763,
+    "weighted_f1": 0.8492052341233544,
+    "per_class": {
+      "positive": {
+        "precision": 0.909,
+        "recall": 0.925,
+        "f1": 0.917,
+        "support": 292
+      },
+      "negative": {
+        "precision": 0.887,
+        "recall": 0.671,
+        "f1": 0.764,
+        "support": 70
+      },
+      "neutral": {
+        "precision": 0.463,
+        "recall": 0.595,
+        "f1": 0.521,
+        "support": 42
+      }
+    }
+  },
+  "data": {
+    "zones": [
+      {
+        "z": "other",
+        "places": 351,
+        "ceil": 61664,
+        "sc": 56590
+      },
+      {
+        "z": "city_center",
+        "places": 228,
+        "ceil": 49167,
+        "sc": 46192
+      },
+      {
+        "z": "naresuan",
+        "places": 137,
+        "ceil": 8912,
+        "sc": 8540
+      },
+      {
+        "z": "rajabhat",
+        "places": 23,
+        "ceil": 1322,
+        "sc": 1253
+      }
+    ],
+    "reviews": 114295,
+    "places": 753,
+    "with_text": 73013,
+    "analyzed": 113642,
+    "coverage_pct": 92.99
+  }
+}

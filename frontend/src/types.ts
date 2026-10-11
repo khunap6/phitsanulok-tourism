@@ -55,13 +55,10 @@ export interface TopPlace {
   name: string
   overall_rating: number | null
   business_status?: string
+  /** รีวิวที่มีข้อความ = ตัวส่วนของ high_rate (ทุกตัวนับกรอง text_clean เหมือนกัน) */
   review_count: number
   high_count: number
   medium_count: number
-  /** ตัวส่วนของ high_rate — review_count ไม่กรอง text_clean จึงใช้เป็นตัวส่วนไม่ได้ */
-  review_count_with_text?: number | null
-  /** ตัวเศษของ high_rate */
-  high_count_with_text?: number | null
   high_rate?: number | null
 }
 

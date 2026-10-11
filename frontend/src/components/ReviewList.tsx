@@ -1,4 +1,6 @@
+import { RatingStar, SeverityHigh, SeverityLow, SeverityMedium, Stars } from './icons'
 import type { Review } from '../types'
+import { categoryLabel } from '../utils/categoryLabel'
 import { formatThaiMonthYear } from '../utils/thaiDate'
 
 const SEVERITY_STYLE: Record<string, string> = {
@@ -9,9 +11,16 @@ const SEVERITY_STYLE: Record<string, string> = {
 
 // severity = ระดับความรุนแรงของปัญหา (ไม่ใช่ตัวบอกว่าชมหรือบ่น — ดูที่ sentiment แทน)
 const SEVERITY_TH: Record<string, string> = {
-  high: '🔥 สูง',
-  medium: '⚠️ กลาง',
-  low: '💬 ต่ำ',
+  high: 'สูง',
+  medium: 'กลาง',
+  low: 'ต่ำ',
+}
+
+// ไอคอนคู่กับระดับ — ใช้ชุดเดียวกับทั้งเว็บ (ดู components/icons.tsx)
+const SEVERITY_ICON: Record<string, typeof SeverityHigh> = {
+  high: SeverityHigh,
+  medium: SeverityMedium,
+  low: SeverityLow,
 }
 
 /**
@@ -37,7 +46,7 @@ function StarRating({ rating }: { rating: number | null }) {
   if (!rating) return null
   return (
     <span className="text-yellow-400 text-sm">
-      {'★'.repeat(rating)}{'☆'.repeat(5 - rating)}
+      <Stars value={rating} />
     </span>
   )
 }
@@ -112,7 +121,7 @@ export default function ReviewList({ reviews, loading, caption, hiddenNoText }: 
             )}
             {r.pain_point_category && (
               <Badge
-                label={r.pain_point_category}
+                label={categoryLabel(r.pain_point_category)}
                 className="bg-blue-500/20 text-blue-400 border-blue-500/40"
               />
             )}

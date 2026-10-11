@@ -9,6 +9,8 @@ from html import escape
 
 from reports.report_data import ReportData
 
+from api.filters import category_label
+
 SEV_LABEL = {"high": "สูง", "medium": "กลาง", "low": "ต่ำ"}
 SEV_COLOR = {"high": "#dc2626", "medium": "#ca8a04", "low": "#16a34a"}
 
@@ -55,6 +57,35 @@ def _delta_html(d: int) -> str:
     return '<span class="flat">–</span>'
 
 
+def _cmp_cell(cur: float, ref: float | None, digits: int = 0) -> str:
+    """ช่องเปรียบเทียบ: ค่าอ้างอิง + ส่วนต่าง
+
+    ⚠️ ต้องโชว์ "ค่าอ้างอิง" คู่กับส่วนต่างเสมอ
+      "+12" เฉย ๆ ตีความไม่ได้ถ้าไม่รู้ว่าเทียบกับอะไร — หลักเดียวกับ
+      กฎห้ามโชว์ % โดยไม่มี n (frontend/src/utils/format.ts)
+    """
+    if ref is None:
+        return '<span class="flat">— ไม่มีข้อมูล</span>'
+    d = cur - ref
+    ref_txt = f"{ref:,.{digits}f}"
+    if abs(d) < 10 ** -digits / 2:
+        return f'{ref_txt} <span class="flat">(–)</span>'
+    cls, sign = ("up", "+") if d > 0 else ("down", "")
+    return f'{ref_txt} <span class="{cls}">({sign}{d:,.{digits}f})</span>'
+
+
+def _sev_pct(sev: dict, digits: int = 0) -> str:
+    """สัดส่วน สูง/กลาง/ต่ำ พร้อม n — ห้ามโชว์ % เปล่า"""
+    tot = sum(sev.get(k, 0) for k in ("high", "medium", "low"))
+    if not tot:
+        return "—"
+    parts = []
+    for k, label in (("high", "สูง"), ("medium", "กลาง"), ("low", "ต่ำ")):
+        n = sev.get(k, 0)
+        parts.append(f"{label} {n:,.{digits}f} ({n / tot * 100:.0f}%)")
+    return " · ".join(parts)
+
+
 def render(data: ReportData) -> str:
     e = escape
 
@@ -85,10 +116,44 @@ def render(data: ReportData) -> str:
         <small>ลองเลือกเดือนอื่น หรือเก็บข้อมูลเพิ่มก่อน</small></div>
         </body></html>"""
 
+    # ── ตารางเปรียบเทียบ (ข้อ 9) ──
+    # ทุกแถวมาจากคิวรี bucket รายเดือนชุดเดียวกัน จึงเทียบกันได้จริง
+    cur_sev = data.severity
+    cmp_rows = f"""
+      <tr><th>จำนวนคอมเมนต์ (รีวิวที่มีข้อความ)</th>
+        <td class="num">{data.reviews_in_month:,}</td>
+        <td class="num">{_cmp_cell(data.reviews_in_month, data.prev_reviews)}</td>
+        <td class="num">{_cmp_cell(data.reviews_in_month,
+                                   data.ly_reviews if data.ly_available else None)}</td>
+        <td class="num">{_cmp_cell(data.reviews_in_month, data.avg_reviews, 1)}</td></tr>
+      <tr><th>คำบ่น</th>
+        <td class="num">{data.complaints_in_month:,}</td>
+        <td class="num">{_cmp_cell(data.complaints_in_month, data.prev_complaints)}</td>
+        <td class="num">{_cmp_cell(data.complaints_in_month,
+                                   data.ly_complaints if data.ly_available else None)}</td>
+        <td class="num">{_cmp_cell(data.complaints_in_month, data.avg_complaints, 1)}</td></tr>
+      <tr><th>คำชม</th>
+        <td class="num">{data.praise_in_month:,}</td>
+        <td class="num">{_cmp_cell(data.praise_in_month, data.prev_praise)}</td>
+        <td class="num">{_cmp_cell(data.praise_in_month,
+                                   data.ly_praise if data.ly_available else None)}</td>
+        <td class="num">{_cmp_cell(data.praise_in_month, data.avg_praise, 1)}</td></tr>
+      <tr><th>สถานที่ที่ถูกพูดถึง</th>
+        <td class="num">{data.places_with_reviews:,}</td>
+        <td class="num">{_cmp_cell(data.places_with_reviews, data.prev_places)}</td>
+        <td class="num">{_cmp_cell(data.places_with_reviews,
+                                   data.ly_places if data.ly_available else None)}</td>
+        <td class="num">{_cmp_cell(data.places_with_reviews, data.avg_places, 1)}</td></tr>
+      <tr><th>สัดส่วนความรุนแรง</th>
+        <td>{e(_sev_pct(cur_sev))}</td>
+        <td>{e(_sev_pct(data.prev_severity))}</td>
+        <td>{e(_sev_pct(data.ly_severity) if data.ly_available else "— ไม่มีข้อมูล")}</td>
+        <td>{e(_sev_pct(data.avg_severity, 1))}</td></tr>"""
+
     # ── ตาราง Top ปัญหา ──
     mx = max((t["count"] for t in data.top_problems), default=1)
     rows_prob = "".join(
-        f"""<tr><td>{i+1}. {e(t['category'])}</td>
+        f"""<tr><td>{i+1}. {e(category_label(t['category']))}</td>
         <td class="num">{t['count']}</td><td class="num">{t['pct']}%</td>
         <td class="num" style="color:#dc2626">{t['high']}</td>
         <td class="num">{_delta_html(t['delta'])}</td>
@@ -107,7 +172,7 @@ def render(data: ReportData) -> str:
     # ── โซน ──
     rows_zone = "".join(
         f"""<tr><td>{e(z['zone'])}</td><td class="num">{z['complaints']}</td>
-        <td class="num">{z['praise']}</td><td>{e(z['top_category'])}</td></tr>"""
+        <td class="num">{z['praise']}</td><td>{e(category_label(z['top_category']))}</td></tr>"""
         for z in data.zones)
 
     # ── ร้านที่ถูกบ่นมากสุด ──
@@ -115,17 +180,18 @@ def render(data: ReportData) -> str:
         f"""<tr><td>{i+1}. {e(w['name'])}</td><td>{e(w['zone'])}</td>
         <td class="num">{w['complaints']}</td>
         <td class="num" style="color:#dc2626">{w['high']}</td>
-        <td>{e(w['top_category'])}</td></tr>"""
+        <td>{e(category_label(w['top_category']))}</td></tr>"""
         for i, w in enumerate(data.worst_places))
 
     # ── จุดเด่น ──
     rows_high = "".join(
-        f"""<tr><td>{i+1}. {e(h['category'])}</td>
+        f"""<tr><td>{i+1}. {e(category_label(h['category']))}</td>
         <td class="num" style="color:#16a34a">{h['count']}</td></tr>"""
         for i, h in enumerate(data.highlights))
 
     # ── ตัวอย่างรีวิว ──
-    top_cat = data.top_problems[0]["category"] if data.top_problems else "-"
+    top_cat = (category_label(data.top_problems[0]["category"])
+               if data.top_problems else "-")
     quotes = "".join(
         f"""<div class="quote"><div class="meta">{e(s['place'])} · {'★' * (s['rating'] or 0)}</div>
         {e(s['text'])}</div>"""
@@ -150,30 +216,45 @@ def render(data: ReportData) -> str:
 
 {kpis}
 
-{section("1. ปัญหาที่พบมากที่สุด", f'''
+{section("1. ภาพรวมเทียบกับช่วงอื่น", f'''
+<table><thead><tr>
+  <th>ตัวชี้วัด</th>
+  <th class="num">{e(data.period_label)}</th>
+  <th class="num">เทียบ {e(data.prev_label)}</th>
+  <th class="num">เทียบ {e(data.ly_label)}</th>
+  <th class="num">เทียบ{e(data.avg_label)}</th>
+</tr></thead><tbody>{cmp_rows}</tbody></table>
+<p style="font-size:11px;color:#64748b;margin-top:6px">
+  ตัวเลขในวงเล็บคือส่วนต่างจากค่าที่นำมาเทียบ ·
+  "สถานที่ที่ถูกพูดถึง" นับร้านที่มีรีวิวในเดือนนั้น
+  ไม่ใช่ร้านที่เพิ่งเพิ่มเข้าระบบ (ฐานข้อมูลไม่ได้บันทึกวันที่เพิ่มร้าน) ·
+  ค่าเฉลี่ยคิดจากเดือนที่มีข้อมูลจริงเท่านั้น ไม่เติมศูนย์ให้เดือนที่ยังไม่ได้เก็บ
+</p>''')}
+
+{section("2. ปัญหาที่พบมากที่สุด", f'''
 <table><thead><tr>
   <th>หมวดปัญหา</th><th class="num">จำนวน</th><th class="num">สัดส่วน</th>
   <th class="num">ระดับสูง</th><th class="num">เทียบเดือนก่อน</th><th></th>
 </tr></thead><tbody>{rows_prob}</tbody></table>''')}
 
-{section("2. ระดับความรุนแรงของปัญหา", f'''
+{section("3. ระดับความรุนแรงของปัญหา", f'''
 <table><thead><tr><th>ระดับ</th><th class="num">จำนวน</th><th class="num">สัดส่วน</th></tr></thead>
 <tbody>{rows_sev}</tbody></table>''')}
 
-{section("3. เปรียบเทียบตามพื้นที่", f'''
+{section("4. เปรียบเทียบตามพื้นที่", f'''
 <table><thead><tr><th>โซน</th><th class="num">คำบ่น</th><th class="num">คำชม</th>
 <th>ปัญหาหลัก</th></tr></thead><tbody>{rows_zone}</tbody></table>''')}
 
-{section("4. สถานที่ที่ถูกร้องเรียนมากที่สุด", f'''
+{section("5. สถานที่ที่ถูกร้องเรียนมากที่สุด", f'''
 <table><thead><tr><th>สถานที่</th><th>โซน</th><th class="num">คำบ่น</th>
 <th class="num">ระดับสูง</th><th>ปัญหาหลัก</th></tr></thead>
 <tbody>{rows_worst}</tbody></table>''')}
 
-{section("5. จุดเด่นที่ได้รับคำชม", f'''
+{section("6. จุดเด่นที่ได้รับคำชม", f'''
 <table><thead><tr><th>หมวด</th><th class="num">คำชม</th></tr></thead>
 <tbody>{rows_high}</tbody></table>''')}
 
-{section(f"6. ตัวอย่างรีวิว — {e(top_cat)}", quotes)}
+{section(f"7. ตัวอย่างรีวิว — {e(top_cat)}", quotes)}
 
 <div class="footer">
   ระบบวิเคราะห์ Pain Point การท่องเที่ยวจังหวัดพิษณุโลก · มหาวิทยาลัยนเรศวร<br>

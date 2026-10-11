@@ -21,9 +21,17 @@ interface Props {
   share?: Record<string, number | null> | null
   /** จำนวนคำบ่นทั้งหมด = ตัวส่วนของ share — ต้องส่งมาเพื่อโชว์ n คู่กับ % */
   negativeTotal?: number | null
+  /**
+   * ฝังในการ์ดอื่น — ตัดกรอบ หัวข้อ และคำอธิบายออก เหลือแต่กราฟ
+   *
+   * ทำไมต้องมีโหมดนี้แทนที่จะเขียนกราฟใหม่: กติกาการคำนวณ % ของกราฟนี้
+   * (ใช้ share จาก API ห้ามให้ recharts หารเอง) เป็นจุดที่เคยพลาดมาก่อน
+   * ถ้าทำกราฟวงกลมตัวที่สอง จะมีโอกาสพลาดซ้ำ — ใช้ตัวเดิมจึงปลอดภัยกว่า
+   */
+  embedded?: boolean
 }
 
-export default function SeverityPie({ data, share, negativeTotal }: Props) {
+export default function SeverityPie({ data, share, negativeTotal, embedded }: Props) {
   const chartData = Object.entries(data).map(([key, value]) => ({
     key,
     name: SEVERITY_LABELS[key] ?? key,
@@ -35,14 +43,8 @@ export default function SeverityPie({ data, share, negativeTotal }: Props) {
     color: SEVERITY_COLORS[key] ?? '#94a3b8',
   }))
 
-  return (
-    <div className="bg-brand-card rounded-xl p-5 border border-brand-border">
-      <h3 className="text-brand-text font-semibold mb-1">ระดับความรุนแรง</h3>
-      <p className="text-brand-subtext text-xs mb-3">
-        จากรีวิวเชิงลบ (คำบ่น) ทั้งหมด
-        {negativeTotal != null ? ` ${formatCount(negativeTotal)} รายการ` : ''}
-      </p>
-      <ResponsiveContainer width="100%" height={240}>
+  const chart = (
+    <ResponsiveContainer width="100%" height={embedded ? 190 : 240}>
         <PieChart>
           <Pie
             data={chartData}
@@ -50,7 +52,7 @@ export default function SeverityPie({ data, share, negativeTotal }: Props) {
             nameKey="name"
             cx="50%"
             cy="50%"
-            outerRadius={72}
+            outerRadius={embedded ? 58 : 72}
             label={(p: any) => {
               const d = chartData[p.index]
               // แสดงทั้งจำนวนและ % ในกราฟเลย — % มี share จาก API เท่านั้น
@@ -78,8 +80,20 @@ export default function SeverityPie({ data, share, negativeTotal }: Props) {
               <span style={{ color: '#94a3b8', fontSize: 13 }}>{value}</span>
             )}
           />
-        </PieChart>
-      </ResponsiveContainer>
+      </PieChart>
+    </ResponsiveContainer>
+  )
+
+  if (embedded) return chart
+
+  return (
+    <div className="bg-brand-card rounded-xl p-5 border border-brand-border">
+      <h3 className="text-brand-text font-semibold mb-1">ระดับความรุนแรง</h3>
+      <p className="text-brand-subtext text-xs mb-3">
+        จากรีวิวเชิงลบ (คำบ่น) ทั้งหมด
+        {negativeTotal != null ? ` ${formatCount(negativeTotal)} รายการ` : ''}
+      </p>
+      {chart}
     </div>
   )
 }

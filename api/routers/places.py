@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.filters import date_filter, sentiment_filter
 from api.dependencies import get_db
 from api.schemas.place import (
     NearbyPlaceResponse,
@@ -99,18 +100,38 @@ async def get_place(
 async def place_pain_points(
     place_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    view_mode: str = "all",
+    date_from: str | None = None,
+    date_to: str | None = None,
+    with_text_only: bool = False,
 ):
+    """Pain point ของร้านเดียว แยกตามหมวดและระดับความรุนแรง
+
+    ⚠️ ค่า default ทุกตัวแปลว่า "ไม่กรอง" เพื่อให้ผู้เรียกเดิมได้ผลเท่าเดิม (กฎ 3)
+      view_mode="all" · ไม่มีช่วงเวลา · with_text_only=False
+
+    ⚠️ ถ้าจะเอาตัวเลขไปวางข้างตัวเลขจากแดชบอร์ด ต้องส่งให้ครบชุด
+      view_mode="complaints" + ช่วงเวลาเดียวกัน + with_text_only=True
+      ไม่งั้นตัวเศษกับตัวส่วนผ่านตัวกรองคนละชุด (กฎ 1) — ที่ default นี้
+      จะนับรีวิวเชิงบวกและรีวิวที่ให้ดาวเปล่าเป็น pain point ไปด้วย
+    """
+    sent = sentiment_filter(view_mode, "ar")
+    date_sql, date_params = date_filter(date_from, date_to, "r")
+    text_sql = "AND r.text_clean <> ''" if with_text_only else ""
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT ar.pain_point_category AS category,
                    ar.severity,
                    COUNT(*) AS count
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
             WHERE r.place_id = :pid
+              {sent}
+              {text_sql}
+              {date_sql}
             GROUP BY ar.pain_point_category, ar.severity
             ORDER BY count DESC
         """),
-        {"pid": place_id},
+        {"pid": place_id, **date_params},
     )
     return [dict(row._mapping) for row in result.fetchall()]

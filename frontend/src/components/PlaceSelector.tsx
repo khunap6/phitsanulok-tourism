@@ -17,7 +17,7 @@ export default function PlaceSelector({ places, selectedId, onChange }: Props) {
       {places.map(p => (
         <option key={p.id} value={p.id}>
           {p.name}
-          {p.overall_rating ? ` (${p.overall_rating}★)` : ''}
+          {p.overall_rating ? ` (${p.overall_rating} ดาว)` : ''}
         </option>
       ))}
     </select>

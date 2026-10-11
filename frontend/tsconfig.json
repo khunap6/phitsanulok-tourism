@@ -8,6 +8,8 @@
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": { "@shared/*": ["../shared/*"] },
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",

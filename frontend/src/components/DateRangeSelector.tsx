@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { formatThaiYear } from '../utils/thaiDate'
+import { DateRange } from './icons'
 
 export interface DateRange {
   from: string | null
@@ -84,7 +85,9 @@ export default function DateRangeSelector({ value, onChange }: Props) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-brand-subtext text-sm shrink-0">📅 ช่วงเวลา:</span>
+      <span className="text-brand-subtext text-sm shrink-0 inline-flex items-center gap-1">
+        <DateRange size={14} /> ช่วงเวลา:
+      </span>
 
       {/* Presets */}
       <div className="flex flex-wrap gap-1.5">
@@ -147,7 +150,8 @@ export default function DateRangeSelector({ value, onChange }: Props) {
 
       {/* Chip แสดงช่วงปัจจุบัน */}
       <div className="ml-auto bg-brand-primary/10 border border-brand-primary/40 text-brand-primary text-xs px-3 py-1 rounded-full">
-        📅 กำลังดู: <b>{value.label}</b>
+        <DateRange size={13} className="inline mr-1 -mt-0.5" />
+        กำลังดู: <b>{value.label}</b>
       </div>
     </div>
   )

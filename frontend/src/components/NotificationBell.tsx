@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import type { LucideIcon } from 'lucide-react'
+import { AlertNewCategory, AlertSpike, AlertSpread, Notification, NotificationOk } from './icons'
 
 interface AlertPlace { place_name: string; delta: number }
 interface AlertItem {
@@ -26,8 +28,8 @@ interface AlertResponse {
 const LEVEL_COLOR: Record<string, string> = {
   high: '#ef4444', medium: '#eab308', low: '#3b82f6',
 }
-const TYPE_ICON: Record<string, string> = {
-  new_category: '🆕', spike: '📍', increase: '🌐',
+const TYPE_ICON: Record<string, LucideIcon> = {
+  new_category: AlertNewCategory, spike: AlertSpike, increase: AlertSpread,
 }
 const TYPE_LABEL: Record<string, string> = {
   new_category: 'ปัญหาใหม่', spike: 'กระจุกร้านเดียว', increase: 'กระจายหลายร้าน',
@@ -88,7 +90,7 @@ export default function NotificationBell() {
         title="การแจ้งเตือน"
         aria-label={`การแจ้งเตือน ${unread.length} รายการใหม่`}
       >
-        <span className="text-xl">🔔</span>
+        <Notification size={20} />
         {unread.length > 0 && (
           <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold
                            min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center">
@@ -102,7 +104,9 @@ export default function NotificationBell() {
                         bg-brand-card border border-brand-border rounded-xl shadow-2xl">
           <div className="px-4 py-3 border-b border-brand-border sticky top-0 bg-brand-card">
             <div className="flex items-center justify-between">
-              <h4 className="text-brand-text font-semibold text-sm">🔔 การแจ้งเตือน</h4>
+              <h4 className="text-brand-text font-semibold text-sm inline-flex items-center gap-2">
+            <Notification size={15} /> การแจ้งเตือน
+          </h4>
               <span className="text-brand-subtext text-xs">{alerts.length} รายการ</span>
             </div>
             {data?.from?.label && data?.to?.label && (
@@ -118,7 +122,8 @@ export default function NotificationBell() {
 
           {!data?.message && alerts.length === 0 && (
             <div className="px-4 py-6 text-brand-subtext text-sm text-center">
-              ✅ ไม่มีปัญหาเพิ่มขึ้นในรอบล่าสุด
+              <NotificationOk size={14} className="inline mr-1 -mt-0.5" />
+          ไม่มีปัญหาเพิ่มขึ้นในรอบล่าสุด
             </div>
           )}
 
@@ -126,7 +131,10 @@ export default function NotificationBell() {
             {alerts.map(a => (
               <div key={a.id} className="px-4 py-3 hover:bg-brand-bg transition-colors">
                 <div className="flex items-start gap-2">
-                  <span className="text-base leading-5">{TYPE_ICON[a.type]}</span>
+                  {(() => {
+                    const Icon = TYPE_ICON[a.type]
+                    return Icon ? <Icon size={15} className="mt-0.5 shrink-0" /> : null
+                  })()}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span

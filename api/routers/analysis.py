@@ -63,12 +63,22 @@ async def zone_summary(
     db: Annotated[AsyncSession, Depends(get_db)],
     date_from: str | None = None,
     date_to: str | None = None,
-    status: str = "all",
+    status: str = "operational",
 ):
     """
     สรุป pain point แยกตามโซนพื้นที่ (กรองช่วงเวลาได้)
 
     status: default "all" = ไม่กรอง → ไม่ส่งมาก็ได้ค่าเท่าเดิมทุกตัว
+
+    ⚠️ แก้ 2026-10-10 — เดิม biz_filter ถูกคำนวณไว้แต่ใส่เฉพาะคิวรีที่สอง
+      (ฐานเชิงสัดส่วน) ไม่ได้ใส่คิวรีแรกที่ผลิต place_count / review_count /
+      analyzed_count / high_count / medium_count / low_count / top_category
+      ผลคือส่ง status=operational ไปก็ไม่มีผลกับฟิลด์ที่การ์ดโซนใช้จริง
+      วัดได้: ส่งหรือไม่ส่ง place_count เท่ากันที่ 762 ทั้งคู่
+
+      ไม่ถือว่าเปลี่ยนสัญญา API เพราะ status_filter("all") คืนสตริงว่าง
+      ผู้เรียกที่ไม่ส่ง status จึงได้ SQL เดิมเป๊ะและผลเท่าเดิมทุกค่า
+      ส่วนผู้เรียกที่ส่งมา คือผู้ที่ร้องขอให้กรองอยู่แล้ว — ของเดิมคือไม่ทำตาม
 
     ฟิลด์เชิงสัดส่วน (ฐานเข้ม: มีข้อความ + วิเคราะห์แล้ว + ผ่าน status):
       total_with_text · negative_count · complaint_rate · severity_counts · severity_share
@@ -86,9 +96,10 @@ async def zone_summary(
                 COUNT(DISTINCT p.id)                 AS place_count,
                 COUNT(DISTINCT r.id)                 AS review_count,
                 COUNT(DISTINCT ar.id)                AS analyzed_count,
-                COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high'   AND ar.sentiment='negative') AS high_count,
-                COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'medium' AND ar.sentiment='negative') AS medium_count,
-                COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'low'    AND ar.sentiment='negative') AS low_count,
+                {_HIGH_WITH_TEXT}   AS high_count,
+                {_MEDIUM_WITH_TEXT} AS medium_count,
+                COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'low'
+                    AND ar.sentiment = 'negative' AND r.text_clean <> '') AS low_count,
                 MODE() WITHIN GROUP (ORDER BY ar.pain_point_category)
                     FILTER (WHERE r.text_clean <> ''
                             AND ar.sentiment = 'negative'
@@ -97,6 +108,8 @@ async def zone_summary(
             FROM places p
             {join_kind} reviews r  ON r.place_id = p.id {date_sql}
             LEFT JOIN analyzed_reviews ar ON ar.review_id = r.id
+            WHERE TRUE
+              {biz_filter}
             GROUP BY COALESCE(p.zone, 'other')
             ORDER BY analyzed_count DESC
         """),
@@ -138,11 +151,6 @@ async def zone_summary(
     out = []
     for r in rows:
         b = base.get(r.zone)
-        sev = {
-            "high": (b.sev_high if b else 0),
-            "medium": (b.sev_medium if b else 0),
-            "low": (b.sev_low if b else 0),
-        }
         neg = b.neg if b else 0
         twt = b.total_with_text if b else 0
         out.append({
@@ -156,12 +164,13 @@ async def zone_summary(
             "medium_count": r.medium_count or 0,
             "low_count": r.low_count or 0,
             "top_category": r.top_category,
-            # ── ฟิลด์ใหม่เชิงสัดส่วน (ฐานเข้ม) ──
+            # ── ฐานเชิงสัดส่วน ──
+            # severity_counts/severity_share ถูกถอดออก 2026-10-10
+            # เพราะซ้ำกับ high_count/medium_count/low_count ที่ตอนนี้นับ
+            # ด้วยกติกาเดียวกันแล้ว และไม่มีใครเรียกใช้
             "total_with_text": twt,
             "negative_count": neg,
             "complaint_rate": _rate(neg, twt),
-            "severity_counts": sev,
-            "severity_share": {k: _rate(v, neg) for k, v in sev.items()},
         })
     return out
 
@@ -402,22 +411,37 @@ async def zone_breakdown(
 
 @router.get("/category-places")
 async def category_places(
-    category: str,
     db: Annotated[AsyncSession, Depends(get_db)],
+    category: str | None = None,
     zone: str | None = None,
     status: str = "operational",
     view_mode: str = "complaints",
     date_from: str | None = None,
     date_to: str | None = None,
 ):
-    """ร้านในหมวดนี้ (view_mode: complaints=ร้านที่ถูกบ่น / praise=ร้านที่ถูกชม / all=ทั้งหมด)"""
-    filters = ["ar.pain_point_category = :category", "r.text_clean <> ''"]
+    """ร้านในหมวดนี้ (view_mode: complaints=ร้านที่ถูกบ่น / praise=ร้านที่ถูกชม / all=ทั้งหมด)
+
+    ⚠️ category เป็น optional ตั้งแต่ 2026-10-11
+      ไม่ส่งมา = รวมทุกหมวด ใช้ตอนแสดงรายชื่อร้านโดยไม่ต้องให้ผู้ใช้กดแท่งกราฟก่อน
+      ส่งมา = เจาะเฉพาะหมวดนั้นเหมือนเดิมทุกประการ (ผู้เรียกเดิมไม่กระทบ)
+
+      ตัดหมวดที่ไม่ใช่ปัญหาออกเมื่อไม่ระบุหมวด เพื่อให้ "ร้านที่ถูกบ่น" หมายถึง
+      ร้านที่มีคำบ่นจริง ไม่ใช่ร้านที่มีคนคอมเมนต์เฉย ๆ — ตรงกับที่ /summary
+      และกราฟแท่งใช้อยู่ (กฎ 1) ส่วนโหมด all ไม่ตัด เพราะตั้งใจให้เห็นทุกอย่าง
+    """
+    filters = ["r.text_clean <> ''"]
+    params: dict = {}
+    if category:
+        filters.append("ar.pain_point_category = :category")
+        params["category"] = category
+    elif view_mode in ("complaints", "praise"):
+        filters.append("ar.pain_point_category IS NOT NULL")
+        filters.append(f"ar.pain_point_category NOT IN ({_NONPROBLEM_IN})")
     # กรอง sentiment ตาม view_mode (complaints=negative, praise=positive, all=ไม่กรอง)
     if view_mode == "complaints":
         filters.append("ar.sentiment = 'negative'")
     elif view_mode == "praise":
         filters.append("ar.sentiment = 'positive'")
-    params: dict = {"category": category}
     if zone:
         filters.append("COALESCE(p.zone, 'other') = :zone")
         params["zone"] = zone
@@ -458,9 +482,9 @@ async def category_places(
 
 @router.get("/category-reviews")
 async def category_reviews(
-    category: str,
     place_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    category: str | None = None,
     severity: str | None = None,
     sentiment: str | None = None,
     view_mode: str = "complaints",
@@ -472,17 +496,23 @@ async def category_reviews(
       view_mode : complaints=คำบ่น / praise=คำชม / all=ทั้งหมด
       severity  : กรองระดับความรุนแรง (ใช้ในโหมด complaints)
       sentiment : กรองประเภทความรู้สึก (ใช้ในโหมด all)
+      category  : ไม่ส่ง = รวมทุกหมวด (คู่กับ /category-places ที่ไม่ระบุหมวด)
+
+    ⚠️ ตัวกรองหมวดต้องตรงกับ /category-places เป๊ะ
+      ไม่งั้นจำนวนที่โชว์ข้างชื่อร้านจะไม่เท่ากับจำนวนรีวิวที่กางออกมา (กฎ 1)
     """
-    filters = [
-        "ar.pain_point_category = :category",
-        "r.place_id = :place_id",
-        "r.text_clean <> ''",
-    ]
+    filters = ["r.place_id = :place_id", "r.text_clean <> ''"]
+    params: dict = {"place_id": place_id}
+    if category:
+        filters.append("ar.pain_point_category = :category")
+        params["category"] = category
+    elif view_mode in ("complaints", "praise"):
+        filters.append("ar.pain_point_category IS NOT NULL")
+        filters.append(f"ar.pain_point_category NOT IN ({_NONPROBLEM_IN})")
     if view_mode == "complaints":
         filters.append("ar.sentiment = 'negative'")
     elif view_mode == "praise":
         filters.append("ar.sentiment = 'positive'")
-    params: dict = {"category": category, "place_id": place_id}
     if severity:
         filters.append("ar.severity = :severity")
         params["severity"] = severity
@@ -536,15 +566,30 @@ async def insights_summary(
     """สรุปภาพรวม + top categories + severity + worst places (view_mode: complaints/praise/all)"""
     date_sql, date_params = date_filter(date_from, date_to)
 
-    # นับรีวิว/วิเคราะห์ตามช่วงเวลาที่เลือก (places = ทั้งหมด — ไม่แปรตามเวลา)
+    general_filter = sentiment_filter(view_mode)
+    biz_filter = status_filter(status)
+
+    # ── นับรีวิว/วิเคราะห์/สถานที่ ตามช่วงเวลาและสถานะร้านที่เลือก ──
+    #
+    # ⚠️ แก้ 2026-10-10 — เดิมสามตัวนี้ไม่กรอง status เลย
+    #   ผลคือการ์ด "สถานที่ทั้งหมด" โชว์ 762 ขณะที่การ์ดโซนบนหน้าจอเดียวกัน
+    #   รวมกันได้ 737 เพราะ /zones กรองร้านปิดออก — ตัวเลขชนกันเองให้ผู้ใช้เห็น
+    #
+    #   ยังคงไม่กรอง text_clean โดยตั้งใจ เพราะสองตัวนี้ตอบคำถาม "ความครอบคลุม"
+    #   (วิเคราะห์ไปแล้วกี่รีวิวจากที่เก็บมาทั้งหมด) ไม่ใช่ฐานของสัดส่วน pain point
+    #   ซึ่งใช้ total_with_text ด้านล่างแทน — คนละคำถาม จึงคนละตัวส่วนได้
     counts = await db.execute(
         text(f"""
             SELECT
-                (SELECT COUNT(*) FROM places) AS total_places,
-                (SELECT COUNT(*) FROM reviews r WHERE TRUE {date_sql}) AS total_reviews,
+                (SELECT COUNT(*) FROM places p WHERE TRUE {biz_filter})
+                    AS total_places,
+                (SELECT COUNT(*) FROM reviews r
+                    JOIN places p ON p.id = r.place_id
+                    WHERE TRUE {date_sql} {biz_filter}) AS total_reviews,
                 (SELECT COUNT(*) FROM analyzed_reviews ar
                     JOIN reviews r ON r.id = ar.review_id
-                    WHERE TRUE {date_sql}) AS total_analyzed
+                    JOIN places p ON p.id = r.place_id
+                    WHERE TRUE {date_sql} {biz_filter}) AS total_analyzed
         """),
         date_params,
     )
@@ -552,9 +597,6 @@ async def insights_summary(
     total_places, total_reviews, total_analyzed = (
         row.total_places, row.total_reviews, row.total_analyzed
     )
-
-    general_filter = sentiment_filter(view_mode)
-    biz_filter = status_filter(status)
 
     # ── ฐานเดียวของทุกตัวชี้วัดเชิงสัดส่วน (กฎ 1) ────────────────────────────
     # ประชากร = รีวิวในช่วงที่เลือก ที่มีข้อความ + มีแถวใน analyzed_reviews
@@ -677,8 +719,20 @@ async def insights_summary(
 # นิพจน์ตัวเศษ/ตัวส่วนของ high_rate — ต้องกรอง text_clean ทั้งสองฝั่ง (กฎ 1)
 # วัดจริง: 46 จาก 775 ของ high+negative เป็นรีวิวที่ให้ดาวอย่างเดียว (ไม่มีข้อความ)
 # ถ้าใช้ high_count เดิมเป็นตัวเศษคู่กับตัวส่วนที่กรอง text_clean จะเป่าอัตราให้สูงเกินจริง
+# ── นิยามกลางของ "ตัวเศษ/ตัวส่วน" ที่ใช้ซ้ำในคิวรีเดียวกัน ──
+#
+# ⚠️ ทุกตัวนับต้องกรอง text_clean <> '' เสมอ
+#   รีวิวที่ให้ดาวอย่างเดียวไม่มีข้อความให้ NLP อ่าน การนับมันเป็น pain point
+#   คือการนับสิ่งที่ไม่เคยถูกวิเคราะห์ วัดได้ว่าทำให้ยอดระดับสูงพองจาก
+#   1,996 เป็น 2,316 (320 แถว: rating-only 276 · rule-based 35 · อื่น 9)
+#   และทำให้ลำดับร้านสลับจริง — พังกี่ข้าวมันไก่ 41 กลายเป็น 52 แซงร้านอื่น
+#
+#   กติกานี้ตรงกับ /summary และ scripts/take_snapshot.py อยู่แล้ว
+#   ฉะนั้นเมื่อแก้ตรงนี้ ทั้งระบบจึงนับด้วยนิยามเดียวกันหมด (กฎ 1)
 _HIGH_WITH_TEXT = ("COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high' "
                    "AND ar.sentiment = 'negative' AND r.text_clean <> '')")
+_MEDIUM_WITH_TEXT = ("COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'medium' "
+                     "AND ar.sentiment = 'negative' AND r.text_clean <> '')")
 _REVIEWS_WITH_TEXT = "COUNT(DISTINCT r.id) FILTER (WHERE r.text_clean <> '')"
 
 
@@ -695,17 +749,16 @@ async def top_problematic_places(
     """
     ร้านที่มีปัญหามากสุด — เรียงได้ 2 แบบ
 
-    sort='count' (default) → เรียงตาม high_count เหมือนเดิมทุกประการ
-                             ร้านที่มีรีวิวเยอะจะได้เปรียบเสมอ (ยอดดิบ)
-    sort='rate'            → เรียงตาม high_rate เฉพาะร้านที่มีรีวิว (ที่มีข้อความ)
-                             ตั้งแต่ min_reviews ขึ้นไป — 3 รีวิว บ่น 2 = 67%
+    sort='count' (default) → เรียงตามจำนวนปัญหาระดับสูง (ยอดดิบ)
+                             ร้านที่มีรีวิวเยอะจะได้เปรียบเสมอ
+    sort='rate'            → เรียงตามอัตรา เฉพาะร้านที่มีรีวิวตั้งแต่
+                             min_reviews ขึ้นไป — 3 รีวิว บ่น 2 = 67%
                              ไม่ใช่ข้อมูล แต่เป็นเสียงรบกวน
 
-    ฟิลด์ใหม่ (ฟิลด์เดิมไม่แตะ ตามกฎ 3):
-      review_count_with_text = ตัวส่วนของ high_rate (review_count เดิมไม่กรอง
-                               text_clean จึงใช้เป็นตัวส่วนไม่ได้)
-      high_count_with_text   = ตัวเศษของ high_rate
-      high_rate              = high_count_with_text / review_count_with_text
+    ทุกตัวนับกรอง text_clean <> '' เหมือนกันหมด (ดู _HIGH_WITH_TEXT)
+      review_count = รีวิวที่มีข้อความ = ตัวส่วนของ high_rate
+      high_count   = ปัญหาระดับสูง     = ตัวเศษของ high_rate
+    ตรงกับ /summary และ snapshot จึงเอาไปวางข้างกันบนหน้าจอได้ (กฎ 1)
     """
     biz_filter = status_filter(status)
     date_sql, date_params = date_filter(date_from, date_to)
@@ -719,18 +772,16 @@ async def top_problematic_places(
     else:
         # ของเดิมเป๊ะ — ไม่ส่ง sort/min_reviews มา ต้องได้ผลเท่าเดิมทุกค่า
         having = ""
-        order = "ORDER BY high_count DESC, medium_count DESC"
+        order = f"ORDER BY {_HIGH_WITH_TEXT} DESC, {_MEDIUM_WITH_TEXT} DESC"
 
     result = await db.execute(
         text(f"""
             SELECT p.id, p.name,
                    p.overall_rating,
                    COALESCE(p.business_status, 'operational') AS business_status,
-                   COUNT(DISTINCT r.id)                                          AS review_count,
-                   COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high'   AND ar.sentiment='negative') AS high_count,
-                   COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'medium' AND ar.sentiment='negative') AS medium_count,
-                   {_REVIEWS_WITH_TEXT} AS review_count_with_text,
-                   {_HIGH_WITH_TEXT}    AS high_count_with_text
+                   {_REVIEWS_WITH_TEXT} AS review_count,
+                   {_HIGH_WITH_TEXT}    AS high_count,
+                   {_MEDIUM_WITH_TEXT}  AS medium_count
             FROM places p
             JOIN reviews r  ON r.place_id = p.id
             JOIN analyzed_reviews ar ON ar.review_id = r.id
@@ -747,7 +798,7 @@ async def top_problematic_places(
     rows = []
     for row in result.fetchall():
         d = dict(row._mapping)
-        d["high_rate"] = _rate(d["high_count_with_text"], d["review_count_with_text"])
+        d["high_rate"] = _rate(d["high_count"], d["review_count"])
         rows.append(d)
     return rows
 
@@ -761,7 +812,17 @@ async def positive_highlights(
     date_from: str | None = None,
     date_to: str | None = None,
 ):
-    """จุดเด่น = หมวดที่มีคำชม (positive) มากที่สุด (กรองช่วงเวลาได้)"""
+    """จุดเด่น = หมวดที่มีคำชม (positive) มากที่สุด (กรองช่วงเวลาได้)
+
+    คืน {items: [...], total_praise: n}
+
+    ⚠️ เปลี่ยนจาก list เป็น object เมื่อ 2026-10-11
+      เดิมคืนแค่ [{category, count}] ซึ่งโชว์ % ไม่ได้เพราะไม่มีตัวส่วน
+      และกฎของโปรเจกต์ห้ามโชว์ % โดยไม่มี n (utils/format.ts)
+      total_praise = คำชมทั้งหมดที่ผ่านตัวกรองชุดเดียวกับ items เป๊ะ
+      จึงเอาไปเป็นตัวส่วนได้ตรงตามกฎ 1 — ถ้าคำนวณจากคิวรีคนละชุด
+      จะได้สัดส่วนที่ตัวเศษกับตัวส่วนมาจากคนละประชากร
+    """
     filters = [
         "ar.sentiment = 'positive'",
         "r.text_clean <> ''",
@@ -793,7 +854,24 @@ async def positive_highlights(
         """),
         params,
     )
-    return [{"category": r.category, "count": r.count} for r in result.fetchall()]
+    items = [{"category": r.category, "count": r.count} for r in result.fetchall()]
+
+    # ตัวส่วน: คำชมทั้งหมดที่ผ่าน "ตัวกรองชุดเดียวกัน" — ต่างกันแค่ไม่ LIMIT
+    # ใช้ where/biz_filter/params ตัวเดียวกับคิวรีบน จึงไม่มีทางหลุดจากกัน
+    total_praise = (await db.execute(
+        text(f"""
+            SELECT COUNT(*) FROM analyzed_reviews ar
+            JOIN reviews r ON r.id = ar.review_id
+            JOIN places p  ON p.id = r.place_id
+            WHERE {where}
+              {biz_filter}
+        """),
+        {k: v for k, v in params.items() if k != "lim"},
+    )).scalar() or 0
+
+    for it in items:
+        it["share_of_praise"] = _rate(it["count"], total_praise)
+    return {"items": items, "total_praise": total_praise}
 
 
 @router.get("/snapshots")
@@ -1169,26 +1247,55 @@ async def problem_alerts(
 
 
 @router.get("/categories", response_model=list[CategoryCount])
-async def category_counts(db: Annotated[AsyncSession, Depends(get_db)]):
+async def category_counts(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    status: str = "all",
+    date_from: str | None = None,
+    date_to: str | None = None,
+):
+    """จำนวนรีวิวต่อหมวด
+
+    ⚠️ default ของ status คือ "all" และวันที่คือ None = ไม่กรอง
+      เพื่อให้ผู้เรียกเดิมได้ผลเท่าเดิมทุกค่า (กฎ 3)
+      ผู้เรียกที่ต้องการตัวเลขตรงกับ /summary ต้องส่ง status="operational"
+      และช่วงเวลาเดียวกันมาด้วย — ไม่ส่ง = คนละฐาน เทียบกันไม่ได้ (กฎ 1)
+    """
+    biz = status_filter(status, "p")
+    date_sql, date_params = date_filter(date_from, date_to, "r")
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT ar.pain_point_category AS category, COUNT(*) AS count
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
+            JOIN places p ON p.id = r.place_id
             WHERE ar.pain_point_category IS NOT NULL
               AND r.text_clean <> ''          -- ตัดรีวิวที่ให้ดาวอย่างเดียว
+              {biz}
+              {date_sql}
             GROUP BY ar.pain_point_category
             ORDER BY count DESC
-        """)
+        """),
+        date_params,
     )
     return [{"category": r.category, "count": r.count} for r in result.fetchall()]
 
 
 @router.get("/heatmap", response_model=GeoJSONCollection)
-async def heatmap_geojson(db: Annotated[AsyncSession, Depends(get_db)]):
-    """GeoJSON FeatureCollection — one feature per place with analysis properties."""
+async def heatmap_geojson(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    status: str = "all",
+):
+    """GeoJSON FeatureCollection — one feature per place with analysis properties.
+
+    ⚠️ default status="all" = ไม่กรอง ให้ผู้เรียกเดิมได้ผลเท่าเดิม (กฎ 3)
+
+    ⚠️ high_count ที่นี่ไม่กรอง sentiment และไม่กรอง text_clean จึงไม่ใช่
+      ตัวเลขเดียวกับ /summary หรือ /top-places — ห้ามเอาไปวางข้างกันบนหน้าจอ
+      โดยไม่เขียนกำกับว่าคนละฐาน (กฎ 1)
+    """
+    biz = status_filter(status, "p")
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT
                 p.id, p.name,
                 p.overall_rating,
@@ -1202,6 +1309,7 @@ async def heatmap_geojson(db: Annotated[AsyncSession, Depends(get_db)]):
             LEFT JOIN reviews r  ON r.place_id = p.id
             LEFT JOIN analyzed_reviews ar ON ar.review_id = r.id
             WHERE p.location IS NOT NULL
+              {biz}
             GROUP BY p.id, p.name, p.overall_rating, p.location
         """)
     )
