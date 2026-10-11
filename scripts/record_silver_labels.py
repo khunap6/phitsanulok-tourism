@@ -73,7 +73,7 @@ def status() -> None:
         p("  aspect  : " + " | ".join(
             f"{k} {v}" for k, v in Counter(
                 a["aspect_sentiment"] for a in asp).most_common()))
-    for f in sorted(BATCHES.glob("batch_*.csv")):
+    for f in sorted(BATCHES.glob("batch_*.csv")) + sorted((LAB / "batches2").glob("b2_*.csv")):
         ids = {int(r["review_id"]) for r in
                csv.DictReader(open(f, encoding="utf-8-sig"))}
         n = len(ids & done)
@@ -86,13 +86,22 @@ def main() -> None:
     ap.add_argument("--batch")
     ap.add_argument("--file")
     ap.add_argument("--status", action="store_true")
+    ap.add_argument("--round", type=int, default=1, choices=[1, 2],
+                    help="1 = data/labeling/batches, 2 = data/labeling/batches2")
     args = ap.parse_args()
 
     if args.status or not args.batch:
         status()
         return
 
-    bf = BATCHES / f"batch_{args.batch}.csv"
+    # รอบแรกอยู่ batches/batch_NN.csv รอบสองอยู่ batches2/b2_NN.csv
+    # เลขแฟ้มซ้ำกันได้ จึงต้องระบุรอบด้วย --round
+    cand = ([BATCHES / f"batch_{args.batch}.csv"] if args.round == 1
+            else [LAB / "batches2" / f"b2_{args.batch}.csv"])
+    bf = next((f for f in cand if f.exists()), None)
+    if bf is None:
+        p(f"ไม่พบแฟ้ม {args.batch} ใน {[str(c) for c in cand]}")
+        return
     allowed = {int(r["review_id"]): r["text"] for r in
                csv.DictReader(open(bf, encoding="utf-8-sig"))}
     cats = valid_cats()
