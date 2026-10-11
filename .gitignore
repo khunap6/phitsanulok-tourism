@@ -42,3 +42,10 @@ data/reports/
 models/
 logs/
 *.bak
+
+# ไฟล์สำรองก่อนย้ายโครงสร้าง — ใหญ่และสร้างใหม่จากเครื่องได้ ไม่ต้องขึ้น git
+# เก็บเฉพาะ README (วิธีกู้คืน) กับ shared/*.json (เล็กและเป็นหลักฐานว่าของเดิมเป็นอย่างไร)
+backup/**/*.dump
+backup/*/db/
+backup/*/training/
+backup/rating_only_text_*.json

@@ -84,6 +84,38 @@ class ReportData:
     # เทียบเดือนก่อน
     prev_complaints: int = 0
     complaint_delta: int = 0
+    # ── ชุดเปรียบเทียบ (ข้อ 9) ──────────────────────────────────────────────
+    # ทุกช่วงคิดจากคิวรีเดียวกันที่ bucket รายเดือน จึงผ่านตัวกรองชุดเดียวกันเป๊ะ
+    # ถ้าแยกคิวรีกันคนละชุด ตัวเลขจะเทียบกันไม่ได้แม้หน้าตาจะดูเหมือนเทียบได้ (กฎ 1)
+    prev_label: str = ""
+    prev_reviews: int = 0
+    prev_praise: int = 0
+    prev_severity: dict = field(default_factory=dict)
+    prev_places: int = 0
+    # เดือนเดียวกันของปีที่แล้ว
+    ly_label: str = ""
+    ly_reviews: int = 0
+    ly_complaints: int = 0
+    ly_praise: int = 0
+    ly_severity: dict = field(default_factory=dict)
+    ly_places: int = 0
+    ly_available: bool = False
+    # ค่าเฉลี่ยต่อเดือนของ 12 เดือนล่าสุด (รวมเดือนนี้)
+    avg_label: str = ""
+    avg_months: int = 0
+    avg_reviews: float = 0.0
+    avg_complaints: float = 0.0
+    avg_praise: float = 0.0
+    avg_severity: dict = field(default_factory=dict)
+    avg_places: float = 0.0
+    # จำนวนร้านที่ "มีรีวิวในเดือนนั้น"
+    #
+    # ⚠️ ไม่ใช่ "ร้านที่เพิ่งเพิ่มเข้าระบบ" — ตาราง places ไม่มีคอลัมน์วันที่สร้าง
+    #   (มีแต่ scraped_at ซึ่งคือครั้งล่าสุดที่เก็บ ไม่ใช่ครั้งแรกที่รู้จัก)
+    #   จึงนิยามเป็น "ร้านที่ถูกพูดถึงในเดือนนั้น" ซึ่งคำนวณได้จริงและตอบคำถาม
+    #   ว่าความสนใจของนักท่องเที่ยวกระจายไปกี่ร้าน — ต้องเขียนนิยามกำกับในเอกสาร
+    places_with_reviews: int = 0
+    places_delta: int = 0
     # ตาราง
     top_problems: list[dict] = field(default_factory=list)
     severity: dict = field(default_factory=dict)
@@ -135,7 +167,9 @@ async def collect(session: AsyncSession, year: int, month: int,
     r = await session.execute(
         text(f"""
             SELECT
-              (SELECT COUNT(*) FROM places) AS total_places,
+              -- ⚠️ ต้องกรอง status ให้ตรงกับตัวเลขอื่นในรายงาน ไม่งั้น
+              -- "สถานที่ทั้งหมด" จะนับร้านปิดด้วยขณะที่ตัวอื่นไม่นับ (กฎ 1)
+              (SELECT COUNT(*) FROM places pl WHERE TRUE {biz}) AS total_places,
               COUNT(*) FILTER (WHERE r.text_clean <> '')                  AS reviews,
               COUNT(*) FILTER (WHERE COALESCE(r.text_clean,'') = '')      AS no_text,
               COUNT(*) FILTER (WHERE ar.sentiment = 'negative'
@@ -155,17 +189,98 @@ async def collect(session: AsyncSession, year: int, month: int,
     data.complaints_in_month = row.complaints or 0
     data.praise_in_month = row.praise or 0
 
-    r = await session.execute(
+    # ── ชุดเปรียบเทียบ: เดือนก่อน · เดือนเดียวกันปีที่แล้ว · ค่าเฉลี่ย 12 เดือน ──
+    #
+    # ⚠️ ใช้คิวรีเดียวที่ bucket รายเดือน ไม่แยกเป็นหลายคิวรี
+    #   เพราะทุกตัวเลขที่เอามาเทียบกันต้องผ่านตัวกรองชุดเดียวกันทุกมิติ
+    #   (text_clean · status · review_date_approx NOT NULL) — ถ้าเขียนแยกกัน
+    #   วันหนึ่งแก้ที่เดียวแล้วอีกที่ไม่เปลี่ยน ตัวเลขจะเทียบกันไม่ได้โดยไม่มีใครรู้
+    #
+    # ช่วงที่ดึง = 13 เดือน (เดือนเดียวกันปีที่แล้ว → เดือนที่เลือก)
+    #   เดือนที่เลือก        = bucket สุดท้าย
+    #   เดือนก่อน            = bucket ก่อนหน้า
+    #   เดือนเดียวกันปีที่แล้ว = bucket แรก
+    #   ค่าเฉลี่ย 12 เดือน    = 12 bucket สุดท้าย (ไม่รวม bucket แรก จะได้ไม่นับ 13 เดือน)
+    ly_start, _ = month_range(year - 1, month)
+    br = await session.execute(
         text(f"""
-            SELECT COUNT(*) FROM reviews r
+            SELECT DATE_TRUNC('month', r.review_date_approx)::date AS bucket,
+                   COUNT(*) FILTER (WHERE r.text_clean <> '')           AS reviews,
+                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative'
+                                      AND r.text_clean <> '')           AS complaints,
+                   COUNT(*) FILTER (WHERE ar.sentiment = 'positive'
+                                      AND r.text_clean <> '')           AS praise,
+                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative'
+                                      AND ar.severity = 'high'
+                                      AND r.text_clean <> '')           AS sev_high,
+                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative'
+                                      AND ar.severity = 'medium'
+                                      AND r.text_clean <> '')           AS sev_medium,
+                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative'
+                                      AND ar.severity = 'low'
+                                      AND r.text_clean <> '')           AS sev_low,
+                   COUNT(DISTINCT r.place_id) FILTER (WHERE r.text_clean <> '')
+                                                                        AS places
+            FROM reviews r
             JOIN places p ON p.id = r.place_id
-            JOIN analyzed_reviews ar ON ar.review_id = r.id
-            WHERE ar.sentiment = 'negative' AND r.text_clean <> ''
-              AND r.review_date_approx >= :s AND r.review_date_approx < :e
+            LEFT JOIN analyzed_reviews ar ON ar.review_id = r.id
+            WHERE r.review_date_approx >= :ly AND r.review_date_approx < :end
               {biz_r}
-        """), {"s": pstart, "e": pend})
-    data.prev_complaints = r.scalar() or 0
+            GROUP BY 1
+            ORDER BY 1
+        """), {"ly": ly_start, "end": end})
+
+    def _row(x) -> dict:
+        return {
+            "reviews": x.reviews or 0, "complaints": x.complaints or 0,
+            "praise": x.praise or 0, "places": x.places or 0,
+            "severity": {"high": x.sev_high or 0, "medium": x.sev_medium or 0,
+                         "low": x.sev_low or 0},
+        }
+
+    by_month = {x.bucket.isoformat(): _row(x) for x in br.fetchall()}
+    EMPTY = {"reviews": 0, "complaints": 0, "praise": 0, "places": 0,
+             "severity": {"high": 0, "medium": 0, "low": 0}}
+
+    cur_m = by_month.get(start.isoformat(), EMPTY)
+    prev_m = by_month.get(pstart.isoformat(), EMPTY)
+    ly_m = by_month.get(ly_start.isoformat())
+
+    data.prev_label = thai_month_label(pm_y, pm_m)
+    data.prev_complaints = prev_m["complaints"]
+    data.prev_reviews = prev_m["reviews"]
+    data.prev_praise = prev_m["praise"]
+    data.prev_severity = prev_m["severity"]
+    data.prev_places = prev_m["places"]
     data.complaint_delta = data.complaints_in_month - data.prev_complaints
+
+    data.ly_label = thai_month_label(year - 1, month)
+    data.ly_available = ly_m is not None
+    lym = ly_m or EMPTY
+    data.ly_reviews = lym["reviews"]
+    data.ly_complaints = lym["complaints"]
+    data.ly_praise = lym["praise"]
+    data.ly_severity = lym["severity"]
+    data.ly_places = lym["places"]
+
+    # ค่าเฉลี่ย: เฉลี่ยเฉพาะเดือนที่ "มีข้อมูลจริง" ไม่เติม 0 ให้เดือนที่ยังไม่เก็บ
+    # เพราะเดือนที่ไม่มีข้อมูลเลยแปลว่ายังไม่ได้เก็บ ไม่ใช่เดือนที่ไม่มีใครรีวิว
+    # ถ้าเติม 0 ค่าเฉลี่ยจะถูกกดลงจนเทียบไม่ได้
+    window = [v for k, v in sorted(by_month.items()) if k != ly_start.isoformat()]
+    n = len(window) or 1
+    data.avg_months = len(window)
+    data.avg_label = f"ค่าเฉลี่ยต่อเดือน ({len(window)} เดือนล่าสุด รวมเดือนนี้)"
+    data.avg_reviews = round(sum(x["reviews"] for x in window) / n, 1)
+    data.avg_complaints = round(sum(x["complaints"] for x in window) / n, 1)
+    data.avg_praise = round(sum(x["praise"] for x in window) / n, 1)
+    data.avg_places = round(sum(x["places"] for x in window) / n, 1)
+    data.avg_severity = {
+        k: round(sum(x["severity"][k] for x in window) / n, 1)
+        for k in ("high", "medium", "low")
+    }
+
+    data.places_with_reviews = cur_m["places"]
+    data.places_delta = data.places_with_reviews - data.prev_places
 
     # ── Top ปัญหา + เทียบเดือนก่อน ──
     r = await session.execute(

@@ -9,7 +9,9 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { ClickHint } from './icons'
 import type { CategoryCount } from '../types'
+import { categoryLabel } from '../utils/categoryLabel'
 import { formatCount, formatPercent, formatRateOf } from '../utils/format'
 
 const COLORS = [
@@ -80,7 +82,9 @@ export default function PainPointChart({
         {denom != null && denom > 0 ? ` (ฐาน ${formatCount(denom)} รายการ)` : ''}
       </p>
       {onCategoryClick && (
-        <p className="text-brand-subtext text-xs mb-3">👆 คลิกแท่งเพื่อดูว่ามาจากร้านไหนบ้าง</p>
+        <p className="text-brand-subtext text-xs mb-3 inline-flex items-center gap-1">
+        <ClickHint size={13} /> คลิกแท่งเพื่อดูว่ามาจากร้านไหนบ้าง
+      </p>
       )}
       <ResponsiveContainer width="100%" height={chartHeight}>
         <BarChart data={chartData} layout="vertical" margin={{ left: 10, right: 96, top: 5, bottom: 5 }}>
@@ -96,6 +100,9 @@ export default function PainPointChart({
             width={210}
             tick={{ fill: '#e2e8f0', fontSize: 12 }}
             interval={0}
+            // แปลงชื่อเฉพาะตอนวาด — dataKey ยังเป็น key เดิม
+            // เพราะ onClick ส่งค่านี้กลับไปให้ API กรอง ถ้าแปลงที่ data จะกรองไม่เจอ
+            tickFormatter={categoryLabel}
           />
           <Tooltip
             contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}

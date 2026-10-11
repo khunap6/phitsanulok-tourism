@@ -10,6 +10,7 @@ import { STATUS_OPTIONS } from '../components/StatusBadge'
 import { useDateRange } from '../hooks/useDateRange'
 import { useMapGeoJSON } from '../hooks/useInsights'
 import type { GeoFeatureProperties } from '../types'
+import { SeverityHigh, Stars, StoreIcon } from '../components/icons'
 
 const PHITSANULOK_CENTER = { lat: 16.82, lng: 100.26 }
 
@@ -81,7 +82,9 @@ export default function MapView() {
       <div className="flex-none bg-brand-card border-b border-brand-border px-4 py-2 space-y-2">
         <DateRangeSelector value={dateRange} onChange={setDateRange} />
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-brand-subtext text-sm shrink-0">🏪 สถานะร้าน:</span>
+          <span className="text-brand-subtext text-sm shrink-0 inline-flex items-center gap-1">
+            <StoreIcon size={14} /> สถานะร้าน:
+          </span>
           <div className="flex flex-wrap gap-1.5">
             {STATUS_OPTIONS.map(opt => (
               <button
@@ -206,7 +209,7 @@ export default function MapView() {
                   <p className="font-bold text-sm">{selected.properties.name}</p>
                   {selected.properties.rating && (
                     <p className="text-yellow-500 text-xs">
-                      {'★'.repeat(Math.round(selected.properties.rating))} {selected.properties.rating}
+                      <Stars value={selected.properties.rating} /> {selected.properties.rating}
                     </p>
                   )}
                   <div className="flex flex-wrap gap-1 mt-1">
@@ -221,7 +224,8 @@ export default function MapView() {
                   </div>
                   <div className="flex gap-3 mt-2 text-xs text-gray-600">
                     <span className="text-red-500 font-medium">
-                      🔥 {selected.properties.high_count} สูง
+                      <SeverityHigh size={12} className="inline mr-1 -mt-0.5" />
+                      {selected.properties.high_count} สูง
                     </span>
                     <span>{selected.properties.review_count} รีวิว</span>
                   </div>

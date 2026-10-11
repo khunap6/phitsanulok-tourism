@@ -20,7 +20,7 @@ load_dotenv()  # โหลด PLAYWRIGHT_BROWSERS_PATH และ env อื่�
 from playwright.async_api import async_playwright, Page, TimeoutError as PlaywrightTimeout
 
 # ใช้ล้างข้อความรีวิวก่อนคำนวณ hash (ตัดวันที่/ไอคอน/ข้อความ UI ออก)
-from nlp.text_cleaner import clean_review_text
+from nlp.text_cleaner import clean_review_text, is_rating_only
 
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -578,7 +578,13 @@ DEEP_BLOCK_CHECK_EVERY = 20     # เช็คสัญญาณบล็อก�
 #   ซึ่งเป็นตัวแปรที่ตัดสินผล ไม่ใช่การ render ซ้ำจาก cache
 #
 #   ต้นทุน: ร้านที่สำเร็จตั้งแต่ครั้งแรก (ส่วนใหญ่) ไม่เสียเวลาเพิ่มเลย
-OPEN_TAB_RETRIES = 2
+# เดิม 2 — ขยายเป็น 4 เมื่อ 2026-10-03 หลังวัดว่า Google เสิร์ฟหน้าได้ 3 แบบ
+#   A ไม่มีแท็บรีวิวเลย (มีแค่ ภาพรวม/เกี่ยวกับ และข้างคะแนนไม่มีจำนวนรีวิว)
+#   B มีแท็บ แต่ฟีดจำกัดจบที่ปุ่ม "ดูรีวิวเพิ่มเติม" -> ได้ 5 รีวิว
+#   C มีแท็บ ฟีดปกติ -> ได้ครบ (วัดได้ 532 จาก 544 และ 884 จาก 1275)
+# ทั้งสามแบบสุ่มต่อการโหลด 1 ครั้ง การโหลดใหม่คือการสุ่มใหม่ ไม่ใช่ดันของเดิมซ้ำ
+# จึงให้โควตาเท่า ๆ กับฝั่งหน้าจำกัด (ดู LIMITED_VIEW_RETRIES)
+OPEN_TAB_RETRIES = 4
 # หน่วงก่อนลองใหม่ — ยิงรัว ๆ ยิ่งทำให้ Google ไม่เชื่อถือมากขึ้น
 OPEN_TAB_RETRY_DELAY = (5.0, 8.0)
 
@@ -731,6 +737,7 @@ async def _extract_cards_fallback(page: Page, cap: int) -> list[dict]:
       _PAST_MARKERS ใน scraper/date_parser.py — แก้ที่ไหนต้องแก้ทั้ง 3 ที่
     """
     try:
+        min_len = MIN_REVIEW_TEXT_LEN
         return await page.evaluate(rf"""
             () => {{
                 const results = [];
@@ -816,8 +823,11 @@ async def _extract_cards_fallback(page: Page, cap: int) -> list[dict]:
                             .trim();
                         if (!body) continue;
 
-                        const key = body.substring(0, 60);
-                        if (body.length < 40 || body.length > 1200) continue;
+                        // เทียบซ้ำด้วยข้อความเต็ม ไม่ใช่ 60 ตัวแรก
+                        // รีวิวสั้นภาษาไทยขึ้นต้นเหมือนกันบ่อยมาก ("อร่อยมาก...")
+                        // ถ้าตัดที่ 60 ตัว รีวิวคนละใบจะถูกมองว่าซ้ำ
+                        const key = body;
+                        if (body.length < {min_len} || body.length > 1200) continue;
                         if (seenKey.has(key)) continue;
                         seenKey.add(key);
 
@@ -1016,6 +1026,157 @@ async def open_reviews_tab(page: Page, allow_reload: bool = True) -> bool:
     return False
 
 
+# ข้อความของปุ่มที่ก้น "ฟีดแบบจำกัด" — ระวังอย่าให้ชน "เขียนรีวิว"
+_MORE_REVIEWS_RE = re.compile(r"ดูรีวิวเพิ่มเติม|More reviews|See all reviews")
+
+# กดได้กี่ครั้งต่อร้าน — กันลูปกรณีปุ่มค้างอยู่แต่กดแล้วไม่ได้อะไร
+#
+# ⚠️ ทำไมต้องมีขั้นนี้ (วัดเมื่อ 2026-10-03)
+#   Google เสิร์ฟหน้าร้านแบบ "มุมมองจำกัด" ให้ client ที่ไม่ได้ล็อกอิน
+#   ฟีดให้รีวิวชุดแรกแล้วจบด้วยปุ่ม "ดูรีวิวเพิ่มเติม (541)" — ไม่ lazy-load ต่อเอง
+#   วัดแล้ว scroll ทุกวิธีไม่ช่วย (scrollTo / เลื่อนทีละ 80% / mouse.wheel / PageDown)
+#   ทั้ง 4 แบบตันที่เท่าเดิม ขณะที่ scrollTop ถึงก้นจริง (st 2649 + ch 736 = sh 3385)
+#
+#   กดปุ่มแล้วได้ modal "ลงชื่อเข้าใช้..." ซึ่งระบุว่า "รีวิวและรูปภาพ: อ่านและค้นหา
+#   รีวิวและรูปภาพทั้งหมด" — คือรีวิวตัวที่เกินชุดแรกถูกกั้นไว้หลังการล็อกอิน
+#   ปิด modal แล้วเลื่อนต่อ 6 รอบก็ไม่โต
+#
+#   แต่หน้าที่ Google เสิร์ฟไม่ได้มีแบบเดียว วัดได้ทั้งแบบ 5 การ์ดและ 20 การ์ด
+#   (โหลดซ้ำ 4 รอบได้ 20 ไอดีเดิมเป๊ะทุกรอบ → เพดานผูกกับ session ไม่ใช่ request)
+#   ยังไม่รู้ว่าอะไรกำหนด จึงกดเผื่อไว้: ถ้าบางแบบเปิดทางได้ก็ได้ของเพิ่มทันที
+#   ถ้าไม่ได้ก็เสียแค่ไม่กี่วินาทีต่อร้าน และคืน False เงียบๆ
+MORE_REVIEWS_MAX_CLICKS = 3
+
+# ความยาวขั้นต่ำของ "เนื้อรีวิว" ที่ยอมเก็บ
+#
+# เดิมทางสำรองใช้ 40 และฝั่ง Python ใช้ 20 — วัดเมื่อ 2026-10-08 แล้วพบว่า
+# สองเลขนั้นวัดคนละอย่างกัน จึงทำให้สองเส้นทางเก็บได้ไม่เท่ากัน
+#
+#   เส้นทางหลัก (_extract_visible_reviews) วัดข้อความของ "กล่อง" ที่รวม
+#     ชื่อผู้รีวิว + บรรทัดเมตา + วันที่ เข้าไปด้วย จึงเกิน 40 แทบทุกใบ
+#     รีวิวสั้นจึงผ่าน แล้วถูกล้างเหลือสั้นทีหลังด้วย clean_review_text()
+#     หลักฐาน: ใน DB มีรีวิวที่ text_clean สั้นกว่า 40 อยู่ 37,253 อัน
+#     (1-9 ตัว 4,823 | 10-19 ตัว 12,196 | 20-29 ตัว 11,716 | 30-39 ตัว 8,521)
+#
+#   ทางสำรอง (_extract_cards_fallback) วัด "หลังตัดบรรทัดวันที่ออกแล้ว"
+#     ซึ่งเกือบเท่าเนื้อรีวิวจริง เพดาน 40 จึงกัดเนื้อรีวิวโดยตรง
+#
+# วัดบนหน้าจริง (โจ๊กอัมรินทร์นคร เจ้าเก่า, Google บอก 295 รีวิว):
+#     การ์ดไม่ซ้ำตาม data-review-id        295
+#     ตกเพราะไม่มีเนื้อ (ให้ดาวเปล่า)        97   <- ถูกต้อง ไม่มีข้อความให้วิเคราะห์
+#     ตกเพราะสั้นกว่า 40 ตัวอักษร           100   <- รีวิวจริงทั้งหมด
+#     ตกเพราะยาวเกิน 1200                    0
+#     ตกเพราะ 60 ตัวแรกซ้ำ                    1
+#     เก็บได้จริง                            97
+#   ตัวอย่างที่ถูกทิ้ง: "อร่อยทุกอย่าง" (18) · "อร่อย เนื้อโจ๊กเนียนมากๆ" (28)
+#                      "บริการแบบกันเอง สด สะอาด  รสชาดดี" (37)
+#
+# ⚠️ ทำไมผิดหลักข้อ 1 ด้วย ไม่ใช่แค่เก็บได้น้อย
+#   ร้านที่ Google เสิร์ฟ listing แบบไม่มีไอคอนดาว ถูกบังคับให้ใช้ทางสำรอง
+#   จึงเก็บได้แค่รีวิวยาว ส่วนร้านปกติเก็บได้ทั้งสั้นและยาว
+#   ตัวเลขของสองกลุ่มจึงผ่านตัวกรองไม่เหมือนกัน เทียบกันไม่ได้
+#   และคำบ่นภาษาไทยมักสั้น ("รอนานมาก" / "ห้องน้ำสกปรก") จึงหายไปมากกว่าคำชม
+#
+# ⚠️ ทำไมลดเพดานแล้วไม่ทำให้รีวิวเดิมซ้ำ
+#   การลด "ความยาวขั้นต่ำ" ไม่เปลี่ยนข้อความของใบที่ผ่านอยู่แล้วแม้แต่ตัวเดียว
+#   text_hash ของรีวิวที่เก็บมาแล้วจึงเท่าเดิมทุกใบ ไม่เข้าเงื่อนไขบั๊กซ้ำ 3,453 แถว
+#   ใบสั้นที่เพิ่งผ่านเข้ามาเป็นข้อความใหม่ -> hash ใหม่ -> แถวใหม่ ถูกต้อง
+MIN_REVIEW_TEXT_LEN = 5
+
+# เจอหน้าแบบจำกัดแล้วโหลดใหม่ได้กี่ครั้ง
+#
+# ⚠️ ทำไมถึงคุ้ม (วัดเมื่อ 2026-10-03, แพตามสั่งนั่งชิว, context ใหม่ทุกรอบ)
+#   Google ไม่ได้เสิร์ฟหน้าเดียว — มีทั้งแบบจำกัดและแบบปกติ สุ่มสลับกัน
+#     รอบ 1-3  เส้นโค้ง [5, 5, 5, 5, 5, 5, 5]            ตันทันที มีปุ่ม/แบนเนอร์จำกัด
+#     รอบ 4    เส้นโค้ง [10, 20, 30, ... , 300, 310]      โตรอบละ 10 ไม่มีปุ่ม/แบนเนอร์
+#   รอบ 4 ที่ได้หน้าปกติ คือรอบที่ open_reviews_tab ชั้น 4 โหลดหน้าใหม่พอดี
+#   และตอนหยุดวัดที่ 310 มันยัง "โตต่อ" อยู่ (ชนเพดานรอบ scroll ของตัววัดเอง)
+#
+#   ฉะนั้นหน้าจำกัดไม่ใช่กำแพงถาวร แต่เป็นลอตเตอรี่ต่อการโหลด 1 ครั้ง
+#   โหลดใหม่จึงเป็นการ "ซื้อตั๋วใบใหม่" ไม่ใช่การดันของเดิมซ้ำ
+#
+#   ต้นทุนต่ำ: รอบที่ได้หน้าจำกัดจบใน ~8 วินาที (scroll 3 รอบแล้วไม่โต)
+#   จึงเสียเวลาเพิ่มน้อยมากเทียบกับโอกาสได้รีวิวครบทั้งร้าน
+LIMITED_VIEW_RETRIES = 3
+# หน่วงก่อนโหลดใหม่ — โหลดรัว ๆ ยิ่งทำให้ client ดูน่าสงสัย
+LIMITED_VIEW_RETRY_DELAY = (8.0, 15.0)
+
+
+async def _dismiss_signin_wall(page: Page) -> bool:
+    """ปิด modal 'ลงชื่อเข้าใช้เพื่อรับประสบการณ์...' ที่โผล่หลังกดดูรีวิวเพิ่มเติม
+
+    ลองปุ่มตามชื่อก่อน (เป๊ะตัว กัน "ปิด" ไปชนปุ่มอื่น) ไม่เจอค่อย Escape
+    """
+    for name in ("ปิด", "ไม่ใช่ตอนนี้", "Close", "Dismiss", "Not now"):
+        try:
+            btn = page.get_by_role("button", name=name, exact=True).first
+            if await btn.count() > 0:
+                await btn.click(timeout=3000)
+                await asyncio.sleep(1.0)
+                return True
+        except Exception:
+            continue
+    try:
+        await page.keyboard.press("Escape")
+        await asyncio.sleep(1.0)
+    except Exception:
+        pass
+    return False
+
+
+async def detect_limited_view(page: Page) -> str | None:
+    """ตรวจว่าหน้านี้เป็น "มุมมองแบบจำกัด" ที่ Google เสิร์ฟให้ client ไม่ล็อกอินไหม
+
+    ลายเซ็น 2 อย่าง (วัดเมื่อ 2026-10-03 — ดู MORE_REVIEWS_MAX_CLICKS):
+      1. ก้นฟีดมีปุ่ม "ดูรีวิวเพิ่มเติม (N)" แทนการ lazy-load ต่อเอง
+      2. ท้ายแผงมีแบนเนอร์ "คุณกำลังดู Google Maps ในมุมมองแบบจำกัด"
+    เรียกหลังจบการ scroll แล้วเท่านั้น — ถ้าปุ่มยังอยู่ทั้งที่กดไปแล้ว แปลว่าตันจริง
+
+    คืนข้อความอธิบาย หรือ None ถ้าเป็นหน้าปกติ
+    """
+    try:
+        info = await page.evaluate(
+            """() => { const t = document.body.innerText || '';
+                 return {more: t.includes('ดูรีวิวเพิ่มเติม')
+                            || t.includes('More reviews'),
+                         limited: t.includes('มุมมองแบบจำกัด')
+                            || t.includes('limited mode')}; }"""
+        )
+    except Exception:
+        return None
+    if info.get("more"):
+        return "หน้าแบบจำกัด — ค้างที่ปุ่มดูรีวิวเพิ่มเติม"
+    if info.get("limited"):
+        return "หน้าแบบจำกัด — มีแบนเนอร์มุมมองแบบจำกัด"
+    return None
+
+
+async def click_more_reviews(page: Page) -> bool:
+    """กดปุ่ม "ดูรีวิวเพิ่มเติม (N)" ที่ก้นฟีดแบบจำกัด
+
+    คืน True เฉพาะเมื่อ "จำนวนการ์ดโตขึ้นจริง" หลังกด — ไม่ใช่แค่กดติด
+    (บทเรียนเดียวกับ open_reviews_tab: กดติด != ได้ข้อมูล)
+    """
+    before = await _count_review_nodes(page)
+    try:
+        btn = page.get_by_role("button").filter(has_text=_MORE_REVIEWS_RE).first
+        if await btn.count() == 0:
+            return False
+        label = " ".join(((await btn.inner_text()) or "").split())[:40]
+        await btn.click(timeout=6000)
+    except Exception:
+        return False
+
+    await random_delay(2.0, 3.0)
+    await _dismiss_signin_wall(page)
+    after = await _count_review_nodes(page)
+    grew = after > before
+    mark = "✅" if grew else "⛔"
+    print(f"  {mark} กด \"{label}\" — การ์ด {before} → {after}"
+          + ("" if grew else " (กำแพงล็อกอิน — ไม่ได้ของเพิ่ม)"))
+    return grew
+
+
 async def _deep_scroll_collect(page: Page) -> list[dict]:
     """
     ลูป scroll ของโหมด deep — เก็บให้ครบที่สุดโดยไม่สนใจว่ามีรีวิวไหนอยู่ใน DB แล้ว
@@ -1028,6 +1189,7 @@ async def _deep_scroll_collect(page: Page) -> list[dict]:
     t0 = time.monotonic()
     node_count = await _count_review_nodes(page)
     no_growth = 0
+    more_clicks = 0
     scrolls = 0
     stop_reason = f"ครบเพดาน {DEEP_MAX_SCROLLS} scroll"
 
@@ -1046,6 +1208,14 @@ async def _deep_scroll_collect(page: Page) -> list[dict]:
         if count <= node_count:
             no_growth += 1
             if no_growth >= DEEP_NO_GROWTH_LIMIT:
+                # ฟีดไม่โตต่ออาจไม่ใช่ "โหลดครบ" แต่เป็นฟีดแบบจำกัดที่จบด้วยปุ่ม
+                # ลองกดก่อนยอมจบ — โตจริงเท่านั้นถึงนับว่าไปต่อได้
+                if more_clicks < MORE_REVIEWS_MAX_CLICKS:
+                    more_clicks += 1
+                    if await click_more_reviews(page):
+                        node_count = max(node_count, await _count_review_nodes(page))
+                        no_growth = 0
+                        continue
                 stop_reason = f"โหลดครบ (node ไม่โต {DEEP_NO_GROWTH_LIMIT} รอบติด)"
                 break
         else:
@@ -1171,6 +1341,41 @@ async def extract_reviews(
         if deep:
             # โหมด deep — ลูปแยกคนละตัว ไม่แตะ known_hashes / ไม่ตัดที่ max_reviews
             raw_reviews: list[dict] = await _deep_scroll_collect(page)
+
+            # ── ได้หน้าแบบจำกัด → โหลดใหม่เพื่อลุ้นหน้าปกติ (ดู LIMITED_VIEW_RETRIES) ──
+            # เก็บผลที่ "มากที่สุด" ไว้เสมอ การลองใหม่จึงไม่มีทางทำให้ได้น้อยลง
+            for attempt in range(1, LIMITED_VIEW_RETRIES + 1):
+                limited = await detect_limited_view(page)
+                if not limited:
+                    break
+                try:
+                    place_url = page.url or ""
+                except Exception:
+                    place_url = ""
+                if "/maps/place/" not in place_url:
+                    break
+                print(f"  🚧 {limited} — ได้ {len(raw_reviews)} รีวิว "
+                      f"| โหลดหน้าใหม่ลุ้นหน้าปกติ ครั้งที่ {attempt}/{LIMITED_VIEW_RETRIES}")
+                try:
+                    await asyncio.sleep(random.uniform(*LIMITED_VIEW_RETRY_DELAY))
+                    await page.goto(place_url, wait_until="domcontentloaded",
+                                    timeout=30000)
+                    await random_delay(2.0, 4.0)
+                    await dismiss_login_modal(page)
+                    await wait_for_place_loaded(page, timeout=20000)
+                except Exception as e:
+                    print(f"     โหลดหน้าใหม่พลาด: {type(e).__name__}")
+                    continue
+                if not await open_reviews_tab(page):
+                    continue
+                try:
+                    again = await _deep_scroll_collect(page)
+                except DeepReviewsUnavailable:
+                    continue
+                if len(again) > len(raw_reviews):
+                    print(f"  ✅ หน้าปกติ — ได้เพิ่มเป็น {len(again)} รีวิว "
+                          f"(เดิม {len(raw_reviews)})")
+                    raw_reviews = again
         else:
             # เดิม: scroll รวดเดียวสูงสุด 60 รอบ แล้วค่อยดึง → ช้ามากแม้ไม่มีรีวิวใหม่เลย
             # ใหม่: ดึงหลัง scroll ทุกรอบ ถ้าเจอรีวิวเดิมติดกันครบเกณฑ์ → หยุดทันที
@@ -1180,6 +1385,7 @@ async def extract_reviews(
             raw_reviews: list[dict] = await _extract_reviews_any(page, cap)
 
             no_growth = 0
+            more_tried = False
             for _ in range(max_scrolls):
                 # ชนกำแพงรีวิวเดิมแล้ว = ไม่มีของใหม่ให้เก็บอีก → หยุดประหยัดเวลา
                 if known_hashes and _trailing_known_count(raw_reviews, known_hashes) >= stop_threshold:
@@ -1196,6 +1402,13 @@ async def extract_reviews(
                 if len(raw_reviews) <= before:
                     no_growth += 1
                     if no_growth >= 2:
+                        # ฟีดแบบจำกัด: ลองกดปุ่มครั้งเดียวก่อนจบ (ดู click_more_reviews)
+                        if not more_tried:
+                            more_tried = True
+                            if await click_more_reviews(page):
+                                raw_reviews = await _extract_reviews_any(page, cap)
+                                no_growth = 0
+                                continue
                         break
                 else:
                     no_growth = 0
@@ -1210,14 +1423,25 @@ async def extract_reviews(
                 text = item.get("text", "").strip()
                 date = item.get("date", "")
 
-                # Skip duplicates
-                key = text[:60]
+                # Skip duplicates — เทียบด้วยข้อความเต็ม (ดู MIN_REVIEW_TEXT_LEN)
+                key = text
                 if key in seen_texts:
                     continue
                 seen_texts.add(key)
 
+                # ── ให้ดาวอย่างเดียว ไม่ได้เขียนอะไร → ไม่ใช่ "รีวิวที่มีข้อความ" ──
+                #
+                # ⚠️ ต้องเช็คจากข้อความดิบของการ์ด ก่อนเข้า clean_review_text()
+                #   เพราะตัวล้างตัดไอคอนกับคำ UI ออกจนแยกโครงไม่ได้แล้ว
+                #   เหลือแต่ชื่อผู้รีวิวหรือค่าเมตาซึ่งดูเหมือนเนื้อรีวิว
+                #   วัดได้ 6,020 แถวในฐานที่เข้ามาแบบนี้ (ดู is_rating_only)
+                if is_rating_only(text):
+                    continue
+
                 # Skip if text is too short
-                if len(text) < 20:
+                # เลข 20 เดิมไม่กระทบเส้นทางหลัก (ข้อความกล่องรวมเมตาเกิน 20 เสมอ)
+                # แต่ตัดเนื้อรีวิวจริงของทางสำรองทิ้ง จึงใช้ค่าเดียวกันทั้งสองทาง
+                if len(text) < MIN_REVIEW_TEXT_LEN:
                     continue
 
                 # Skip clear Google Maps UI fragments
@@ -1486,6 +1710,7 @@ async def scrape_place(
 
         # Scrape reviews — ข้ามถ้า max_reviews <= 0 (โหมด discover เร็ว)
         reviews_failed: str | None = None
+        limited_view: str | None = None
         if max_reviews > 0:
             try:
                 reviews = await extract_reviews(
@@ -1518,8 +1743,35 @@ async def scrape_place(
             if reviews_failed is None and not reviews and overall_rating is not None:
                 reviews_failed = "เก็บได้ 0 รีวิวทั้งที่ร้านมีคะแนนรวม"
                 print(f"  ⚠️  {reviews_failed} (คะแนน {overall_rating})")
+
+            # ── Google เสิร์ฟหน้าแบบจำกัดหรือเปล่า ──
+            # ตรวจหลัง scroll จบ: ปุ่มยังอยู่ = ตันเพราะหน้า ไม่ใช่เพราะร้าน
+            # ผู้เรียก (run_deep_scan) ใช้ธงนี้ตัดสินว่า "ไม่นับเป็นความพยายาม"
+            limited_view = await detect_limited_view(page)
+
+            # ── เข้าไม่ถึงหน้ารีวิวทั้งที่ร้านมีคะแนนรวม = หน้าแบบ A ──
+            #
+            # ⚠️ เหตุผลที่ถือว่าเป็นหน้าเสื่อม ไม่ใช่ร้านมีปัญหา (วัด 2026-10-03)
+            #   Google แสดงคะแนนรวมให้เฉพาะร้านที่มีคนรีวิวแล้ว ฉะนั้น
+            #   "มีคะแนน แต่ไม่มีแท็บรีวิว" เป็นไปไม่ได้ในหน้าที่สมบูรณ์
+            #   แคปเทียบกันแล้วเห็นชัด: หน้าแบบ A มีแค่แท็บ ภาพรวม/เกี่ยวกับ
+            #   และข้างคะแนน 4.7 ไม่มี "(546)" ต่อท้าย ส่วนหน้าปกติมีครบ
+            #
+            #   ถ้านับเป็นความพยายาม ร้านจะถูกฝังถาวรด้วยเหตุที่ตัวเองไม่ได้ผิด
+            #   เหมือนเคสหน้าจำกัด (ดู detect_limited_view)
+            #
+            # ⚖️ สิ่งที่แลกไป: ร้านที่เข้าไม่ถึงจริง ๆ จะถูกหยิบมาลองใหม่ทุกรอบ
+            #   ไม่มีเพดาน รับได้เพราะคิวมีขอบเขตและผู้ใช้เป็นคนสั่งรันเอง
+            #   ดีกว่าการฝังร้านที่เก็บได้จริงทิ้งอย่างเงียบ ๆ
+            if not limited_view and reviews_failed and overall_rating is not None:
+                limited_view = ("หน้าแบบจำกัด — ไม่มีแท็บรีวิวทั้งที่ร้านมีคะแนน "
+                                f"{overall_rating}")
+
+            if limited_view:
+                print(f"  🚧 {limited_view} (เก็บได้ {len(reviews)} รีวิว)")
         else:
             reviews = []
+            limited_view = None
             print(f"  Skipped reviews (discover mode)")
 
         return {
@@ -1534,6 +1786,7 @@ async def scrape_place(
             "lng": coords[1] if coords else None,
             "reviews": reviews,
             "_reviews_failed": reviews_failed,
+            "_limited_view": limited_view,
             "scraped_at": datetime.now().isoformat(),
         }
 

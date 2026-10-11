@@ -9,7 +9,15 @@ import { STATUS_OPTIONS } from '../components/StatusBadge'
 import TrendingPanel from '../components/TrendingPanel'
 import { dateKey, type ViewMode } from '../hooks/useInsights'
 import { formatCount, formatRate } from '../utils/format'
+import { useBizStatus } from '../hooks/useBizStatus'
 import { useDateRange } from '../hooks/useDateRange'
+import type { LucideIcon } from 'lucide-react'
+import {
+  ClickHint, PlaceAttraction, PlaceCafe, PlaceGeneral, PlaceRestaurant,
+  SeverityHigh, SeverityLow, SeverityMedium, ViewAll, ViewComplaints, ViewPraise,
+  ZoneCityCenter, ZoneNaresuan, ZoneOther, ZoneRajabhat,
+} from '../components/icons'
+import { categoryLabel } from '../utils/categoryLabel'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,8 +36,6 @@ interface ZoneSummary {
   total_with_text?: number | null
   negative_count?: number | null
   complaint_rate?: number | null
-  severity_counts?: Record<string, number> | null
-  severity_share?: Record<string, number | null> | null
 }
 
 /** /insights/zones/{zone}/pain-points — คืน object เพราะต้องพก "ตัวส่วน" มาด้วย */
@@ -62,11 +68,14 @@ function withDate(url: URL, dr?: DateRange): URL {
   return url
 }
 
-function useZones(dr?: DateRange) {
+function useZones(dr?: DateRange, status = 'operational') {
   return useQuery<ZoneSummary[]>({
-    queryKey: ['zones', dateKey(dr)],
+    queryKey: ['zones', dateKey(dr), status],
     queryFn: async () => {
       const url = withDate(new URL('/api/insights/zones', window.location.origin), dr)
+      // ⚠️ default ของ endpoint นี้คือ "all" (รวมร้านปิด) ต่างจาก endpoint อื่น
+      // ที่หน้านี้เรียกด้วย operational — ไม่ส่งแล้วตัวเลขจะไม่ตรงกันในหน้าเดียว
+      url.searchParams.set('status', status)
       const res = await fetch(url.toString())
       if (!res.ok) return []
       return res.json()
@@ -123,18 +132,18 @@ function useZonePainPoints(zone: string | null, viewMode: ViewMode, status: stri
 
 const ZONE_ORDER = ['city_center', 'rajabhat', 'naresuan', 'other']
 
-const ZONE_META: Record<string, { icon: string; color: string; bg: string }> = {
-  city_center: { icon: '🏙️', color: 'text-blue-400',   bg: 'bg-blue-500/10 border-blue-500/30' },
-  rajabhat:    { icon: '🎓', color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/30' },
-  naresuan:    { icon: '🏛️', color: 'text-cyan-400',   bg: 'bg-cyan-500/10 border-cyan-500/30' },
-  other:       { icon: '📍', color: 'text-slate-400',  bg: 'bg-slate-500/10 border-slate-500/30' },
+const ZONE_META: Record<string, { Icon: LucideIcon; color: string; bg: string }> = {
+  city_center: { Icon: ZoneCityCenter, color: 'text-blue-400',   bg: 'bg-blue-500/10 border-blue-500/30' },
+  rajabhat:    { Icon: ZoneRajabhat,   color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/30' },
+  naresuan:    { Icon: ZoneNaresuan,   color: 'text-cyan-400',   bg: 'bg-cyan-500/10 border-cyan-500/30' },
+  other:       { Icon: ZoneOther,      color: 'text-slate-400',  bg: 'bg-slate-500/10 border-slate-500/30' },
 }
 
-const TYPE_META: Record<string, { icon: string; color: string }> = {
-  'คาเฟ่':              { icon: '☕', color: '#f97316' },
-  'ร้านอาหาร':          { icon: '🍜', color: '#22d3ee' },
-  'สถานที่ท่องเที่ยว':  { icon: '🏯', color: '#a855f7' },
-  'ทั่วไป':             { icon: '📌', color: '#64748b' },
+const TYPE_META: Record<string, { Icon: LucideIcon; color: string }> = {
+  'คาเฟ่':              { Icon: PlaceCafe,       color: '#f97316' },
+  'ร้านอาหาร':          { Icon: PlaceRestaurant, color: '#22d3ee' },
+  'สถานที่ท่องเที่ยว':  { Icon: PlaceAttraction, color: '#a855f7' },
+  'ทั่วไป':             { Icon: PlaceGeneral,    color: '#64748b' },
 }
 
 const CHART_COLORS = ['#3b82f6', '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308']
@@ -154,28 +163,56 @@ function SeverityBar({ high, medium, low }: { high: number; medium: number; low:
 
 function PlaceTypeCard({ group }: { group: PlaceTypeBreakdown }) {
   const meta = TYPE_META[group.type] ?? TYPE_META['ทั่วไป']
-  const total = group.high_total + group.medium_total + group.low_total || 1
-  const highPct = Math.round((group.high_total / total) * 100)
+
+  // ฐานเดียวของทุกสัดส่วนในการ์ดนี้ = คำบ่นทั้งหมดของประเภทนี้ (กฎ 1)
+  // ไม่ใส่ `|| 1` แบบเดิม เพราะการแปลงตัวส่วน 0 เป็น 1 ทำให้ได้ "0%"
+  // ซึ่งอ่านว่า "มีปัญหาแต่เป็นศูนย์เปอร์เซ็นต์" ทั้งที่ความจริงคือ "ไม่มีข้อมูลให้วัด"
+  const total = group.high_total + group.medium_total + group.low_total
+  const rate = (n: number) => (total > 0 ? n / total : null)
+  const hasProblem = total > 0
 
   return (
     <div className="bg-brand-bg rounded-xl border border-brand-border p-4 space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-xl">{meta.icon}</span>
+          <meta.Icon size={18} />
           <span className="text-brand-text font-semibold">{group.type}</span>
           <span className="text-brand-subtext text-xs">({group.place_count} แห่ง)</span>
         </div>
-        <span className="text-red-400 text-sm font-medium">{highPct}% ปัญหาสูง</span>
+        {/* ⚠️ "ไม่มี" กับ "0%" ไม่เหมือนกันสำหรับคนอ่าน
+            0% สื่อว่ามีปัญหาอยู่แต่คิดเป็นศูนย์เปอร์เซ็นต์ ส่วนความจริงคือไม่พบเลย
+            จึงต้องเขียนเป็นคำ ไม่ใช่ปล่อยให้เป็นตัวเลข (ข้อ 7) */}
+        {!hasProblem ? (
+          <span className="text-green-400 text-sm font-medium">ไม่พบคำบ่น</span>
+        ) : group.high_total === 0 ? (
+          <span className="text-green-400 text-sm font-medium">ไม่พบปัญหาระดับสูง</span>
+        ) : (
+          <span className="text-red-400 text-sm font-medium">
+            {formatRate(rate(group.high_total), group.high_total, total)} เป็นปัญหาสูง
+          </span>
+        )}
       </div>
 
-      {/* Severity bar */}
-      <SeverityBar high={group.high_total} medium={group.medium_total} low={group.low_total} />
-      <div className="flex flex-wrap gap-3 text-xs text-brand-subtext">
-        <span className="text-red-400">🔥 สูง {group.high_total}</span>
-        <span className="text-yellow-400">⚠️ กลาง {group.medium_total}</span>
-        <span className="text-green-400">💬 ต่ำ {group.low_total}</span>
-      </div>
+      {/* Severity bar — ไม่มีคำบ่นก็ไม่มีแถบและชิปให้แสดง */}
+      {hasProblem && (
+        <>
+          <SeverityBar high={group.high_total} medium={group.medium_total} low={group.low_total} />
+          {/* แสดงเฉพาะระดับที่มีจริง — ชิป "สูง 0.0% (0/1)" ไม่ให้ข้อมูลอะไร
+              นอกจากกินที่และทำให้คนอ่านนึกว่ามีปัญหาระดับนั้นอยู่ */}
+          <div className="flex flex-wrap gap-3 text-xs text-brand-subtext">
+            {([
+              { n: group.high_total,   Icon: SeverityHigh,   cls: 'text-red-400',    label: 'สูง' },
+              { n: group.medium_total, Icon: SeverityMedium, cls: 'text-yellow-400', label: 'กลาง' },
+              { n: group.low_total,    Icon: SeverityLow,    cls: 'text-green-400',  label: 'ต่ำ' },
+            ] as const).filter(x => x.n > 0).map(x => (
+              <span key={x.label} className={`${x.cls} inline-flex items-center gap-1`}>
+                <x.Icon size={12} /> {x.label} {formatRate(rate(x.n), x.n, total)}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Top pain points */}
       {group.top_pain_points.length > 0 && (
@@ -196,10 +233,12 @@ function PlaceTypeCard({ group }: { group: PlaceTypeBreakdown }) {
                         borderLeft: `2px solid ${meta.color}`,
                       }}
                     >
-                      <span className="text-brand-text text-xs truncate">{pp.category}</span>
+                      <span className="text-brand-text text-xs truncate">{categoryLabel(pp.category)}</span>
                     </div>
                   </div>
-                  <span className="text-brand-subtext text-xs w-8 text-right shrink-0">{pp.count}</span>
+                  <span className="text-brand-subtext text-xs w-28 text-right shrink-0">
+                    {formatRate(rate(pp.count), pp.count, total)}
+                  </span>
                 </div>
               )
             })}
@@ -208,14 +247,19 @@ function PlaceTypeCard({ group }: { group: PlaceTypeBreakdown }) {
       )}
 
       {/* Top places */}
-      {group.top_places.length > 0 && (
+      {/* ⚠️ เงื่อนไขคือ "มีร้านที่ปัญหาระดับสูงมากกว่า 0" ไม่ใช่ "มีคำบ่น"
+          เพราะรายการนี้เรียงด้วย high_count — ถ้าทุกร้านเป็น 0 จะได้ลิสต์
+          ร้านพร้อมเลข 0 เรียงกันสามบรรทัด ซึ่งไม่บอกอะไรเลย (ข้อ 7) */}
+      {group.top_places.some(pl => pl.high_count > 0) && (
         <div>
           <div className="text-brand-subtext text-xs mb-1.5 font-medium">สถานที่ที่มีปัญหามากสุด</div>
           <div className="space-y-1">
             {group.top_places.slice(0, 3).map((place) => (
               <div key={place.name} className="flex items-center justify-between text-xs">
                 <span className="text-brand-text truncate flex-1">{place.name}</span>
-                <span className="text-red-400 ml-2 shrink-0">🔥 {place.high_count} สูง</span>
+                <span className="text-red-400 ml-2 shrink-0 inline-flex items-center gap-1">
+                  <SeverityHigh size={11} /> {place.high_count} สูง
+                </span>
               </div>
             ))}
           </div>
@@ -231,7 +275,8 @@ function PlaceTypeCard({ group }: { group: PlaceTypeBreakdown }) {
 
 function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneSummary; dateRange: DateRange }) {
   const [viewMode, setViewMode] = useState<ViewMode>('complaints')
-  const [bizStatus, setBizStatus] = useState('operational')
+  // สถานะร้านอ่านจาก URL ที่เดียวกับหน้าอื่น (ดู hooks/useBizStatus.ts)
+  const [bizStatus, setBizStatus] = useBizStatus()
   const [drillCategory, setDrillCategory] = useState<string | null>(null)
   const { data: breakdown = [], isLoading: breakLoading } = useZoneBreakdown(zone, viewMode, bizStatus, dateRange)
   const { data: pp } = useZonePainPoints(zone, viewMode, bizStatus, dateRange)
@@ -255,9 +300,9 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
         <span className="text-brand-subtext text-sm">มุมมอง:</span>
         <div className="inline-flex rounded-lg border border-brand-border overflow-hidden">
           {[
-            { key: 'complaints', label: '🔴 คำบ่น', color: '#ef4444' },
-            { key: 'praise',     label: '⭐ คำชม',  color: '#22c55e' },
-            { key: 'all',        label: '📊 ทั้งหมด', color: '#3b82f6' },
+            { key: 'complaints', label: 'คำบ่น',  Icon: ViewComplaints, color: '#ef4444' },
+            { key: 'praise',     label: 'คำชม',   Icon: ViewPraise,     color: '#22c55e' },
+            { key: 'all',        label: 'ทั้งหมด', Icon: ViewAll,        color: '#3b82f6' },
           ].map((m) => (
             <button
               key={m.key}
@@ -267,7 +312,7 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
               }`}
               style={viewMode === m.key ? { background: m.color } : {}}
             >
-              {m.label}
+              <m.Icon size={13} className="inline mr-1 -mt-0.5" />{m.label}
             </button>
           ))}
         </div>
@@ -296,7 +341,9 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
           ))}
         </div>
         {bizStatus === 'closed' && (
-          <span className="text-red-300 text-xs">🔴 ดูเฉพาะร้านที่ปิด — หาว่าอาจปิดเพราะอะไร</span>
+          <span className="text-red-300 text-xs inline-flex items-center gap-1">
+            <ViewComplaints size={12} /> ดูเฉพาะร้านที่ปิด — หาว่าอาจปิดเพราะอะไร
+          </span>
         )}
       </div>
 
@@ -349,7 +396,7 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
         />
         <KPICard
           title="ปัญหาหลัก"
-          value={summary.top_category ?? '—'}
+          value={categoryLabel(summary.top_category) ?? '—'}
           subtitle="หมวดคำบ่นที่พบบ่อยสุด"
           accentColor="#f97316"
         />
@@ -365,10 +412,10 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
               totalWithText={withText}
               title={
                 viewMode === 'praise'
-                  ? `⭐ จุดเด่นใน${summary.label}`
+                  ? `จุดเด่นใน${summary.label}`
                   : viewMode === 'all'
-                  ? `📊 หมวดที่พูดถึงใน${summary.label}`
-                  : `🔴 Pain Point ใน${summary.label}`
+                  ? `หมวดที่พูดถึงใน${summary.label}`
+                  : `Pain Point ใน${summary.label}`
               }
               onCategoryClick={(c) => setDrillCategory(c === drillCategory ? null : c)}
             />
@@ -379,10 +426,16 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
         )}
       </div>
 
-      {/* Drill-down เฉพาะโซนนี้ */}
-      {drillCategory && (
-        <CategoryDrilldown category={drillCategory} zone={zone} status={bizStatus} viewMode={viewMode} dateRange={dateRange} onClose={() => setDrillCategory(null)} />
-      )}
+      {/* รายชื่อร้านของโซนนี้ — แสดงตลอดเหมือนหน้าภาพรวม (ข้อ 5) */}
+      <CategoryDrilldown
+        category={drillCategory}
+        zone={zone}
+        status={bizStatus}
+        viewMode={viewMode}
+        dateRange={dateRange}
+        onClose={drillCategory ? () => setDrillCategory(null) : undefined}
+        onCategoryChange={setDrillCategory}
+      />
 
       {/* แนวโน้มปัญหาของโซนนี้ */}
       <TrendingPanel zone={zone} zoneLabel={summary.label} dateRange={dateRange}
@@ -415,7 +468,10 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
 export default function ZoneDashboard() {
   // ช่วงเวลาอยู่ใน URL — ค่าตรงกับหน้าอื่นอัตโนมัติ (ดู hooks/useDateRange.ts)
   const [dateRange, setDateRange] = useDateRange()
-  const { data: zones = [], isLoading } = useZones(dateRange)
+  // อ่านจาก URL ที่เดียวกับปุ่มเลือกสถานะที่อยู่ใน ZoneDetail (component ลูก)
+  // จึงไม่ต้องส่ง prop ลงไปและไม่มีทางหลุดจากกัน
+  const [bizStatus] = useBizStatus()
+  const { data: zones = [], isLoading } = useZones(dateRange, bizStatus)
   const [activeZone, setActiveZone] = useState<string | null>(null)
 
   const sortedZones = [...zones].sort(
@@ -466,7 +522,7 @@ export default function ZoneDashboard() {
               }`}
             >
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-2xl">{meta.icon}</span>
+                <meta.Icon size={22} />
                 <span className={`font-semibold text-sm ${isActive ? meta.color : 'text-brand-text'}`}>
                   {z.label}
                 </span>
@@ -481,13 +537,17 @@ export default function ZoneDashboard() {
               </div>
               <SeverityBar high={z.high_count} medium={z.medium_count} low={z.low_count} />
               <div className="flex justify-between text-xs mt-1.5">
-                <span className="text-red-400">🔥 {z.high_count} สูง</span>
+                <span className="text-red-400 inline-flex items-center gap-1">
+                  <SeverityHigh size={11} /> {z.high_count} สูง
+                </span>
                 {z.top_category && (
-                  <span className="text-brand-subtext truncate ml-1 max-w-[100px]">{z.top_category}</span>
+                  <span className="text-brand-subtext truncate ml-1 max-w-[100px]">{categoryLabel(z.top_category)}</span>
                 )}
               </div>
               {z.analyzed_count === 0 && (
-                <div className="text-xs text-yellow-500 mt-1">⚠ ยังไม่มีข้อมูล</div>
+                <div className="text-xs text-yellow-500 mt-1 inline-flex items-center gap-1">
+                  <SeverityMedium size={11} /> ยังไม่มีข้อมูล
+                </div>
               )}
             </button>
           )
@@ -521,7 +581,7 @@ export default function ZoneDashboard() {
                       className="border-b border-brand-border/50 hover:bg-brand-bg cursor-pointer transition-colors"
                     >
                       <td className="py-2.5">
-                        <span className="mr-2">{meta.icon}</span>
+                        <meta.Icon size={14} className="inline mr-2 -mt-0.5" />
                         <span className={`font-medium ${meta.color}`}>{z.label}</span>
                       </td>
                       <td className="text-right text-brand-text">{z.place_count}</td>
@@ -532,14 +592,16 @@ export default function ZoneDashboard() {
                           <SeverityBar high={z.high_count} medium={z.medium_count} low={z.low_count} />
                         </div>
                       </td>
-                      <td className="pl-4 text-brand-subtext text-xs">{z.top_category ?? '—'}</td>
+                      <td className="pl-4 text-brand-subtext text-xs">{categoryLabel(z.top_category) ?? '—'}</td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
           </div>
-          <p className="text-brand-subtext text-xs mt-4">👆 คลิกที่การ์ดหรือแถวด้านบนเพื่อดู insight เฉพาะโซน</p>
+          <p className="text-brand-subtext text-xs mt-4 inline-flex items-center gap-1">
+            <ClickHint size={13} /> คลิกที่การ์ดหรือแถวด้านบนเพื่อดู insight เฉพาะโซน
+          </p>
         </div>
       )}
 
@@ -547,7 +609,10 @@ export default function ZoneDashboard() {
       {currentZone && (
         <div className="space-y-1">
           <div className="flex items-center gap-2 mb-4">
-            <span className="text-2xl">{ZONE_META[currentZone.zone]?.icon}</span>
+            {(() => {
+              const Icon = ZONE_META[currentZone.zone]?.Icon
+              return Icon ? <Icon size={22} /> : null
+            })()}
             <h2 className={`text-xl font-bold ${ZONE_META[currentZone.zone]?.color}`}>
               {currentZone.label}
             </h2>

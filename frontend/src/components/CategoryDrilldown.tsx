@@ -3,6 +3,12 @@ import { useQuery } from '@tanstack/react-query'
 import StatusBadge from './StatusBadge'
 import type { DateRange } from './DateRangeSelector'
 import { dateKey, type ViewMode } from '../hooks/useInsights'
+import type { LucideIcon } from 'lucide-react'
+import {
+  Close, SearchIcon, SentimentNeutral, SeverityHigh, SeverityLow, SeverityMedium,
+  Stars, ViewAll, ViewComplaints, ViewPraise,
+} from './icons'
+import { ALL_CATEGORIES, categoryLabel } from '../utils/categoryLabel'
 
 // เติม date_from/date_to เข้า URL search params ถ้า DateRange ระบุ
 function appendDate(url: URL, dr?: DateRange) {
@@ -42,22 +48,24 @@ interface ReviewRow {
 interface TabDef {
   key: string
   label: string
+  /** ไอคอนกำกับ — "ทั้งหมด" ไม่มี จึงเป็น optional (ดู components/icons.tsx) */
+  Icon?: LucideIcon
   color: string
   field: keyof PlaceRow   // คอลัมน์ที่ใช้นับ/เรียงลำดับร้าน
 }
 
 const COMPLAINT_TABS: TabDef[] = [
   { key: '',       label: 'ทั้งหมด',   color: '#3b82f6', field: 'total' },
-  { key: 'high',   label: '🔥 สูง',    color: '#ef4444', field: 'high' },
-  { key: 'medium', label: '⚠️ กลาง',   color: '#eab308', field: 'medium' },
-  { key: 'low',    label: '💬 ต่ำ',    color: '#22c55e', field: 'low' },
+  { key: 'high',   label: 'สูง',  Icon: SeverityHigh,   color: '#ef4444', field: 'high' },
+  { key: 'medium', label: 'กลาง', Icon: SeverityMedium, color: '#eab308', field: 'medium' },
+  { key: 'low',    label: 'ต่ำ',  Icon: SeverityLow,    color: '#22c55e', field: 'low' },
 ]
 
 const ALL_TABS: TabDef[] = [
   { key: '',         label: 'ทั้งหมด',   color: '#3b82f6', field: 'total' },
-  { key: 'negative', label: '🔴 คำบ่น',  color: '#ef4444', field: 'neg' },
-  { key: 'positive', label: '⭐ คำชม',   color: '#22c55e', field: 'pos' },
-  { key: 'neutral',  label: '😐 กลางๆ',  color: '#94a3b8', field: 'neu' },
+  { key: 'negative', label: 'คำบ่น', Icon: ViewComplaints,   color: '#ef4444', field: 'neg' },
+  { key: 'positive', label: 'คำชม',  Icon: ViewPraise,       color: '#22c55e', field: 'pos' },
+  { key: 'neutral',  label: 'กลางๆ', Icon: SentimentNeutral, color: '#94a3b8', field: 'neu' },
 ]
 
 function tabsFor(viewMode: ViewMode): TabDef[] {
@@ -68,14 +76,15 @@ function tabsFor(viewMode: ViewMode): TabDef[] {
 
 // ─── Hooks ────────────────────────────────────────────────────────────────
 function usePlacesForCategory(
-  category: string, zone?: string, status = 'operational',
+  category: string | null, zone?: string, status = 'operational',
   viewMode: ViewMode = 'complaints', dateRange?: DateRange,
 ) {
   return useQuery<PlaceRow[]>({
-    queryKey: ['cat-places', category, zone ?? 'all', status, viewMode, dateKey(dateRange)],
+    queryKey: ['cat-places', category ?? 'all-cat', zone ?? 'all', status, viewMode, dateKey(dateRange)],
     queryFn: async () => {
       const url = new URL('/api/insights/category-places', window.location.origin)
-      url.searchParams.set('category', category)
+      // ไม่มีหมวด = รวมทุกหมวด (ผู้ใช้ยังไม่ได้กดแท่งกราฟ)
+      if (category) url.searchParams.set('category', category)
       if (zone) url.searchParams.set('zone', zone)
       url.searchParams.set('status', status)
       url.searchParams.set('view_mode', viewMode)
@@ -89,16 +98,17 @@ function usePlacesForCategory(
 }
 
 function useReviewsForPlace(
-  category: string, placeId: number | null,
+  category: string | null, placeId: number | null,
   severity: string, sentiment: string,
   viewMode: ViewMode = 'complaints', dateRange?: DateRange,
 ) {
   return useQuery<ReviewRow[]>({
-    queryKey: ['cat-reviews', category, placeId, severity, sentiment, viewMode, dateKey(dateRange)],
+    queryKey: ['cat-reviews', category ?? 'all-cat', placeId, severity, sentiment, viewMode, dateKey(dateRange)],
     queryFn: async () => {
       if (!placeId) return []
       const url = new URL('/api/insights/category-reviews', window.location.origin)
-      url.searchParams.set('category', category)
+      // ไม่มีหมวด = รวมทุกหมวด ต้องตรงกับที่ /category-places ใช้ (กฎ 1)
+      if (category) url.searchParams.set('category', category)
       url.searchParams.set('place_id', String(placeId))
       if (severity) url.searchParams.set('severity', severity)
       if (sentiment) url.searchParams.set('sentiment', sentiment)
@@ -118,33 +128,50 @@ const ZONE_LABEL: Record<string, string> = {
   city_center: 'ตัวเมือง', naresuan: 'ม.นเรศวร', rajabhat: 'ม.ราชภัฏ', other: 'อื่นๆ',
 }
 // badge ในโหมด complaints — ทุกรีวิวคือคำบ่นแล้ว บอกแค่ระดับความรุนแรง
-const SEV_LABEL: Record<string, string> = { high: '🔥 สูง', medium: '⚠️ กลาง', low: '💬 ต่ำ' }
+const SEV_LABEL: Record<string, string> = { high: 'สูง', medium: 'กลาง', low: 'ต่ำ' }
+const SEV_ICON: Record<string, LucideIcon> = {
+  high: SeverityHigh, medium: SeverityMedium, low: SeverityLow,
+}
 const SEV_COLOR: Record<string, string> = { high: '#ef4444', medium: '#eab308', low: '#22c55e' }
 // badge ในโหมด all — รีวิวปนกัน บอกว่าอันนี้เป็นคำบ่นหรือคำชม
 const SENT_LABEL: Record<string, string> = { negative: 'คำบ่น', positive: 'คำชม' }
 const SENT_COLOR: Record<string, string> = { negative: '#ef4444', positive: '#22c55e' }
 
 /** ป้ายกำกับรีวิวหนึ่งอัน — เปลี่ยนความหมายตามโหมดที่กำลังดู */
-function reviewBadge(rv: ReviewRow, viewMode: ViewMode): { label: string; color: string } | null {
+function reviewBadge(
+  rv: ReviewRow, viewMode: ViewMode,
+): { label: string; color: string; Icon?: LucideIcon } | null {
   if (viewMode === 'praise') return null            // ทุกอันคือคำชม ไม่ต้องติดป้ายซ้ำ
   if (viewMode === 'complaints') {
     if (!rv.severity) return null
-    return { label: SEV_LABEL[rv.severity] ?? rv.severity, color: SEV_COLOR[rv.severity] ?? '#94a3b8' }
+    return {
+      label: SEV_LABEL[rv.severity] ?? rv.severity,
+      color: SEV_COLOR[rv.severity] ?? '#94a3b8',
+      Icon: SEV_ICON[rv.severity],
+    }
   }
   // โหมด all — บอกประเภทรีวิว
   const s = rv.sentiment ?? ''
   if (s === 'negative' || s === 'positive') {
-    return { label: SENT_LABEL[s], color: SENT_COLOR[s] }
+    return {
+      label: SENT_LABEL[s], color: SENT_COLOR[s],
+      Icon: s === 'negative' ? ViewComplaints : ViewPraise,
+    }
   }
-  return { label: 'กลางๆ', color: '#94a3b8' }
+  return { label: 'กลางๆ', color: '#94a3b8', Icon: SentimentNeutral }
 }
 
 // ─── Reviews list (expanded under a place) ───────────────────────────────────
+/** เพดานของ /insights/category-reviews — ต้องตรงกับ LIMIT ในคิวรีนั้น */
+const REVIEWS_SHOWN_CAP = 30
+
 function ReviewsList({
-  category, placeId, severity, sentiment, viewMode, dateRange,
+  category, placeId, severity, sentiment, viewMode, dateRange, total,
 }: {
-  category: string; placeId: number; severity: string; sentiment: string
+  category: string | null; placeId: number; severity: string; sentiment: string
   viewMode: ViewMode; dateRange?: DateRange
+  /** จำนวนที่โชว์ข้างชื่อร้าน — ใช้บอกผู้ใช้ว่ารายการนี้ถูกตัดหรือไม่ */
+  total?: number
 }) {
   const { data: reviews = [], isLoading } = useReviewsForPlace(
     category, placeId, severity, sentiment, viewMode, dateRange,
@@ -153,17 +180,25 @@ function ReviewsList({
   if (reviews.length === 0) return <div className="text-brand-subtext text-xs py-2 italic">ไม่มีรีวิวในกลุ่มนี้</div>
   return (
     <div className="space-y-2 pt-2">
+      {/* ⚠️ API ตัดที่ 30 อัน ถ้าไม่เขียนกำกับ ผู้ใช้จะเห็น "233 รีวิว" ข้างชื่อร้าน
+          แล้วกางออกมานับได้ 30 — เป็นตัวเลขไม่ตรงกันแบบเดียวกับข้อ 1 */}
+      {total != null && total > REVIEWS_SHOWN_CAP && (
+        <p className="text-brand-subtext text-xs italic">
+          แสดง {REVIEWS_SHOWN_CAP} รีวิวแรกจาก {total} รีวิว (เรียงตามความรุนแรงและวันที่)
+        </p>
+      )}
       {reviews.map((rv, i) => {
         const badge = reviewBadge(rv, viewMode)
         return (
           <div key={i} className="bg-brand-card rounded-lg p-2.5 border border-brand-border">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-yellow-400 text-xs">{'★'.repeat(rv.rating ?? 0)}</span>
+              <Stars value={rv.rating ?? 0} />
               {badge && (
                 <span
                   className="text-xs px-1.5 py-0.5 rounded"
                   style={{ color: badge.color, background: badge.color + '22' }}
                 >
+                  {badge.Icon && <badge.Icon size={11} className="inline mr-1 -mt-0.5" />}
                   {badge.label}
                 </span>
               )}
@@ -180,7 +215,22 @@ function ReviewsList({
 // ─── Main drill-down ─────────────────────────────────────────────────────────
 export default function CategoryDrilldown({
   category, zone, status = 'operational', viewMode = 'complaints', dateRange, onClose,
-}: { category: string; zone?: string; status?: string; viewMode?: ViewMode; dateRange?: DateRange; onClose: () => void }) {
+  onCategoryChange,
+}: {
+  /** null = รวมทุกหมวด — แผงนี้แสดงตลอดโดยไม่ต้องให้ผู้ใช้กดแท่งกราฟก่อน (ข้อ 5) */
+  category: string | null
+  zone?: string
+  status?: string
+  viewMode?: ViewMode
+  dateRange?: DateRange
+  /** ไม่ส่งมา = ไม่มีปุ่มปิด (โหมดแสดงตลอด) */
+  onClose?: () => void
+  /**
+   * เปลี่ยนหมวดจากในแผงนี้ได้เลย ไม่ต้องย้อนไปกดแท่งกราฟ
+   * ส่ง null = กลับไปดูทุกหมวด — ต้องให้ผู้ใช้กลับได้ด้วยวิธีเดียวกับที่เลือกมา
+   */
+  onCategoryChange?: (c: string | null) => void
+}) {
   const [filterKey, setFilterKey] = useState('')
   const [expanded, setExpanded] = useState<number | null>(null)
   const { data: places = [], isLoading } = usePlacesForCategory(category, zone, status, viewMode, dateRange)
@@ -203,20 +253,60 @@ export default function CategoryDrilldown({
   const maxCount = rows.length ? (rows[0][sortField] as number) : 1
 
   return (
-    <div className="bg-brand-bg rounded-xl border-2 border-brand-primary p-4 mt-3">
-      {/* Header — เปลี่ยนหัวข้อตามโหมด */}
-      <div className="flex items-center justify-between mb-3">
+    <div className={`bg-brand-bg rounded-xl p-4 mt-3 border-2 ${
+      category ? 'border-brand-primary' : 'border-brand-border'
+    }`}>
+      {/* Header — เปลี่ยนหัวข้อตามโหมด + เลือกหมวดได้จากตรงนี้เลย */}
+      <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
         <div>
-          <h4 className="text-brand-text font-semibold">
-            {viewMode === 'praise'     && <>⭐ ร้านที่ถูกชม: <span className="text-green-400">{category}</span></>}
-            {viewMode === 'complaints' && <>🔍 ร้านที่มีปัญหา: <span className="text-brand-primary">{category}</span></>}
-            {viewMode === 'all'        && <>📊 ร้านในหมวด: <span className="text-brand-primary">{category}</span></>}
+          <h4 className="text-brand-text font-semibold flex items-center gap-2 flex-wrap">
+            {viewMode === 'praise' && (
+              <span><ViewPraise size={15} className="inline mr-1 -mt-0.5 text-yellow-400" />
+                ร้านที่ถูกชม</span>
+            )}
+            {viewMode === 'complaints' && (
+              <span><SearchIcon size={15} className="inline mr-1 -mt-0.5" />
+                ร้านที่มีคำบ่น</span>
+            )}
+            {viewMode === 'all' && (
+              <span><ViewAll size={15} className="inline mr-1 -mt-0.5" />
+                ร้านที่ถูกพูดถึง</span>
+            )}
+
+            {/* เลือกหมวดได้ 2 ทาง: ดรอปดาวน์ตรงนี้ หรือคลิกแท่งกราฟด้านบน
+                ทั้งสองทางเขียนค่าลง state เดียวกัน จึงไม่มีทางไม่ตรงกัน */}
+            {onCategoryChange ? (
+              <select
+                value={category ?? ''}
+                onChange={e => onCategoryChange(e.target.value || null)}
+                className={`bg-brand-card border rounded-lg px-2 py-1 text-sm font-normal
+                  focus:outline-none focus:border-brand-primary ${
+                  category ? 'border-brand-primary text-brand-primary'
+                           : 'border-brand-border text-brand-subtext'}`}
+              >
+                <option value="">— ทุกหมวด —</option>
+                {ALL_CATEGORIES.map(c => (
+                  /* value = key เดิมที่ส่งกลับไปกรองที่ API · ข้อความ = ชื่อที่แสดง */
+                  <option key={c} value={c}>{categoryLabel(c)}</option>
+                ))}
+              </select>
+            ) : (
+              category
+                ? <span className="text-brand-primary">{categoryLabel(category)}</span>
+                : <span className="text-brand-subtext font-normal">— ทุกหมวด</span>
+            )}
           </h4>
           <p className="text-brand-subtext text-xs mt-0.5">
             {zone ? `เฉพาะโซน ${ZONE_LABEL[zone] ?? zone}` : 'ทั้งจังหวัด'} · คลิกร้านเพื่ออ่านรีวิวจริง
+            {!category && ' · เลือกหมวดจากช่องด้านบน หรือคลิกแท่งกราฟก็ได้'}
           </p>
         </div>
-        <button onClick={onClose} className="text-brand-subtext hover:text-brand-text text-sm">✕ ปิด</button>
+        {onClose && (
+          <button onClick={onClose}
+            className="text-brand-subtext hover:text-brand-text text-sm inline-flex items-center gap-1">
+            <Close size={14} /> ล้างหมวด
+          </button>
+        )}
       </div>
 
       {/* Tabs — ความหมายเปลี่ยนตามโหมด (ซ่อนในโหมด praise) */}
@@ -234,6 +324,7 @@ export default function CategoryDrilldown({
                 }`}
                 style={activeTab?.key === t.key ? { background: t.color } : {}}
               >
+                {t.Icon && <t.Icon size={13} className="inline mr-1 -mt-0.5" />}
                 {t.label}
               </button>
             ))}
@@ -301,6 +392,7 @@ export default function CategoryDrilldown({
                       sentiment={sentimentParam}
                       viewMode={viewMode}
                       dateRange={dateRange}
+                      total={p[sortField] as number}
                     />
                   </div>
                 )}

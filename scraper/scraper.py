@@ -31,6 +31,21 @@ from scraper.zones import assign_zone, distance_to_campus_km
 DEEP_COMMIT_EVERY_REVIEWS = 200
 # deep scan: เจอบล็อกติดกันกี่ร้านถึงหยุดรอบแล้วส่งสัญญาณให้ผู้เรียกไป backoff
 DEEP_BLOCK_STREAK_STOP = 2
+
+# เจอ "หน้าแบบจำกัด" ติดกันกี่ร้านแล้วถือว่าช่วงนี้ยิงต่อไปก็เสียเปล่า
+#
+# ⚠️ ทำไมต้องมี (วัดเมื่อ 2026-10-03)
+#   สภาพที่ Google เสิร์ฟหน้าไม่คงที่ และ "เปลี่ยนไปตามช่วงเวลา" ไม่ใช่ตามร้าน
+#     ช่วงเช้า  วัด 8 รอบ ได้หน้าปกติ 2 รอบ (เส้นโค้งไหลถึง 310 การ์ด)
+#     ช่วงบ่าย  โหลด 30 ครั้งติด (3 รอบ x 10 ครั้ง) ได้หน้าแบบ A ทุกครั้ง
+#   ระหว่างสองช่วงนั้นคือการทดสอบหนักของเราเอง (ดึงรีวิวจริงไปราว 1,400 อัน)
+#
+#   ถ้าไม่มีเบรกเกอร์ deep scan จะเดินครบทุกร้านในคิวโดยได้ 0 รีวิว
+#   เสียเวลาเป็นชั่วโมงและยิ่งทำให้สภาพแย่ลง
+#
+#   คืนค่าผ่านช่อง "blocked" เดิม เพราะ deep_scan.py/auto_refresh.py
+#   มี logic พักเป็นชั่วโมงแล้วลองใหม่อยู่แล้ว ไม่ต้องต่อท่อใหม่
+DEEP_LIMITED_STREAK_STOP = 3
 # deep scan: ล้มเหลวแบบ "เข้าไม่ถึงหน้ารีวิว" กี่ครั้งถึงเลิกตามร้านนั้น
 # (ยอมแพ้ = ไม่ตั้ง deep_scanned_at แต่ deep_attempts >= ค่านี้ → คิวรีแยกออกจาก "เก็บสำเร็จ" ได้)
 DEEP_MAX_ATTEMPTS = 3
@@ -875,6 +890,7 @@ async def run_deep_scan(
     try:
         pending_commit = 0
         block_streak = 0
+        limited_streak = 0
         done_names: list[str] = []
 
         for i, name in enumerate(place_names):
@@ -896,6 +912,11 @@ async def run_deep_scan(
             # ธงจาก scrape_place: เข้าไม่ถึงหน้ารีวิว (กดแท็บไม่ติด / scroll แล้วไม่เจอการ์ดเลย)
             reviews_failed = next(
                 (r["_reviews_failed"] for r in results if r and r.get("_reviews_failed")), None
+            )
+            # ธง: Google เสิร์ฟ "หน้าแบบจำกัด" ให้ client ที่ไม่ได้ล็อกอิน
+            # (ดู detect_limited_view) — ร้านไม่ได้ผิดอะไร จึงต้องไม่กิน deep_attempts
+            limited_view = next(
+                (r["_limited_view"] for r in results if r and r.get("_limited_view")), None
             )
 
             # save_to_db ข้ามรายการที่เป็น _blocked / นอก bbox ให้อยู่แล้ว
@@ -953,7 +974,17 @@ async def run_deep_scan(
                 # ไม่งั้นร้านกลุ่มนี้จะถูกลองใหม่ไม่รู้จบโดยไม่มีเพดาน
                 partial = bool(saved_ids) and not reviews_failed and not enough
                 attempts = None
-                if (reviews_failed or partial) and saved_ids:
+                # ── ไม่นับความพยายามเมื่อเจอหน้าแบบจำกัด ──
+                #
+                # ⚠️ เหตุผล (วัดเมื่อ 2026-10-03)
+                #   น้ำตกแก่งซองมีรีวิวใน DB แล้ว 782 อัน แต่วันนี้ดึงได้ 5
+                #   เพราะ Google เสิร์ฟหน้าแบบจำกัดให้ client ที่ไม่ได้ล็อกอิน
+                #   ถ้านับเป็นความพยายาม ร้านที่ข้อมูลครบอยู่แล้วจะถูกตีว่าล้มเหลว
+                #   ครบ 3 ครั้งแล้วเข้ากองยอมแพ้ถาวร ทั้งที่ไม่ได้ผิดอะไร
+                #
+                #   หลักเดียวกับตอนโดนบล็อก: นับเฉพาะความล้มเหลวที่เป็นของร้าน
+                #   ไม่ใช่ของสภาพแวดล้อมที่เราควบคุมไม่ได้
+                if (reviews_failed or partial) and saved_ids and not limited_view:
                     r = await session.execute(
                         text("""
                             UPDATE places SET deep_attempts = COALESCE(deep_attempts, 0) + 1
@@ -963,7 +994,10 @@ async def run_deep_scan(
                     )
                     attempts = max((row[0] for row in r.fetchall()), default=None)
 
-                if reviews_failed:
+                if limited_view:
+                    why = (f"{limited_view} — ดึงได้ {collected} จากเพดาน {ceil} "
+                           f"(ไม่นับเป็นความพยายาม รอหน้าแบบปกติรอบหน้า)")
+                elif reviews_failed:
                     why = f"เข้าไม่ถึงหน้ารีวิว ({reviews_failed})"
                 elif not saved_ids:
                     why = "หน้าร้านโหลดไม่ขึ้น/นอกพื้นที่พิษณุโลก"
@@ -992,6 +1026,20 @@ async def run_deep_scan(
                     break
             else:
                 block_streak = 0
+
+            # ── เบรกเกอร์หน้าแบบจำกัด (ดู DEEP_LIMITED_STREAK_STOP) ──
+            # นับเฉพาะร้านที่ "ไม่สำเร็จเพราะหน้าจำกัด" — ร้านที่เก็บได้ครบรีเซ็ตตัวนับ
+            if limited_view and not scraped_ok:
+                limited_streak += 1
+                print(f"   🚧 หน้าแบบจำกัด — ติดกัน {limited_streak} ร้าน")
+                if limited_streak >= DEEP_LIMITED_STREAK_STOP:
+                    blocked_signal = (f"Google เสิร์ฟหน้าแบบจำกัดติดกัน "
+                                      f"{limited_streak} ร้าน")
+                    print(f"   หยุดรอบนี้ — ช่วงนี้ยิงต่อไปได้ 0 รีวิว "
+                          f"(ไม่มีร้านไหนถูกนับว่าล้มเหลว)")
+                    break
+            else:
+                limited_streak = 0
 
             if pending_commit >= DEEP_COMMIT_EVERY_REVIEWS:
                 await session.commit()

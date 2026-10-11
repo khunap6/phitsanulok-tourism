@@ -13,9 +13,14 @@ import ReviewList from '../components/ReviewList'
 import SeverityPie from '../components/SeverityPie'
 import { dateKey, useInsights, useTopPlaces, type ViewMode } from '../hooks/useInsights'
 import { formatCount, formatRate } from '../utils/format'
+import { useBizStatus } from '../hooks/useBizStatus'
 import { useDateRange } from '../hooks/useDateRange'
 import { usePlaces } from '../hooks/usePlaces'
 import { useReviews } from '../hooks/useReviews'
+import {
+  SeverityHigh, SeverityLow, SeverityMedium, ViewAll, ViewComplaints, ViewPraise,
+} from '../components/icons'
+import { ALL_CATEGORIES, categoryLabel } from '../utils/categoryLabel'
 
 // ── Zone hooks ────────────────────────────────────────────────────────────
 interface ZoneSummary {
@@ -30,13 +35,17 @@ interface ZoneSummary {
   top_category: string | null
 }
 
-function useZones(dateRange?: DateRange) {
+function useZones(dateRange?: DateRange, status = 'operational') {
   return useQuery<ZoneSummary[]>({
-    queryKey: ['zones', dateKey(dateRange)],
+    queryKey: ['zones', dateKey(dateRange), status],
     queryFn: async () => {
       const url = new URL('/api/insights/zones', window.location.origin)
       if (dateRange?.from) url.searchParams.set('date_from', dateRange.from)
       if (dateRange?.to) url.searchParams.set('date_to', dateRange.to)
+      // ⚠️ ต้องส่งเสมอ — default ของ endpoint นี้คือ "all" ซึ่งรวมร้านที่ปิดแล้ว
+      // ไม่เหมือน /summary และ /top-places ที่หน้านี้เรียกด้วย operational
+      // ถ้าไม่ส่ง การ์ดโซนจะนับร้านปิด 25 แห่ง/รีวิว 3,352 อัน แต่การ์ด KPI ไม่นับ
+      url.searchParams.set('status', status)
       const res = await fetch(url.toString())
       if (!res.ok) return []
       return res.json()
@@ -45,25 +54,14 @@ function useZones(dateRange?: DateRange) {
   })
 }
 
-const ALL_CATEGORIES = [
-  'การเดินทางและที่จอดรถ',
-  'ความสะอาดและสิ่งแวดล้อม',
-  'ราคาและความคุ้มค่า',
-  'การบริการและเจ้าหน้าที่',
-  'ความปลอดภัย',
-  'สิ่งอำนวยความสะดวก',
-  'ข้อมูลและป้ายบอกทาง',
-  'ความแออัดและการจัดการ',
-  'พ่อค้าแม่ค้าและการรบกวน',
-  'อื่นๆ',
-]
-
 export default function Dashboard() {
   const [selectedPlace, setSelectedPlace] = useState<number | null>(null)
   const [filterSeverity, setFilterSeverity] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('complaints')
-  const [bizStatus, setBizStatus] = useState('operational')
+  // สถานะร้านอยู่ใน URL เหมือนช่วงเวลา — ทุกหน้าอ่านจากที่เดียว
+  // (ดู hooks/useBizStatus.ts สำหรับบั๊กที่เกิดตอนแยกกันถือคนละก้อน)
+  const [bizStatus, setBizStatus] = useBizStatus()
   // ช่วงเวลาอยู่ใน URL — เปลี่ยนหน้า/refresh แล้วไม่หาย (ดู hooks/useDateRange.ts)
   const [dateRange, setDateRange] = useDateRange()
   const [drillCategory, setDrillCategory] = useState<string | null>(null)
@@ -76,7 +74,7 @@ export default function Dashboard() {
     5, bizStatus, dateRange, placeSort, MIN_REVIEWS_FOR_RATE,
   )
   const { data: places = [] } = usePlaces()
-  const { data: zones = [] } = useZones(dateRange)
+  const { data: zones = [] } = useZones(dateRange, bizStatus)
 
   // รายการรีวิว — ใช้ /reviews ตัวเดียวทั้งโหมด "ทุกร้าน" และ "เลือกร้าน"
   // (ส่ง place_id) เพื่อให้ตัวกรองหลักของหน้า ลำดับ และยอดรวม เป็นชุดเดียวกันเสมอ
@@ -114,8 +112,10 @@ export default function Dashboard() {
 
   // "ปัญหาหลัก" = ปัญหาจริงตัวแรก (ข้ามความคิดเห็นทั่วไป/อื่นๆ) เสมอ ไม่ว่าจะกดปุ่มไหน
   const NON_PROBLEM = ['ความคิดเห็นทั่วไป (ไม่ระบุปัญหา)', 'อื่นๆ']
-  const topCategory =
-    insights?.top_pain_point_categories?.find(c => !NON_PROBLEM.includes(c.category))?.category ?? '—'
+  // แปลงชื่อหลังจากกรองแล้ว — NON_PROBLEM เทียบกับ key ไม่ใช่ชื่อที่แสดง
+  const topCategory = categoryLabel(
+    insights?.top_pain_point_categories?.find(c => !NON_PROBLEM.includes(c.category))?.category,
+  ) ?? '—'
 
   return (
     <div className="min-h-screen bg-brand-bg p-6 space-y-6">
@@ -150,7 +150,8 @@ export default function Dashboard() {
       </div>
       {bizStatus === 'closed' && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-2 text-sm text-red-300">
-          🔴 กำลังดูเฉพาะ<b>ร้านที่ปิด</b> — วิเคราะห์รีวิวเพื่อหาว่าอาจปิดเพราะเหตุใด (คลิกกราฟเพื่อเจาะดูรีวิว)
+          <ViewComplaints size={14} className="inline mr-1 -mt-0.5" />
+          กำลังดูเฉพาะ<b>ร้านที่ปิด</b> — วิเคราะห์รีวิวเพื่อหาว่าอาจปิดเพราะเหตุใด (คลิกกราฟเพื่อเจาะดูรีวิว)
         </div>
       )}
 
@@ -202,11 +203,18 @@ export default function Dashboard() {
           rateOf="คำบ่นทั้งหมด"
           unit="คอมเมนต์"
           accentColor="#ef4444"
-          breakdown={{
-            high: insights?.severity_counts?.['high'] ?? 0,
-            medium: insights?.severity_counts?.['medium'] ?? 0,
-            low: insights?.severity_counts?.['low'] ?? 0,
-          }}
+          /* กราฟวงกลมบอกทั้งจำนวนและสัดส่วนของสามระดับในที่เดียว
+             จึงแทนแถบชิป "สูง/กลาง/ต่ำ" และแทนแผงวงกลมที่เคยแยกอยู่ด้านล่าง */
+          chart={
+            insights?.severity_counts ? (
+              <SeverityPie
+                embedded
+                data={insights.severity_counts}
+                share={insights.severity_share}
+                negativeTotal={insights.sentiment_counts?.negative ?? null}
+              />
+            ) : undefined
+          }
           riskPlaces={topPlaces?.slice(0, 3).map((p: any) => ({
             name: p.name,
             high_count: p.high_count,
@@ -225,9 +233,9 @@ export default function Dashboard() {
         <span className="text-brand-subtext text-sm">มุมมอง:</span>
         <div className="inline-flex rounded-lg border border-brand-border overflow-hidden">
           {[
-            { key: 'complaints', label: '🔴 คำบ่น', color: '#ef4444', hint: 'เห็นเฉพาะรีวิวเชิงลบ = pain point จริง' },
-            { key: 'praise',     label: '⭐ คำชม',  color: '#22c55e', hint: 'เห็นเฉพาะรีวิวเชิงบวก = จุดแข็ง' },
-            { key: 'all',        label: '📊 ทั้งหมด', color: '#3b82f6', hint: 'รวมทุกรีวิว ทุกอารมณ์ ทุกหมวด' },
+            { key: 'complaints', label: 'คำบ่น',  Icon: ViewComplaints, color: '#ef4444', hint: 'เห็นเฉพาะรีวิวเชิงลบ = pain point จริง' },
+            { key: 'praise',     label: 'คำชม',   Icon: ViewPraise,     color: '#22c55e', hint: 'เห็นเฉพาะรีวิวเชิงบวก = จุดแข็ง' },
+            { key: 'all',        label: 'ทั้งหมด', Icon: ViewAll,        color: '#3b82f6', hint: 'รวมทุกรีวิว ทุกอารมณ์ ทุกหมวด' },
           ].map((m) => (
             <button
               key={m.key}
@@ -237,7 +245,7 @@ export default function Dashboard() {
               }`}
               style={viewMode === m.key ? { background: m.color } : {}}
             >
-              {m.label}
+              <m.Icon size={14} className="inline mr-1 -mt-0.5" />{m.label}
             </button>
           ))}
         </div>
@@ -248,9 +256,10 @@ export default function Dashboard() {
         </span>
       </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2">
+      {/* Charts Row — วงกลมย้ายไปอยู่ในการ์ด "ปัญหาระดับสูง" แล้ว
+          กราฟแท่งจึงกินความกว้างเต็มแถว */}
+      <div className="grid grid-cols-1 gap-4">
+        <div>
           {insights?.top_pain_point_categories && (
             <PainPointChart
               data={insights.top_pain_point_categories}
@@ -258,30 +267,28 @@ export default function Dashboard() {
               totalWithText={insights.total_with_text ?? null}
               title={
                 viewMode === 'praise'
-                  ? '⭐ หมวดที่ถูกชมมากที่สุด'
+                  ? 'หมวดที่ถูกชมมากที่สุด'
                   : viewMode === 'all'
-                  ? '📊 หมวดที่พูดถึงมากที่สุด'
-                  : '🔴 Pain Point ตามหมวดหมู่'
+                  ? 'หมวดที่พูดถึงมากที่สุด'
+                  : 'Pain Point ตามหมวดหมู่'
               }
               onCategoryClick={(c) => setDrillCategory(c === drillCategory ? null : c)}
             />
           )}
         </div>
-        <div>
-          {insights?.severity_counts && (
-            <SeverityPie
-              data={insights.severity_counts}
-              share={insights.severity_share}
-              negativeTotal={insights.sentiment_counts?.negative ?? null}
-            />
-          )}
-        </div>
       </div>
 
-      {/* Drill-down: ร้านที่มีปัญหาหมวดที่คลิก */}
-      {drillCategory && (
-        <CategoryDrilldown category={drillCategory} status={bizStatus} viewMode={viewMode} dateRange={dateRange} onClose={() => setDrillCategory(null)} />
-      )}
+      {/* รายชื่อร้าน — แสดงตลอด ไม่ต้องให้ผู้ใช้กดแท่งกราฟก่อน (ข้อ 5)
+          เนื้อหาเปลี่ยนตามมุมมอง: คำบ่น→ร้านที่ถูกบ่น · คำชม→ร้านที่ถูกชม · ทั้งหมด→ทั้งสองแบบ
+          กดแท่งกราฟ = เจาะเฉพาะหมวดนั้น · กด "ล้างหมวด" = กลับมาทุกหมวด */}
+      <CategoryDrilldown
+        category={drillCategory}
+        status={bizStatus}
+        viewMode={viewMode}
+        dateRange={dateRange}
+        onClose={drillCategory ? () => setDrillCategory(null) : undefined}
+        onCategoryChange={setDrillCategory}
+      />
 
       {/* จุดเด่น (positive) — โชว์ในโหมด "คำบ่น" และ "ทั้งหมด" (ให้เห็นสองด้าน) — ซ่อนใน "คำชม" (เพราะซ้ำกับกราฟ) */}
       {viewMode !== 'praise' && (
@@ -343,8 +350,8 @@ export default function Dashboard() {
                   {/* ห้ามโชว์ % โดยไม่มี n — formatRate ใส่ (a/b) ให้เสมอ */}
                   <span className="text-red-400 text-sm w-40 text-right whitespace-nowrap">
                     {placeSort === 'rate'
-                      ? formatRate(p.high_rate, p.high_count_with_text, p.review_count_with_text)
-                      : `🔥 ${formatCount(p.high_count)} สูง`}
+                      ? formatRate(p.high_rate, p.high_count, p.review_count)
+                      : `${formatCount(p.high_count)} สูง`}
                   </span>
                 </div>
               )
@@ -385,14 +392,21 @@ export default function Dashboard() {
 
                   {/* ระดับความรุนแรง: สูง / กลาง / ต่ำ (ใช้คำเดียวกันทั้งเว็บ) */}
                   <div className="flex justify-between text-xs text-brand-subtext mb-3">
-                    <span className="text-red-400">🔥 {z.high_count} สูง</span>
-                    <span className="text-yellow-400">⚠️ {z.medium_count} กลาง</span>
-                    <span className="text-green-400">💬 {z.low_count} ต่ำ</span>
+                    <span className="text-red-400 inline-flex items-center gap-1">
+                      <SeverityHigh size={12} /> {z.high_count} สูง
+                    </span>
+                    <span className="text-yellow-400 inline-flex items-center gap-1">
+                      <SeverityMedium size={12} /> {z.medium_count} กลาง
+                    </span>
+                    <span className="text-green-400 inline-flex items-center gap-1">
+                      <SeverityLow size={12} /> {z.low_count} ต่ำ
+                    </span>
                   </div>
 
                   {z.top_category && (
                     <div className="text-xs bg-brand-border text-brand-subtext px-2 py-1 rounded truncate">
-                      🔴 {z.top_category}
+                      <ViewComplaints size={11} className="inline mr-1 -mt-0.5" />
+                      {categoryLabel(z.top_category)}
                     </div>
                   )}
 
@@ -423,9 +437,10 @@ export default function Dashboard() {
             onChange={e => setFilterSeverity(e.target.value)}
           >
             <option value="">— ทุกระดับ —</option>
-            <option value="high">🔥 สูง</option>
-            <option value="medium">⚠️ กลาง</option>
-            <option value="low">💬 ต่ำ</option>
+            {/* <option> รับได้แต่ข้อความล้วน ใส่คอมโพเนนต์ไอคอนไม่ได้ */}
+            <option value="high">สูง</option>
+            <option value="medium">กลาง</option>
+            <option value="low">ต่ำ</option>
           </select>
           <select
             className="bg-brand-bg border border-brand-border text-brand-text rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-primary"
@@ -434,7 +449,8 @@ export default function Dashboard() {
           >
             <option value="">— ทุกหมวด —</option>
             {ALL_CATEGORIES.map(c => (
-              <option key={c} value={c}>{c}</option>
+              /* value = key เดิม (ส่งกลับไปกรองที่ API) · ข้อความ = ชื่อที่แสดง */
+              <option key={c} value={c}>{categoryLabel(c)}</option>
             ))}
           </select>
         </div>

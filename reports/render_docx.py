@@ -12,6 +12,8 @@ from docx.shared import Pt, RGBColor
 
 from reports.report_data import ReportData
 
+from api.filters import category_label
+
 THAI_FONT = "Leelawadee UI"
 SEV_LABEL = {"high": "สูง", "medium": "กลาง", "low": "ต่ำ"}
 RED = RGBColor(0xDC, 0x26, 0x26)
@@ -68,6 +70,27 @@ def _heading(doc: Document, text: str) -> None:
     p.space_after = Pt(4)
 
 
+def _cmp_text(cur: float, ref: float | None, digits: int = 0) -> str:
+    """ค่าอ้างอิง + ส่วนต่าง — ต้องมีค่าอ้างอิงเสมอ ไม่งั้น "+12" ตีความไม่ได้"""
+    if ref is None:
+        return "— ไม่มีข้อมูล"
+    d = cur - ref
+    ref_txt = f"{ref:,.{digits}f}"
+    if abs(d) < 10 ** -digits / 2:
+        return f"{ref_txt} (–)"
+    return f"{ref_txt} ({'+' if d > 0 else ''}{d:,.{digits}f})"
+
+
+def _sev_text(sev: dict, digits: int = 0) -> str:
+    """สัดส่วน สูง/กลาง/ต่ำ พร้อม n"""
+    tot = sum(sev.get(k, 0) for k in ("high", "medium", "low"))
+    if not tot:
+        return "—"
+    return " · ".join(
+        f"{label} {sev.get(k, 0):,.{digits}f} ({sev.get(k, 0) / tot * 100:.0f}%)"
+        for k, label in (("high", "สูง"), ("medium", "กลาง"), ("low", "ต่ำ")))
+
+
 def build(data: ReportData, out_path: str) -> str:
     doc = Document()
     _set_thai_font(doc)
@@ -115,42 +138,82 @@ def build(data: ReportData, out_path: str) -> str:
                 ["คำชม", f"{data.praise_in_month:,}", "จุดแข็งที่ควรรักษาไว้"],
                 ["ปัญหาระดับสูง", f"{data.severity.get('high', 0):,}", "ต้องแก้เร่งด่วน"]])
 
-    # ── 1. ปัญหาที่พบมากสุด ──
-    _heading(doc, "1. ปัญหาที่พบมากที่สุด")
+    # ── 1. ภาพรวมเทียบกับช่วงอื่น (ข้อ 9) ──
+    # ทุกตัวเลขมาจากคิวรี bucket รายเดือนชุดเดียวกัน จึงเทียบกันได้จริง (กฎ 1)
+    _heading(doc, "1. ภาพรวมเทียบกับช่วงอื่น")
+    ly = data.ly_available
+    _add_table(doc,
+               ["ตัวชี้วัด", data.period_label,
+                f"เทียบ {data.prev_label}", f"เทียบ {data.ly_label}", "เทียบค่าเฉลี่ย"],
+               [["จำนวนคอมเมนต์", f"{data.reviews_in_month:,}",
+                 _cmp_text(data.reviews_in_month, data.prev_reviews),
+                 _cmp_text(data.reviews_in_month, data.ly_reviews if ly else None),
+                 _cmp_text(data.reviews_in_month, data.avg_reviews, 1)],
+                ["คำบ่น", f"{data.complaints_in_month:,}",
+                 _cmp_text(data.complaints_in_month, data.prev_complaints),
+                 _cmp_text(data.complaints_in_month, data.ly_complaints if ly else None),
+                 _cmp_text(data.complaints_in_month, data.avg_complaints, 1)],
+                ["คำชม", f"{data.praise_in_month:,}",
+                 _cmp_text(data.praise_in_month, data.prev_praise),
+                 _cmp_text(data.praise_in_month, data.ly_praise if ly else None),
+                 _cmp_text(data.praise_in_month, data.avg_praise, 1)],
+                ["สถานที่ที่ถูกพูดถึง", f"{data.places_with_reviews:,}",
+                 _cmp_text(data.places_with_reviews, data.prev_places),
+                 _cmp_text(data.places_with_reviews, data.ly_places if ly else None),
+                 _cmp_text(data.places_with_reviews, data.avg_places, 1)],
+                ["สัดส่วนความรุนแรง", _sev_text(data.severity),
+                 _sev_text(data.prev_severity),
+                 _sev_text(data.ly_severity) if ly else "— ไม่มีข้อมูล",
+                 _sev_text(data.avg_severity, 1)]])
+    note = doc.add_paragraph()
+    nr = note.add_run(
+        "ตัวเลขในวงเล็บคือส่วนต่างจากค่าที่นำมาเทียบ · "
+        "\"สถานที่ที่ถูกพูดถึง\" นับร้านที่มีรีวิวในเดือนนั้น ไม่ใช่ร้านที่เพิ่งเพิ่มเข้าระบบ "
+        "(ฐานข้อมูลไม่ได้บันทึกวันที่เพิ่มร้าน) · "
+        f"{data.avg_label} คิดจากเดือนที่มีข้อมูลจริงเท่านั้น ไม่เติมศูนย์")
+    nr.font.size = Pt(9)
+    nr.font.color.rgb = GRAY
+
+    # ── 2. ปัญหาที่พบมากสุด ──
+    _heading(doc, "2. ปัญหาที่พบมากที่สุด")
     _add_table(doc,
                ["หมวดปัญหา", "จำนวน", "สัดส่วน", "ระดับสูง", "เทียบเดือนก่อน"],
-               [[f"{i+1}. {t['category']}", t["count"], f"{t['pct']}%", t["high"],
+               [[f"{i+1}. {category_label(t['category'])}", t["count"], f"{t['pct']}%", t["high"],
                  _delta_text(t["delta"])] for i, t in enumerate(data.top_problems)],
                red_cols={3})
 
     # ── 2. ระดับความรุนแรง ──
     sev_total = sum(data.severity.values()) or 1
-    _heading(doc, "2. ระดับความรุนแรงของปัญหา")
+    _heading(doc, "3. ระดับความรุนแรงของปัญหา")
     _add_table(doc, ["ระดับ", "จำนวน", "สัดส่วน"],
                [[SEV_LABEL.get(k, k), f"{v:,}", f"{v / sev_total * 100:.1f}%"]
                 for k, v in sorted(data.severity.items(),
                                    key=lambda x: {"high": 0, "medium": 1, "low": 2}.get(x[0], 9))])
 
     # ── 3. โซน ──
-    _heading(doc, "3. เปรียบเทียบตามพื้นที่")
+    _heading(doc, "4. เปรียบเทียบตามพื้นที่")
     _add_table(doc, ["โซน", "คำบ่น", "คำชม", "ปัญหาหลัก"],
-               [[z["zone"], z["complaints"], z["praise"], z["top_category"]] for z in data.zones])
+               [[z["zone"], z["complaints"], z["praise"],
+                 category_label(z["top_category"])] for z in data.zones])
 
     # ── 4. ร้านที่ถูกร้องเรียน ──
-    _heading(doc, "4. สถานที่ที่ถูกร้องเรียนมากที่สุด")
+    _heading(doc, "5. สถานที่ที่ถูกร้องเรียนมากที่สุด")
     _add_table(doc, ["สถานที่", "โซน", "คำบ่น", "ระดับสูง", "ปัญหาหลัก"],
-               [[f"{i+1}. {w['name']}", w["zone"], w["complaints"], w["high"], w["top_category"]]
+               [[f"{i+1}. {w['name']}", w["zone"], w["complaints"], w["high"],
+                 category_label(w["top_category"])]
                 for i, w in enumerate(data.worst_places)],
                red_cols={3})
 
     # ── 5. จุดเด่น ──
-    _heading(doc, "5. จุดเด่นที่ได้รับคำชม")
+    _heading(doc, "6. จุดเด่นที่ได้รับคำชม")
     _add_table(doc, ["หมวด", "คำชม"],
-               [[f"{i+1}. {h['category']}", h["count"]] for i, h in enumerate(data.highlights)])
+               [[f"{i+1}. {category_label(h['category'])}", h["count"]]
+                for i, h in enumerate(data.highlights)])
 
     # ── 6. ตัวอย่างรีวิว ──
     if data.sample_reviews:
-        _heading(doc, f"6. ตัวอย่างรีวิว — {data.top_problems[0]['category']}")
+        _heading(doc,
+                 f"7. ตัวอย่างรีวิว — {category_label(data.top_problems[0]['category'])}")
         for s in data.sample_reviews:
             meta = doc.add_paragraph()
             mr = meta.add_run(f"{s['place']} · {'★' * (s['rating'] or 0)}")

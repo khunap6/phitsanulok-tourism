@@ -1,16 +1,18 @@
+import { ClosedPermanently, ClosedTemporarily } from './icons'
+
 // ป้ายสถานะร้าน — แสดงเฉพาะร้านที่ปิด (ร้านเปิดปกติไม่ต้องมีป้าย)
 export default function StatusBadge({ status }: { status?: string }) {
   if (status === 'closed_permanently') {
     return (
-      <span className="text-xs px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 shrink-0">
-        🔴 ปิดถาวร
+      <span className="text-xs px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 shrink-0 inline-flex items-center gap-1">
+        <ClosedPermanently size={12} /> ปิดถาวร
       </span>
     )
   }
   if (status === 'closed_temporarily') {
     return (
-      <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 shrink-0">
-        🟡 ปิดชั่วคราว
+      <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 shrink-0 inline-flex items-center gap-1">
+        <ClosedTemporarily size={12} /> ปิดชั่วคราว
       </span>
     )
   }

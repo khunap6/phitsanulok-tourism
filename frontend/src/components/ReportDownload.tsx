@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Report, ReportHtml, ReportPdf, ReportWord } from './icons'
 
 interface MonthOption {
   year: number
@@ -21,9 +22,9 @@ function useReportMonths() {
 }
 
 const FORMATS = [
-  { key: 'pdf',  label: '📄 PDF',  hint: 'พร้อมพิมพ์ / ส่งอาจารย์' },
-  { key: 'docx', label: '📝 Word', hint: 'แก้ไขต่อเองได้' },
-  { key: 'html', label: '🌐 เปิดดู', hint: 'เปิดในแท็บใหม่' },
+  { key: 'pdf',  label: 'PDF',   Icon: ReportPdf,  hint: 'พร้อมพิมพ์ / ส่งอาจารย์' },
+  { key: 'docx', label: 'Word',  Icon: ReportWord, hint: 'แก้ไขต่อเองได้' },
+  { key: 'html', label: 'เปิดดู', Icon: ReportHtml, hint: 'เปิดในแท็บใหม่' },
 ]
 
 export default function ReportDownload() {
@@ -65,7 +66,9 @@ export default function ReportDownload() {
 
   return (
     <div className="bg-brand-card rounded-xl p-5 border border-brand-border">
-      <h3 className="text-brand-text font-semibold">📑 รายงานประจำเดือน</h3>
+      <h3 className="text-brand-text font-semibold inline-flex items-center gap-2">
+        <Report size={16} /> รายงานประจำเดือน
+      </h3>
       <p className="text-brand-subtext text-xs mt-0.5 mb-4">
         สรุปปัญหา · เปรียบเทียบโซน · ร้านที่ถูกร้องเรียน · จุดเด่น · ตัวอย่างรีวิว
       </p>
@@ -102,7 +105,9 @@ export default function ReportDownload() {
                            bg-brand-bg text-brand-text hover:border-brand-primary
                            disabled:opacity-50 disabled:cursor-wait transition-colors"
               >
-                {busy === f.key ? '⏳ กำลังสร้าง...' : f.label}
+                {busy === f.key ? 'กำลังสร้าง...' : (
+                  <><f.Icon size={14} className="inline mr-1 -mt-0.5" />{f.label}</>
+                )}
               </button>
             ))}
           </div>
