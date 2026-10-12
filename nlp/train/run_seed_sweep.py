@@ -1,9 +1,18 @@
 """run_seed_sweep.py — เทรนซ้ำหลายรอบ แล้วรายงานค่าเฉลี่ยกับส่วนเบี่ยงเบน
 
 ⚠️ ทำไมต้องมีสคริปต์นี้
-  ระหว่างทำโปรเจกต์ เทรนโมเดลอารมณ์รายหมวดสองรอบด้วยข้อมูลชุดเดียวกันทุกประการ
-  ได้ macro-F1 0.5933 กับ 0.7322 ห่างกัน 0.139 (ทั้งระบบ 0.8056 กับ 0.8479)
-  เกือบสรุปผิดว่าการแก้ป้ายรอบนั้นทำให้โมเดลแย่ลง — ที่จริงเป็นความผันผวนล้วน ๆ
+  ระหว่างทำโปรเจกต์ เทรนโมเดลอารมณ์รายหมวดสองรอบแล้วได้ macro-F1
+  0.5933 กับ 0.7322 ตอนนั้นสรุปว่าเป็นความผันผวนของ seed
+
+  สคริปต์นี้ถูกเขียนขึ้นมาเพื่อยืนยันข้อสรุปนั้น และผลคือ **ข้อสรุปนั้นผิด**
+    ตรึง config รัน 3 seed  12 epoch -> อารมณ์รายหมวด 0.6721 ± 0.0107
+                           16 epoch -> อารมณ์รายหมวด 0.6814 ± 0.0355
+    ความผันผวนของ seed เล็กกว่า 0.139 มาก และ epoch ก็ไม่ใช่สาเหตุ
+    สองรอบนั้นไม่ได้บันทึก seed และ hyperparameter ไว้ จึงย้อนตรวจไม่ได้
+
+  ความผันผวนที่วัดได้จริงอยู่ที่โมเดลหมวด
+    micro-F1 0.8449 ± 0.0310 · macro-F1 0.7139 ± 0.0502
+    หมวด 7 ±0.2074 · หมวด 2 ±0.1406 · หมวด 8 ±0.1168 (gold ไม่ถึง 20 ทั้งสาม)
 
   ชุดประเมินมี 251 รีวิว / 493 คู่ และบางหมวดมีตัวอย่างไม่ถึง 20
   บนขนาดนี้ ตัวเลขจากการรันครั้งเดียว "ไม่ใช่ผลของวิธี" แต่เป็นผลของวิธี + การสุ่ม
@@ -44,6 +53,12 @@ METRICS = [
     ("cat_macro_f1", ["category_multilabel", "macro_f1"], "หมวด macro-F1"),
     ("cat_precision", ["category_multilabel", "precision"], "หมวด precision"),
     ("cat_recall", ["category_multilabel", "recall"], "หมวด recall"),
+    ("overall_macro_f1",
+     ["overall_sentiment", "โมเดลใหม่ (overall-sentiment)", "macro_f1"],
+     "อารมณ์รวม macro-F1"),
+    ("overall_neg_f1",
+     ["overall_sentiment", "โมเดลใหม่ (overall-sentiment)", "per_class", "negative", 2],
+     "อารมณ์รวม F1 ของ negative"),
     ("asp_macro_f1",
      ["aspect_sentiment", "โมเดลอารมณ์รายหมวด", "macro_f1"],
      "อารมณ์รายหมวด macro-F1"),
@@ -101,6 +116,11 @@ def main() -> None:
     ap.add_argument("--epochs-asp", type=int, default=12)
     ap.add_argument("--skip-cat", action="store_true",
                     help="ไม่เทรนโมเดลหมวดใหม่ วัดเฉพาะความผันผวนของโมเดลอารมณ์")
+    ap.add_argument("--epochs-overall", type=int, default=12)
+    # ⚠️ ปิดไว้เป็นค่าตั้งต้นเพราะทำให้แต่ละรอบนานขึ้นอีกเท่าตัว
+    #   แต่ถ้าจะรายงานตัวเลขอารมณ์รวมลงเล่ม ต้องเปิด ไม่งั้นค่านั้นยังเป็นรอบเดียว
+    ap.add_argument("--with-overall", action="store_true",
+                    help="เทรนโมเดลอารมณ์รวมใหม่ทุกรอบด้วย")
     a = ap.parse_args()
 
     runs = []
@@ -113,6 +133,9 @@ def main() -> None:
                  "--epochs", str(a.epochs_cat)], "เทรนโมเดลหมวด (multi-label)")
         run(["nlp/train/train_aspect_sentiment.py", "--seed", str(sd),
              "--epochs", str(a.epochs_asp)], "เทรนโมเดลอารมณ์รายหมวด")
+        if a.with_overall:
+            run(["nlp/train/train_overall_sentiment.py", "--seed", str(sd),
+                 "--epochs", str(a.epochs_overall)], "เทรนโมเดลอารมณ์รวม")
         run(["nlp/train/evaluate_multiaspect.py"], "ประเมินบน gold")
 
         s = json.loads(SUMMARY.read_text(encoding="utf-8"))
@@ -148,6 +171,10 @@ def main() -> None:
         "n_runs": len(runs),
         "seeds": a.seeds,
         "เทรนโมเดลหมวดใหม่ทุกรอบ": not a.skip_cat,
+        # ⚠️ ต้องติดไว้ทุกครั้ง เทียบ sweep สองชุดที่ epoch ต่างกันไม่ได้
+        "epochs_cat": a.epochs_cat, "epochs_asp": a.epochs_asp,
+        "เทรนโมเดลอารมณ์รวมใหม่ทุกรอบ": a.with_overall,
+        "epochs_overall": a.epochs_overall if a.with_overall else None,
         "_readme": [
             "ส่วนแบ่ง train/val คงที่ทุกรอบ ที่เปลี่ยนคือการสุ่มของรอบการเทรน",
             "sd ที่เห็นคือความผันผวนของการเทรน ไม่ใช่ความผันผวนของการแบ่งข้อมูล",
@@ -162,6 +189,11 @@ def main() -> None:
 
     L = [f"# ความผันผวนระหว่างรอบการเทรน ({len(runs)} รอบ)", "",
          f"สร้างเมื่อ {doc['generated_at']} · seed ที่ใช้ {a.seeds}", "",
+         f"**config** โมเดลหมวด {a.epochs_cat} epoch · "
+         f"โมเดลอารมณ์รายหมวด {a.epochs_asp} epoch"
+         + (f" · โมเดลอารมณ์รวม {a.epochs_overall} epoch" if a.with_overall
+            else " · โมเดลอารมณ์รวม **ไม่ได้เทรนใหม่** (ค่าคงเดิมทุกรอบ sd=0)"), "",
+         "⚠️ เทียบ sweep สองชุดที่ config ต่างกันไม่ได้", "",
          "ส่วนแบ่ง train/val **คงที่ทุกรอบ** ที่เปลี่ยนคือการสุ่มค่าเริ่มต้น",
          "ของหัวจำแนก ลำดับ batch และ dropout ตัวเลข sd ด้านล่างจึงเป็น",
          "**ความผันผวนของการเทรน** ไม่ใช่ความผันผวนของการแบ่งข้อมูล", "",
