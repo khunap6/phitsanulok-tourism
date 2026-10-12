@@ -274,6 +274,7 @@ export default function Dashboard() {
                   : 'Pain Point ตามหมวดหมู่'
               }
               onCategoryClick={(c) => setDrillCategory(c === drillCategory ? null : c)}
+              showLegacyUnitNote
             />
           )}
         </div>

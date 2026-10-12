@@ -419,6 +419,7 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
                   : `Pain Point ใน${summary.label}`
               }
               onCategoryClick={(c) => setDrillCategory(c === drillCategory ? null : c)}
+              showLegacyUnitNote
             />
           </div>
         )}

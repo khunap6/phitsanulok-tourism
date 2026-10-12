@@ -51,3 +51,4 @@ backup/*/training/
 backup/rating_only_text_*.json
 backup/silver_before_cat2_*/
 backup/silver_before_cat310_*/
+backup/models_*/

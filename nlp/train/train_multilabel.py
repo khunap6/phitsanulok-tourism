@@ -45,6 +45,38 @@ OUT_DIR = ROOT / "models" / "wangchanberta-category-multilabel"
 START_FROM = ROOT / "models" / "wangchanberta-category"
 SEED = 20261012
 
+# ⚠️ SEED ด้านบนใช้ตรึง "ส่วนแบ่ง train/val" เท่านั้น และต้องคงที่ตลอดไป
+#    ถ้าเปลี่ยน ส่วนแบ่งจะขยับ ตัวเลขทุกรอบที่เคยรายงานไว้จะเทียบกันไม่ได้
+#
+# run_seed ด้านล่างเป็นของคนละอย่าง — ตรึงการสุ่มค่าเริ่มต้นของหัวจำแนก
+# ลำดับ batch และ dropout ซึ่งเดิมไม่ได้ตรึงไว้เลย
+#
+# ⚠️ ทำไมต้องมี วัดได้จริงในโปรเจกต์นี้
+#    เทรนโมเดลอารมณ์รายหมวดสองรอบด้วยข้อมูลชุดเดียวกันทุกประการ
+#    ได้ macro-F1 0.5933 กับ 0.7322 ห่างกัน 0.139 (ทั้งระบบ 0.8056 กับ 0.8479)
+#    เกือบสรุปผิดว่าการแก้ป้ายรอบนั้นทำให้โมเดลแย่ลง
+#    ที่จริงเป็นความผันผวนของการเทรนล้วน ๆ
+#
+#    ผลที่ตามมา บนชุดประเมินขนาดนี้ห้ามสรุปว่าวิธีไหนดีกว่าจากการรันครั้งเดียว
+#    ต้องรันหลาย run_seed แล้วรายงานค่าเฉลี่ยกับส่วนเบี่ยงเบน
+def set_run_seed(run_seed: int):
+    """ตรึงการสุ่มทุกแหล่งของรอบการเทรน แล้วคืน generator ให้ DataLoader
+
+    ต้องเรียก *ก่อน* สร้างโมเดล ไม่งั้นหัวจำแนกถูกสุ่มไปแล้ว
+    """
+    random.seed(run_seed)
+    torch.manual_seed(run_seed)
+    torch.cuda.manual_seed_all(run_seed)
+    try:
+        import numpy as np
+        np.random.seed(run_seed)
+    except ImportError:
+        pass
+    g = torch.Generator()
+    g.manual_seed(run_seed)
+    return g
+
+
 
 def p(msg: str = "") -> None:
     try:
@@ -105,7 +137,8 @@ def score(P, Y, th):
     return micro, sum(f1s) / len(f1s), f1s
 
 
-def main(epochs: int, lr: float, batch_size: int, max_length: int) -> None:
+def main(epochs: int, lr: float, batch_size: int, max_length: int,
+         run_seed: int = SEED) -> None:
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
     cats = json.loads((ROOT / "shared" / "categories.json").read_text(encoding="utf-8"))
@@ -148,6 +181,8 @@ def main(epochs: int, lr: float, batch_size: int, max_length: int) -> None:
     p(f"เริ่มจาก {START_FROM.name} (เปลี่ยนเฉพาะหัวจำแนก)")
     p("")
 
+    # ⚠️ ต้องอยู่ก่อน from_pretrained เสมอ หัวจำแนกถูกสุ่มตอนนั้น
+    gen = set_run_seed(run_seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     tok = AutoTokenizer.from_pretrained(str(START_FROM))
     model = AutoModelForSequenceClassification.from_pretrained(
@@ -165,7 +200,8 @@ def main(epochs: int, lr: float, batch_size: int, max_length: int) -> None:
     p("")
 
     coll = make_collate(tok, max_length)
-    tl = DataLoader(MLDataset(train), batch_size=batch_size, shuffle=True, collate_fn=coll)
+    tl = DataLoader(MLDataset(train), batch_size=batch_size, shuffle=True,
+                    collate_fn=coll, generator=gen)
     vl = DataLoader(MLDataset(val), batch_size=batch_size * 2, collate_fn=coll)
 
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
@@ -222,6 +258,7 @@ def main(epochs: int, lr: float, batch_size: int, max_length: int) -> None:
         "category_ids": ids,
         "thresholds": {str(cid): round(th[i].item(), 3) for i, cid in enumerate(ids)},
         "val_micro_f1": micro[2], "val_macro_f1": macro,
+        "run_seed": run_seed,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     p(f"บันทึกโมเดลที่ {OUT_DIR.relative_to(ROOT)}")
 
@@ -232,5 +269,7 @@ if __name__ == "__main__":
     ap.add_argument("--lr", type=float, default=2e-5)
     ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--max-length", type=int, default=256)
+    ap.add_argument("--seed", type=int, default=SEED,
+                    help="ตรึงรอบการเทรน (ไม่ใช่ส่วนแบ่ง train/val)")
     a = ap.parse_args()
-    main(a.epochs, a.lr, a.batch_size, a.max_length)
+    main(a.epochs, a.lr, a.batch_size, a.max_length, a.seed)

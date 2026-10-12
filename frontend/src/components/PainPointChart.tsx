@@ -27,6 +27,15 @@ interface Props {
   negativeTotal?: number | null
   /** รีวิวที่มีข้อความทั้งหมด = ตัวส่วนของ rate_of_all */
   totalWithText?: number | null
+  /**
+   * บอกบนหน้าจอว่ากราฟนี้อ่านจากชั้นข้อมูลเดิม (1 หมวด/รีวิว)
+   *
+   * ⚠️ ต้องเปิดทุกที่ที่กราฟนี้อยู่หน้าเดียวกับแผง Multi-Aspect
+   *   สองที่นับคนละหน่วย ตัวเลขจึงไม่เท่ากันและ "ไม่ควรเท่า"
+   *   ถ้าไม่บอก ผู้อ่าน (รวมถึงกรรมการสอบ) จะคิดว่าระบบคำนวณผิด
+   *   เดิมเขียนไว้แต่ในคอมเมนต์โค้ด ซึ่งคนดูหน้าเว็บไม่เห็น
+   */
+  showLegacyUnitNote?: boolean
 }
 
 export default function PainPointChart({
@@ -35,6 +44,7 @@ export default function PainPointChart({
   title = 'Pain Point ตามหมวดหมู่',
   negativeTotal,
   totalWithText,
+  showLegacyUnitNote = false,
 }: Props) {
   const sorted = [...data].sort((a, b) => b.count - a.count)
   // ปรับความสูงตามจำนวนหมวด (แต่ละแถวเห็นชัด + ไม่ทับกัน)
@@ -85,6 +95,14 @@ export default function PainPointChart({
         <p className="text-brand-subtext text-xs mb-3 inline-flex items-center gap-1">
         <ClickHint size={13} /> คลิกแท่งเพื่อดูว่ามาจากร้านไหนบ้าง
       </p>
+      )}
+      {showLegacyUnitNote && (
+        <p className="text-amber-400/90 text-xs mb-3 leading-relaxed">
+          หน่วยนับของกราฟนี้คือ <span className="font-semibold">1 หมวดต่อ 1 รีวิว</span>{' '}
+          (หมวดหลักเท่านั้น) — ต่างจากแผง “วิเคราะห์รายหมวด” ด้านล่างที่นับ
+          ทุกหมวดที่รีวิวพูดถึง ตัวเลขสองที่จึงไม่เท่ากันโดยธรรมชาติ
+          ไม่ใช่ความผิดพลาดของการคำนวณ
+        </p>
       )}
       <ResponsiveContainer width="100%" height={chartHeight}>
         <BarChart data={chartData} layout="vertical" margin={{ left: 10, right: 96, top: 5, bottom: 5 }}>
