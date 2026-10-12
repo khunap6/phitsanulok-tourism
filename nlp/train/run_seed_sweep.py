@@ -74,6 +74,22 @@ METRICS = [
     ("e2e_micro_f1",
      ["end_to_end", "คู่ (หมวด, อารมณ์) ต้องตรงทั้งคู่", "micro_f1"],
      "ทั้งระบบ micro-F1"),
+    # ---- baseline ----
+    # ⚠️ baseline 3 ใน 4 ตัวคำนวณจากผลของโมเดล จึงแกว่งตามไปด้วย
+    #   ถ้ารายงาน baseline เป็นค่านิ่งแต่รายงานผลระบบเป็น mean ± sd
+    #   จะดูเหมือนระบบชนะมากกว่าความจริง ต้องวัดด้วยเกณฑ์เดียวกัน
+    ("bl_cat_argmax",
+     ["category_multilabel", "baseline_argmax_micro_f1"],
+     "baseline หมวด: เอาหมวดเดียวที่คะแนนสูงสุด"),
+    ("bl_overall_allpos",
+     ["overall_sentiment", "baseline ทายบวกหมด", "macro_f1"],
+     "baseline อารมณ์รวม: ทายบวกหมด (sd ต้องเป็น 0)"),
+    ("bl_asp_use_overall",
+     ["aspect_sentiment", "ใช้อารมณ์รวมกับทุกหมวด", "macro_f1"],
+     "baseline อารมณ์รายหมวด: ใช้อารมณ์รวมกับทุกหมวด"),
+    ("bl_e2e_use_overall",
+     ["end_to_end", "ถ้าใช้อารมณ์รวมแทน", "micro_f1"],
+     "baseline ทั้งระบบ: ใช้อารมณ์รวมแทน"),
 ]
 
 PER_CAT = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
@@ -159,6 +175,14 @@ def main() -> None:
         m, sd_ = mean_sd(xs)
         agg[key] = {"label": label, "mean": m, "sd": sd_,
                     "min": min(xs), "max": max(xs), "values": xs}
+    # ⚠️ baseline ทายบวกหมดไม่ขึ้นกับโมเดลเลย ถ้า sd ไม่เป็น 0 แปลว่า
+    #   ชุดประเมินเปลี่ยนระหว่างรอบ = มีบั๊ก ต้องหยุดดูก่อนเชื่อตัวเลขอื่น
+    if agg.get("bl_overall_allpos", {}).get("sd", 0) > 1e-9:
+        p("")
+        p("⚠️⚠️ baseline 'ทายบวกหมด' ควรเท่ากันทุกรอบแต่ไม่เท่า "
+          f"(sd {agg['bl_overall_allpos']['sd']:.6f}) "
+          "แปลว่าชุดประเมินเปลี่ยนระหว่างรอบ ตัวเลขอื่นเชื่อไม่ได้")
+
     cat_agg = {}
     for c in PER_CAT:
         xs = [r["per_category_f1"][c] for r in runs if c in r["per_category_f1"]]

@@ -58,7 +58,13 @@ def main() -> None:
     if warn:
         p("⚠️ seed ของแต่ละชุดไม่ตรงกัน การเทียบจะปนความผันผวนของ seed เข้ามา")
 
-    keys = list(docs[0]["summary"])
+    # ⚠️ sweep ชุดเก่ารันก่อนที่จะเพิ่มตัวชี้วัดบางตัว จึงไม่มีคีย์ครบ
+    #   เทียบเฉพาะคีย์ที่มีครบทุกชุด แล้วบอกให้รู้ว่าข้ามอะไรไป
+    keys = [k for k in docs[0]["summary"] if all(k in d["summary"] for d in docs)]
+    missing = [k for k in docs[0]["summary"] if k not in keys]
+    extra = sorted({k for d in docs[1:] for k in d["summary"]} - set(docs[0]["summary"]))
+    if missing or extra:
+        p(f"⚠️ ข้ามตัวชี้วัดที่ไม่มีครบทุกชุด: {missing + extra}")
     L = ["# เทียบผล sweep ต่าง config", "",
          f"สร้างเมื่อ {datetime.now().strftime('%Y-%m-%d %H:%M')}", ""]
     for d, fn in zip(docs, a.files):
@@ -69,6 +75,9 @@ def main() -> None:
           ""]
     if warn:
         L += ["⚠️ seed ของแต่ละชุดไม่ตรงกัน ผลเทียบจึงปนความผันผวนของ seed", ""]
+    if missing or extra:
+        L += [f"⚠️ ข้ามตัวชี้วัดที่ไม่มีครบทุกชุด (sweep คนละรุ่นของสคริปต์): "
+              f"`{'`, `'.join(missing + extra)}`", ""]
 
     L += ["## 1. ตัวชี้วัดหลัก", "",
           "| ตัวชี้วัด | " + " | ".join(tag(d) for d in docs) + " | ผลต่าง | อ่านว่า |",
