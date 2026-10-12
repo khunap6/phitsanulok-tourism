@@ -1,0 +1,763 @@
+﻿id,name,google_category,google_types,discovered_by,rev_all,rev_text,in_scope,reason
+1185,อินเด็กซ์ ลิฟวิ่งมอลล์ พิษณุโลก,ร้านเฟอร์นิเจอร์,"establishment,furniture_store,home_goods_store,point_of_interest,store",scrape,696,482,False,ตัดสินรายแห่ง: อินเด็กซ์ ลิฟวิ่งมอลล์ — ร้านเฟอร์นิเจอร์
+3123,Aroma Shop พิษณุโลก,ร้านอุปกรณ์กาแฟ,"cafe,store,food,point_of_interest,establishment",api,271,147,False,ตัดสินรายแห่ง: Aroma Shop — ร้านขายอุปกรณ์กาแฟ เป็นร้านเฉพาะทาง ไม่ใช่ที่นั่งพักผ่อน
+3132,หอประชุมศรีวชิรโชติ,มหาวิทยาลัย,"university,point_of_interest,establishment",api,216,67,False,ตัดสินรายแห่ง: หอประชุมศรีวชิรโชติ — หอประชุมของมหาวิทยาลัย
+654,ร้านโฟโต้พลัส,สตูดิโอถ่ายภาพ,"establishment,point_of_interest",scrape,62,58,False,ตัดสินรายแห่ง: ร้านโฟโต้พลัส — สตูดิโอถ่ายภาพ
+642,ศูนย์แสดงนิทรรศการและการจัดประชุมนานาชาติสมเด็จพระนเรศวรมหาราช,ศูนย์ประชุม,"establishment,point_of_interest",scrape,80,54,False,ตัดสินรายแห่ง: ศูนย์แสดงนิทรรศการและการจัดประชุมนานาชาติ — ศูนย์ประชุม
+160,ออโรร่าแกรนด์รีสอร์ท พิษณุโลก,รีสอร์ท,"establishment,lodging,point_of_interest",scrape,61,45,False,ตัดสินรายแห่ง: ออโรร่าแกรนด์รีสอร์ท — ที่พัก ไม่อยู่ในขอบเขต
+764,วิทยาลัยนานาชาติ มหาวิทยาลัยนเรศวร,มหาวิทยาลัย,"establishment,point_of_interest,university",scrape,50,38,False,ตัดสินรายแห่ง: วิทยาลัยนานาชาติ ม.นเรศวร — อาคารคณะ
+508,ร้านครัวทะเลแก้ว&รีสอร์ท,ภัตตาคารอาหารไทย,"establishment,food,point_of_interest,restaurant",scrape,47,31,False,ตัดสินรายแห่ง: ร้านครัวทะเลแก้ว&รีสอร์ท — ชื่อเป็นร้านอาหารแต่หลักเป็นที่พัก
+670,อาคารกีฬาอเนกประสงค์ มหาวิทยาลัยนเรศวร,ศูนย์กีฬา,"establishment,point_of_interest",scrape,96,28,False,ตัดสินรายแห่ง: อาคารกีฬาอเนกประสงค์ ม.นเรศวร — สนามกีฬาของนิสิต
+762,สำนักหอสมุด มหาวิทยาลัยนเรศวร,ห้องสมุดมหาวิทยาลัย,"establishment,library,point_of_interest",scrape,62,26,False,ตัดสินรายแห่ง: สำนักหอสมุด ม.นเรศวร — ห้องสมุด เป็นพื้นที่ของนิสิต
+569,บ้านวนา ทะเลแก้ว พิษณุโลก BaanvanaTalaykaew Phitsanulok,นักพัฒนาอสังหาริมทรัพย์,"establishment,general_contractor,point_of_interest",scrape,51,18,False,ตัดสินรายแห่ง: บ้านวนา ทะเลแก้ว — หมู่บ้านจัดสรร
+669,สนามกีฬากลางมหาวิทยาลัยนเรศวร,สนามกีฬา,"establishment,point_of_interest,stadium",scrape,43,11,False,ตัดสินรายแห่ง: สนามกีฬากลาง ม.นเรศวร — สนามกีฬาของนิสิต
+1555,คณะวิทยาศาสตร์ มหาวิทยาลัยนเรศวร,คณะวิทยาศาสตร์,"establishment,point_of_interest",scrape,10,10,False,ตัดสินรายแห่ง: คณะวิทยาศาสตร์ ม.นเรศวร — อาคารคณะ
+673,คณะศึกษาศาสตร์ มหาวิทยาลัยนเรศวร,มหาวิทยาลัยรัฐ,"establishment,point_of_interest,university",scrape,31,9,False,ตัดสินรายแห่ง: คณะศึกษาศาสตร์ ม.นเรศวร — อาคารคณะ
+565,จุดเล่นน้ำ ท้ายเขื่อนแควน้อยบำรุงแดน,กรมส่งเสริมการท่องเที่ยวในท้องถิ่น,"establishment,local_government_office,point_of_interest",scrape,17,8,False,type นอกขอบเขต: local_government_office
+647,นเรศวรโฟโต้,ร้านกรอบรูป,"establishment,point_of_interest,store",scrape,16,8,False,ตัดสินรายแห่ง: นเรศวรโฟโต้ — ร้านกรอบรูป
+564,อาคารพิบูลวิชญ์ (อาคารศูนย์การเรียนรู้อเนกประสงค์),มหาวิทยาลัย,"establishment,point_of_interest,university",scrape,23,6,False,ตัดสินรายแห่ง: อาคารพิบูลวิชญ์ — อาคารเรียน
+662,Allright Studio PhotoBooth สตูดิโอถ่ายรูปพิษณุโลก,สตูดิโอถ่ายภาพ,"establishment,point_of_interest",scrape,15,6,False,ตัดสินรายแห่ง: Allright Studio PhotoBooth — สตูดิโอถ่ายภาพ
+566,PT Golden Park - พีที โกลเด้น ปาร์ค,โรงแรม,"establishment,lodging,point_of_interest",scrape,5,5,False,ตัดสินรายแห่ง: PT Golden Park — โรงแรม
+648,ไอดีโฟโต้,ร้านกล้องถ่ายรูป,"electronics_store,establishment,home_goods_store,point_of_interest,store",scrape,9,5,False,ตัดสินรายแห่ง: ไอดีโฟโต้ — ร้านกล้องถ่ายรูป
+650,CAMERENTAL,ร้านกล้องถ่ายรูป,"electronics_store,establishment,home_goods_store,point_of_interest,store",scrape,7,5,False,ตัดสินรายแห่ง: CAMERENTAL — ร้านเช่ากล้อง
+651,พีพี การ์เด้น,,"establishment,point_of_interest",scrape,5,5,False,ไม่มี type และป้าย '(ว่าง)' ไม่อยู่ในรายการ
+769,คณะเกษตรศาสตร์ ทรัพยากรธรรมชาติ และ สิ่งแวดล้อม มหาวิทยาลัยนเรศวร,มหาวิทยาลัยรัฐ,"establishment,point_of_interest,university",scrape,24,5,False,ตัดสินรายแห่ง: คณะเกษตรศาสตร์ ม.นเรศวร — อาคารคณะ
+563,หอพักทะเลแก้ว มหาวิทยาลัยราชภัฏพิบูลสงคราม,สถาบันการศึกษา,"establishment,point_of_interest",scrape,12,4,False,ตัดสินรายแห่ง: หอพักทะเลแก้ว ม.ราชภัฏ — หอพักนิสิต
+641,คณะนิติศาสตร์ มหาวิทยาลัยนเรศวร,คณะนิติศาสตร์,"establishment,food,point_of_interest,restaurant",scrape,17,3,False,ตัดสินรายแห่ง: คณะนิติศาสตร์ ม.นเรศวร — อาคารคณะ
+832,คณะวิทยาศาสตร์และเทคโนโลยี มหาวิทยาลัยราชภัฏพิบูลสงคราม,มหาวิทยาลัย,"establishment,point_of_interest,university",scrape,22,3,False,ตัดสินรายแห่ง: คณะวิทยาศาสตร์และเทคโนโลยี ม.ราชภัฏ — อาคารคณะ
+511,ชมพิชชา ทะเลแก้ว,นักพัฒนาอสังหาริมทรัพย์,"establishment,general_contractor,point_of_interest",scrape,8,2,False,ตัดสินรายแห่ง: ชมพิชชา ทะเลแก้ว — หมู่บ้านจัดสรร
+660,เกาะกันกิน สตูดิโอ,ร้านกล้องถ่ายรูป,"electronics_store,establishment,home_goods_store,point_of_interest,store",scrape,12,2,False,ตัดสินรายแห่ง: เกาะกันกิน สตูดิโอ — สตูดิโอถ่ายภาพ
+640,อุทยานวิทยาศาสตร์มหาวิทยาลัยนเรศวร,มหาวิทยาลัย,"establishment,point_of_interest,university",scrape,3,1,False,ตัดสินรายแห่ง: อุทยานวิทยาศาสตร์ ม.นเรศวร — หน่วยงานวิจัย ไม่ใช่สถานที่ท่องเที่ยว
+649,SAFE HOUSE 173,ที่พัก,"establishment,lodging,point_of_interest",scrape,1,1,False,ตัดสินรายแห่ง: SAFE HOUSE 173 — ที่พัก
+665,งานป้องกันฯ องค์การบริหารส่วนตำบลท่าโพธิ์,รัฐบาล,"establishment,point_of_interest",scrape,4,1,False,ตัดสินรายแห่ง: งานป้องกันฯ อบต.ท่าโพธิ์ — หน่วยงานราชการ
+768,งานศิษย์เก่าสัมพันธ์ กองกิจการนิสิต มหาวิทยาลัยนเรศวร,ฝ่ายวิชาการ,"establishment,point_of_interest",scrape,1,1,False,ตัดสินรายแห่ง: งานศิษย์เก่าสัมพันธ์ ม.นเรศวร — สำนักงาน
+110,เขาสมอแคลง,,"administrative_area_level_4,political",scrape,0,0,False,ไม่มี type และป้าย '(ว่าง)' ไม่อยู่ในรายการ
+254,ยักษ์ทัวร์ บริษัทนำเที่ยวจำลอง มหาวิทยาลัยนเรศวร,ตัวแทนท่องเที่ยวเข้าชมสถานที่,"establishment,point_of_interest,travel_agency",scrape,0,0,False,ตัดสินรายแห่ง: ยักษ์ทัวร์ บริษัทนำเที่ยวจำลอง — บริษัท ไม่ใช่สถานที่
+263,ดีวายดีทราเวล,บริษัทท่องเที่ยว,"establishment,point_of_interest,travel_agency",scrape,2,0,False,type นอกขอบเขต: travel_agency
+510,TaLeKaew Resort (SHA) ทะเลแก้ว รีสอร์ท,ที่พัก,"establishment,lodging,point_of_interest",scrape,0,0,False,ตัดสินรายแห่ง: TaLeKaew Resort — ที่พัก
+664,Nature Park Resort,ที่พัก,"establishment,lodging,point_of_interest",scrape,0,0,False,ตัดสินรายแห่ง: Nature Park Resort — ที่พัก
+671,คณะสาธารณสุขศาสตร์ มหาวิทยาลัยนเรศวร,ฝ่ายวิชาการ,"establishment,point_of_interest",scrape,22,0,False,ตัดสินรายแห่ง: คณะสาธารณสุขศาสตร์ ม.นเรศวร — อาคารคณะ
+827,ทศวรรณ เกสต์เฮ้าส์,ที่พัก,"establishment,lodging,point_of_interest",scrape,0,0,False,ตัดสินรายแห่ง: ทศวรรณ เกสต์เฮ้าส์ — ที่พัก
+1556,ศูนย์แนะแนวและให้คำปรึกษา มหาวิทยาลัยนเรศวร กองกิจการนิสิต (อาคารเอนกประสงค์),มหาวิทยาลัยรัฐ,"establishment,point_of_interest,university",scrape,0,0,False,ตัดสินรายแห่ง: ศูนย์แนะแนวและให้คำปรึกษา ม.นเรศวร — สำนักงาน
+1618,มอสเทล พิษณุโลก,ที่พัก,"establishment,lodging,point_of_interest",scrape,0,0,False,ตัดสินรายแห่ง: มอสเทล พิษณุโลก — ที่พัก
+1919,ศาลสมเด็จพระนเรศวรมหาราช,โรงเรียนมัธยมศึกษา,"establishment,point_of_interest,school,secondary_school",scrape,0,0,False,ตัดสินรายแห่ง: ศาลสมเด็จพระนเรศวรมหาราช (ติด type โรงเรียนมัธยม) — ข้อมูล type ผิดและไม่มีรีวิว
+14,อุทยานแห่งชาติภูหินร่องกล้า,อุทยานแห่งชาติ,"establishment,park,point_of_interest,tourist_attraction",scrape,898,896,True,"type ที่ค้นหาได้: park,tourist_attraction"
+1702,พระพุทธชินราช,วัด,"establishment,place_of_worship,point_of_interest",scrape,858,858,True,type ในขอบเขต: place_of_worship
+3693,ก๋วยเตี๋ยวไก่วัดจันทร์ (ป้าล้อม),ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",scrape,857,854,True,type ที่ค้นหาได้: restaurant
+10,ถนนคนเดินพิษณุโลก,ตลาดนัด,"establishment,point_of_interest,tourist_attraction",scrape,851,849,True,type ที่ค้นหาได้: tourist_attraction
+13,อุทยานแห่งชาติทุ่งแสลงหลวง,อุทยานแห่งชาติ,"establishment,park,point_of_interest",scrape,850,847,True,type ที่ค้นหาได้: park
+1182,ร้านขนมจีนต้นก้ามปู พิษณุโลก,ภัตตาคารอาหารไทย,"establishment,food,point_of_interest,restaurant",scrape,846,846,True,type ที่ค้นหาได้: restaurant
+1,วัดพระศรีรัตนมหาธาตุวรมหาวิหาร,วัด,"establishment,place_of_worship,point_of_interest",scrape,836,833,True,type ในขอบเขต: place_of_worship
+1175,กนกภัณฑ์,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,825,821,True,type ที่ค้นหาได้: restaurant
+3078,ก๋วยเตี๋ยวห้อยขาริมน่าน จ.พิษณุโลก,ร้านก๋วยเตี๋ยว,"restaurant,point_of_interest,food,establishment",api,820,820,True,type ที่ค้นหาได้: restaurant
+1176,ครัวน่านน้ำ พิษณุโลก,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,817,817,True,type ที่ค้นหาได้: restaurant
+1178,โกปี๊ฮับ พิษณุโลก,ภัตตาคารอาหารจีน,"establishment,food,point_of_interest,restaurant",scrape,807,807,True,type ที่ค้นหาได้: restaurant
+1186,Penang steak,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,808,803,True,type ที่ค้นหาได้: restaurant
+1189,ฟ้าไทยฟาร์ม,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,786,786,True,type ที่ค้นหาได้: restaurant
+2,วัดนางพญา,วัด,"establishment,place_of_worship,point_of_interest,tourist_attraction",scrape,805,780,True,type ที่ค้นหาได้: tourist_attraction
+8,National Museum Buddha พิพิธภัณฑสถานแห่งชาติ พระพุทธชินราช,พิพิธภัณฑ์,"establishment,museum,point_of_interest",scrape,771,767,True,type ที่ค้นหาได้: museum
+1183,ครัวเจ๊โชค,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,819,759,True,type ที่ค้นหาได้: restaurant
+1190,ร้านอาหารตั้งหลัก,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,746,744,True,type ที่ค้นหาได้: restaurant
+3081,ข้าวต้มอนันต์ สาขาพิษณุโลก Khao Tom Anan Phitsanulok,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,742,680,True,type ที่ค้นหาได้: restaurant
+3080,ทับทิมกรอบสามหนุ่ม,ร้านขนมหวาน,"restaurant,food,point_of_interest,establishment",api,844,672,True,type ที่ค้นหาได้: restaurant
+1184,บ้านก๋ง.ตลาดใต้พิษณุโลก,ภัตตาคารอาหารเช้า,"establishment,food,point_of_interest,restaurant",scrape,742,628,True,type ที่ค้นหาได้: restaurant
+476,ครัวแอบแดก,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,800,625,True,type ที่ค้นหาได้: restaurant
+15,น้ำตกแก่งซอง,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,824,608,True,type ที่ค้นหาได้: tourist_attraction
+521,MADE for MOUTH HQ,ร้านอาหาร,"cafe,establishment,food,point_of_interest,restaurant,store",scrape,829,607,True,"type ที่ค้นหาได้: cafe,restaurant"
+3,พระราชวังจันทน์,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,669,594,True,type ที่ค้นหาได้: tourist_attraction
+1177,ร้านอาหารบ้านไม้,ภัตตาคารอาหารไทย,"establishment,food,point_of_interest,restaurant",scrape,819,591,True,type ที่ค้นหาได้: restaurant
+123,หลง คาเฟ่,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,703,503,True,type ที่ค้นหาได้: cafe
+371,ร้านช่อมาลี,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,835,490,True,type ที่ค้นหาได้: restaurant
+77,สวนชมน่านเฉลิมพระเกียรติ หน้าวัดราชบูรณะ,สวนสาธารณะ,"establishment,park,point_of_interest,tourist_attraction",scrape,890,461,True,"type ที่ค้นหาได้: park,tourist_attraction"
+1180,ฝาชี อาหารไทยพื้นบ้าน,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,772,457,True,type ที่ค้นหาได้: restaurant
+5994,ครัว,ภัตตาคารอาหารไทย,,(null),818,452,True,ป้าย Google: ภัตตาคารอาหารไทย (ในขอบเขต)
+78,ศูนย์ประวัติศาสตร์พระราชวังจันทน์,พิพิธภัณฑ์,"establishment,museum,point_of_interest,tourist_attraction",scrape,816,440,True,"type ที่ค้นหาได้: museum,tourist_attraction"
+11,ตลาดเทศบาล 1 (ตลาดใต้ ),ตลาด,"establishment,point_of_interest",scrape,901,433,True,ป้าย Google: ตลาด (ในขอบเขต)
+3087,ร้านข้าวต้มอนันต์ ศรีนครินทร์ พิษณุโลก (แยกวุ่นวาย),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,617,422,True,type ที่ค้นหาได้: restaurant
+351,นาข้าว คาเฟ่,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,695,420,True,type ที่ค้นหาได้: cafe
+3082,ดูแปงเบเกอรี่โฮม,ร้านเบเกอรี่,"bakery,store,food,point_of_interest,establishment",api,827,417,True,type ที่ค้นหาได้: bakery
+3705,พังกี่ข้าวมันไก่,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",scrape,746,408,True,type ที่ค้นหาได้: restaurant
+79,พิพิธภัณฑ์พื้นบ้านจ่าทวี,พิพิธภัณฑ์,"establishment,museum,point_of_interest,tourist_attraction",scrape,699,406,True,"type ที่ค้นหาได้: museum,tourist_attraction"
+3083,ส้มตำปูเสื่อ (Som Tam Pu Suea),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,804,403,True,type ที่ค้นหาได้: restaurant
+364,Bucktown restaurant,ภัตตาคารอาหารไทย,"establishment,food,point_of_interest,restaurant",scrape,668,401,True,type ที่ค้นหาได้: restaurant
+3091,เล็กใหญ่ ก๋วยเตี๋ยวต้มยำโบราณ พิษณุโลก,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,481,378,True,type ที่ค้นหาได้: restaurant
+3708,โอชิเน พิษณุโลก,ภัตตาคารอาหารญี่ปุ่น,"restaurant,food,point_of_interest,establishment",scrape,627,372,True,type ที่ค้นหาได้: restaurant
+5531,แพตามสั่งนั่งชิว,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",(null),499,372,True,type ที่ค้นหาได้: restaurant
+85,tham.coffee workspace,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,495,368,True,type ที่ค้นหาได้: cafe
+539,TUCK CUP Slowbar Coffee - ทักครับ สโลว์ บาร์ ณ วังส้มซ่า,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,416,352,True,type ที่ค้นหาได้: cafe
+668,มหาวิทยาลัยนเรศวร,มหาวิทยาลัยรัฐ,"establishment,point_of_interest,university",scrape,885,349,True,ตัดสินรายแห่ง: มหาวิทยาลัยนเรศวร — university อยู่ใน 7 type ที่ตั้งใจค้นหา
+1193,แพพิดโลก,ภัตตาคารอาหารไทย,"establishment,food,point_of_interest,restaurant",scrape,607,339,True,type ที่ค้นหาได้: restaurant
+106,สวนเฉลิมพระเกียรติฯ,อุทยาน,"establishment,park,point_of_interest,tourist_attraction",scrape,846,337,True,"type ที่ค้นหาได้: park,tourist_attraction"
+3095,เล่า-ลือ.PHITLOK,ร้านอาหารครอบครัว,"restaurant,point_of_interest,food,establishment",api,454,327,True,type ที่ค้นหาได้: restaurant
+3096,ร้านมาดี ไก่ย่างเขาสวนกวาง,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,442,325,True,type ที่ค้นหาได้: restaurant
+367,ร้านอาหารต้นตาล พิษณุโลก - Tontan Restaurant Phitsanulok,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,463,322,True,type ที่ค้นหาได้: restaurant
+3105,ปังโกสีย์ พิษณุโลก,ภัตตาคารอาหารเช้า,"restaurant,food,point_of_interest,establishment",api,361,313,True,type ที่ค้นหาได้: restaurant
+1191,แป้งหมัก,ภัตตาคารอาหารติ่มซำ,"establishment,food,point_of_interest,restaurant",scrape,527,311,True,type ที่ค้นหาได้: restaurant
+5,วัดจุฬามณี,วัด,"establishment,place_of_worship,point_of_interest,tourist_attraction",scrape,618,303,True,type ที่ค้นหาได้: tourist_attraction
+4,วัดราชบูรณะ พระอารามหลวง,วัด,"establishment,place_of_worship,point_of_interest",scrape,474,298,True,type ในขอบเขต: place_of_worship
+3103,Tasty'n Homey Phitsanulok,อาหารญี่ปุ่น,"store,restaurant,food,point_of_interest,establishment",api,400,297,True,type ที่ค้นหาได้: restaurant
+3090,จุกไก่ไทย,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,542,287,True,type ที่ค้นหาได้: restaurant
+3101,ข้าวต้มปักนั้ง 60 ปี,ร้านข้าวต้ม,"restaurant,food,point_of_interest,establishment",api,424,286,True,type ที่ค้นหาได้: restaurant
+126,Finally Coffee Co.,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,401,283,True,type ที่ค้นหาได้: cafe
+1146,แคนา คาเฟ่,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,489,281,True,type ที่ค้นหาได้: cafe
+355,Diff Coffee Roasters,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,342,272,True,type ที่ค้นหาได้: cafe
+3085,ก๋วยเตี๋ยวจูงนาง,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,615,271,True,type ที่ค้นหาได้: restaurant
+3092,Domestic Coffee & More,ร้านกาแฟ,"cafe,food,point_of_interest,store,establishment",api,493,271,True,type ที่ค้นหาได้: cafe
+3093,แพภูฟ้าไทย,ภัตตาคารอาหารไทย,"restaurant,food,point_of_interest,establishment",api,482,265,True,type ที่ค้นหาได้: restaurant
+3088,ปาริฉัตร แจ่วฮ้อน เบียร์วุ้น,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,542,259,True,type ที่ค้นหาได้: restaurant
+3098,ติดมันส์ ริมน้ำน่าน บุฟเฟ่ต์ปิ้งย่างกระทะร้อน สาขาพิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,440,256,True,type ที่ค้นหาได้: restaurant
+1188,ลาภลอยพิษณุโลก,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,284,253,True,type ที่ค้นหาได้: restaurant
+635,สวนน้ำ สแปลช ฟัน ปาร์ค พิษณุโลก,สวนน้ำ,"amusement_park,establishment,point_of_interest,tourist_attraction",scrape,458,251,True,type ที่ค้นหาได้: tourist_attraction
+3102,นัวกาฬสินธุ์,ภัตตาคารอาหารไทย,"restaurant,point_of_interest,food,establishment",api,427,251,True,type ที่ค้นหาได้: restaurant
+3110,Sushi Mega Grand Phitsanulok,อาหารญี่ปุ่น,"grocery_or_supermarket,restaurant,food,point_of_interest,store,establishment",api,333,251,True,type ที่ค้นหาได้: restaurant
+3097,ร้านอาหารลุงเทิง,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,436,248,True,type ที่ค้นหาได้: restaurant
+1416,ร้าน ซุ่นฮะฮวด ติ่มซำ น้ำชา,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,343,247,True,type ที่ค้นหาได้: restaurant
+3099,OASIS CAFE,ร้านกาแฟ,"cafe,point_of_interest,food,establishment",api,417,242,True,type ที่ค้นหาได้: cafe
+3094,ก๋วยเตี๋ยวไก่ติงลี่,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,451,241,True,type ที่ค้นหาได้: restaurant
+1192,หว่องริมน่าน,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,498,237,True,type ที่ค้นหาได้: restaurant
+3089,เจ๊เนี้ยว หมูกระทะ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,525,232,True,type ที่ค้นหาได้: restaurant
+1181,รสรฺ (ROSOR),ภัตตาคารอาหารไทย,"establishment,food,point_of_interest,restaurant",scrape,274,229,True,type ที่ค้นหาได้: restaurant
+16,อุทยานแห่งชาติน้ำตกชาติตระการ,อุทยานแห่งชาติ,"establishment,point_of_interest,tourist_attraction",scrape,374,226,True,type ที่ค้นหาได้: tourist_attraction
+3104,เต็งหนามคอฟฟี่,ร้านกาแฟ,"cafe,food,point_of_interest,store,establishment",api,392,226,True,type ที่ค้นหาได้: cafe
+560,สวนบัวอมรรัตน์ บัวกระด้ง พิษณุโลก,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,311,222,True,type ที่ค้นหาได้: tourist_attraction
+3111,Somsri Eatery and Cafe ร้านสมศรีและคาเฟ่,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,341,221,True,type ที่ค้นหาได้: restaurant
+515,Hungry Heal ปิ้งย่างชาบู,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,359,211,True,type ที่ค้นหาได้: restaurant
+17,น้ำตกสกุโณทยาน พิษณุโลก,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,371,210,True,type ที่ค้นหาได้: tourist_attraction
+3592,ฉัน. อาหารเช้าเเละกาแฟ,ร้านกาแฟ,"cafe,restaurant,food,point_of_interest,store,establishment",scrape,329,208,True,"type ที่ค้นหาได้: cafe,restaurant"
+3100,หอยทอดริมน้ำ 3 ต้น {หอยทอดเจ๊ฮวย},แผงขายอาหาร,"restaurant,food,point_of_interest,establishment",api,410,206,True,type ที่ค้นหาได้: restaurant
+3109,ข้าวแกงโกลบอล (ร้านเรือนไทย),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,339,200,True,type ที่ค้นหาได้: restaurant
+3128,Baan Lhang Wangh บ้านหลังวัง,ร้านกาแฟ,"cafe,lodging,food,point_of_interest,establishment",api,207,199,True,type ที่ค้นหาได้: cafe
+3118,ก๋วยเตี๋ยวโชคอำนวย,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,317,192,True,type ที่ค้นหาได้: restaurant
+119,Hammock แฮมม็อค - Cafe & Restaurant,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,318,186,True,type ที่ค้นหาได้: cafe
+3130,ต้องงี้ก๋อน,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,263,184,True,type ที่ค้นหาได้: restaurant
+1147,ทัพฟ้า คาเฟ่,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,343,183,True,type ที่ค้นหาได้: cafe
+3131,ละมุนเค้ก Homemade Bakery,ร้านเบเกอรี่,"bakery,cafe,store,food,point_of_interest,establishment",api,267,183,True,"type ที่ค้นหาได้: bakery,cafe"
+19,ร้านแกงบ้านเรา,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",scrape,417,180,True,type ที่ค้นหาได้: restaurant
+674,พุทธมณฑลพิษณุโลก,สวนสาธารณะของเมือง,"establishment,park,point_of_interest",scrape,470,180,True,type ที่ค้นหาได้: park
+3106,ส้มตำเจ้อุ๊,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,352,179,True,type ที่ค้นหาได้: restaurant
+246,The muggle’s,ร้านเบเกอรี่,"bakery,establishment,food,point_of_interest,store",scrape,272,178,True,type ที่ค้นหาได้: bakery
+3149,Treat Tea House,ร้านกาแฟ,"cafe,store,food,point_of_interest,establishment",api,200,176,True,type ที่ค้นหาได้: cafe
+12,เขื่อนแควน้อยบำรุงแดน พิษณุโลก,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,305,175,True,type ที่ค้นหาได้: tourist_attraction
+3119,ก๋วยเตี๋ยวลิ้นวัว คุณเปิ้ล เจ้าเก่าพิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,313,173,True,type ที่ค้นหาได้: restaurant
+3711,สเต็กอินโดจีน,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",scrape,248,170,True,type ที่ค้นหาได้: restaurant
+3638,ข้าวต้มเหรียญบาท,ร้านข้าวต้ม,"restaurant,food,point_of_interest,establishment",scrape,344,164,True,type ที่ค้นหาได้: restaurant
+3112,ศรีฟ้า เบเกอรี่ สาขาเมืองพิษณุโลก,ร้านเบเกอรี่,"bakery,store,point_of_interest,food,establishment",api,327,162,True,type ที่ค้นหาได้: bakery
+3126,ญวน ปริญญา สาขาพิษณุโลก(ถนน พระลือ),ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,280,160,True,type ที่ค้นหาได้: restaurant
+3153,ไก่โวยวาย,ร้านอาหาร,"restaurant,cafe,food,point_of_interest,store,establishment",api,187,160,True,"type ที่ค้นหาได้: cafe,restaurant"
+3596,โจ๊กอัมรินทร์นคร (เจ้าเก่า),,"restaurant,food,point_of_interest,establishment",scrape,164,160,True,type ที่ค้นหาได้: restaurant
+4438,พิซซ่าฮัท สาขา พิษณุโลก,ร้านพิซซ่า,"restaurant,food,point_of_interest,establishment",scrape,306,159,True,type ที่ค้นหาได้: restaurant
+266,ล่องแพแก่งไฮ ผู้ใหญ่ฮิปปี้,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,183,158,True,type ที่ค้นหาได้: tourist_attraction
+3114,The Key Café &Roaster,ร้านกาแฟ,"cafe,store,food,point_of_interest,establishment",api,327,158,True,type ที่ค้นหาได้: cafe
+3115,ร้านปุ๊ ปุง ปังบักกู๊ดเต๋,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,314,156,True,type ที่ค้นหาได้: restaurant
+3134,ร้านอาหารบ้านระเบียงไม้,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,245,156,True,type ที่ค้นหาได้: restaurant
+138,Churn Cafe Phitsanulok (เชิญคาเฟ่),ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,222,155,True,type ที่ค้นหาได้: cafe
+3124,ครัวเซย์ไฮ พิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,273,155,True,type ที่ค้นหาได้: restaurant
+88,วันเวลา คาเฟ่,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,248,153,True,type ที่ค้นหาได้: cafe
+210,Have A Seat,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,317,151,True,type ที่ค้นหาได้: restaurant
+3639,โรงฮัก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",scrape,336,151,True,type ที่ค้นหาได้: restaurant
+6,วัดอรัญญิก,วัด,"establishment,place_of_worship,point_of_interest,tourist_attraction",scrape,305,150,True,type ที่ค้นหาได้: tourist_attraction
+91,OMNI COFFEE ROASTER.PHS,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,197,149,True,type ที่ค้นหาได้: cafe
+3162,ฉิม พิษณุโลก,ร้านอาหาร,"restaurant,cafe,food,point_of_interest,establishment",api,188,146,True,"type ที่ค้นหาได้: cafe,restaurant"
+3120,ร้านส้มตำยำแซ่บ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,289,145,True,type ที่ค้นหาได้: restaurant
+3127,Osaka shabu shabu phitsanulok,ร้านอาหารชาบูชาบู,"restaurant,food,point_of_interest,establishment",api,267,145,True,type ที่ค้นหาได้: restaurant
+3175,ก๋วยเตี๋ยวเรือ 8 เซียน สาขา ห้าแยกโคกมะตูม,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,183,145,True,type ที่ค้นหาได้: restaurant
+3139,Pista Cafe,ร้านกาแฟ,"cafe,bakery,store,food,point_of_interest,establishment",api,249,142,True,"type ที่ค้นหาได้: bakery,cafe"
+3158,เฮือนคำ ก๋าแฟ ๒๕๕๙,ร้านกาแฟ,"cafe,store,food,point_of_interest,establishment",api,197,141,True,type ที่ค้นหาได้: cafe
+3599,เขยลาว,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",scrape,272,140,True,type ที่ค้นหาได้: restaurant
+3144,ร้านลุงแห้งอาหารป่า ปลาแม่น้ำ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,235,139,True,type ที่ค้นหาได้: restaurant
+3129,ก๋วยเตี๋ยวต้มยำห้อยไข่,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,257,137,True,type ที่ค้นหาได้: restaurant
+84,LAGOM Coffee & Bakery,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,227,136,True,type ที่ค้นหาได้: cafe
+715,บู๊ลิ้มโภชนา,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,294,136,True,type ที่ค้นหาได้: restaurant
+3190,เนื้อคำ ก๋วยเตี๋ยวเนื้อคำบ้านเรา,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,170,136,True,type ที่ค้นหาได้: restaurant
+3121,มาเด้อ กินข้าว จิ้มจุ่ม ลาบ อุบล,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,291,135,True,type ที่ค้นหาได้: restaurant
+3173,ข้าวซอยเก๊าไม้ พิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,198,135,True,type ที่ค้นหาได้: restaurant
+1676,ไม้เมือง,ภัตตาคารอาหารไทย,"establishment,food,point_of_interest,restaurant",scrape,261,133,True,type ที่ค้นหาได้: restaurant
+761,สวนสาธารณะริมน้ำน่าน,สวนสาธารณะ,"establishment,park,point_of_interest",scrape,330,131,True,type ที่ค้นหาได้: park
+3821,ร้านกาแฟ Coffee Mania 2018 @ Phitsanulok พิษณุโลก,ร้านกาแฟ,"cafe,food,point_of_interest,store,establishment",(null),245,131,True,type ที่ค้นหาได้: cafe
+133,Tasteture,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,188,130,True,type ที่ค้นหาได้: cafe
+3147,Rescaba - Music & Restaurant,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,194,130,True,type ที่ค้นหาได้: restaurant
+3156,Baan Brew,ร้านกาแฟ,"cafe,food,point_of_interest,store,establishment",api,224,130,True,type ที่ค้นหาได้: cafe
+3188,Jadeology specialty coffee,ร้านกาแฟ,"cafe,food,point_of_interest,store,establishment",api,174,130,True,type ที่ค้นหาได้: cafe
+3169,หมาล่าทั่ง ll 麻•辣•烫 ll ᴍᴀ•ʟᴀ•ᴛᴀɴɢ สาขา พิษณุโลก,餐廳,"restaurant,food,point_of_interest,establishment",api,193,128,True,type ที่ค้นหาได้: restaurant
+120,Rush.phs,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,189,127,True,type ที่ค้นหาได้: cafe
+3142,Caffe'ine,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,246,127,True,type ที่ค้นหาได้: cafe
+3136,ร้านก๋วยจั๊บหน้าบิ้กซี,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,235,126,True,type ที่ค้นหาได้: restaurant
+3146,ร้านก๋วยเตี๋ยวเรือชามกะลาซี๊ด พิษณุโลก,ร้านก๋วยเตี๋ยว,"restaurant,point_of_interest,food,establishment",api,227,126,True,type ที่ค้นหาได้: restaurant
+2068,House of Smoke,ร้านบาร์บีคิว,"establishment,food,point_of_interest,restaurant",scrape,163,124,True,type ที่ค้นหาได้: restaurant
+3550,ร้านข้าวต้ม AA,ร้านข้าวต้ม,"restaurant,food,point_of_interest,establishment",scrape,235,123,True,type ที่ค้นหาได้: restaurant
+626,ในป่าคาเฟ่,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,194,122,True,type ที่ค้นหาได้: cafe
+3170,Seattle Specialty Coffee,ร้านกาแฟ,"cafe,store,food,point_of_interest,establishment",api,197,122,True,type ที่ค้นหาได้: cafe
+3231,โอ้โห ข้าวต้ม สาขาพิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,140,121,True,type ที่ค้นหาได้: restaurant
+3215,Beef House Yakiniku,ร้านอาหาร,"restaurant,food,point_of_interest,store,establishment",api,152,120,True,type ที่ค้นหาได้: restaurant
+3150,ก๋วยเตี๋ยวเนื้อตุ๋นรสเยี่ยม บ้านคลอง Excellent (แยกวุ่นวาย),ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,189,118,True,type ที่ค้นหาได้: restaurant
+3182,บ้านลุงป๋อง,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,180,118,True,type ที่ค้นหาได้: restaurant
+3143,สกุลเงิน,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,230,117,True,type ที่ค้นหาได้: restaurant
+3201,KAZOKU Coffee House Phitsanulok,ร้านเบเกอรี่,"bakery,cafe,store,food,point_of_interest,establishment",api,169,117,True,"type ที่ค้นหาได้: bakery,cafe"
+2027,Kyoto Shi Cafe พิษณุโลก สาขาท่าทอง,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,restaurant,store",scrape,225,115,True,"type ที่ค้นหาได้: cafe,restaurant"
+3141,ก๋วยเตี๋ยวเจ๊ลี่,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,230,114,True,type ที่ค้นหาได้: restaurant
+3140,ก.ข้าวต้มกุ๊ย,ร้านข้าวต้ม,"restaurant,food,point_of_interest,establishment",api,244,113,True,type ที่ค้นหาได้: restaurant
+3151,ร้านสาระดีดี SALAD D,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,228,113,True,type ที่ค้นหาได้: restaurant
+3216,หลาเก๊ย อาหารเวียดนาม,ร้านอาหารครอบครัว,"restaurant,food,point_of_interest,establishment",api,154,113,True,type ที่ค้นหาได้: restaurant
+3223,ร้านสองทัพพี,ภัตตาคารอาหารไทย,"restaurant,food,point_of_interest,establishment",api,145,113,True,type ที่ค้นหาได้: restaurant
+3240,UNDO อันดู พิษณุโลก - Undo Food & Spirits,ร้านอาหาร,"restaurant,bar,point_of_interest,food,establishment",api,132,113,True,type ที่ค้นหาได้: restaurant
+3211,ขาหมูกาแล - Khahmukalae,อาหารฟาสต์ฟูด,"restaurant,food,point_of_interest,establishment",api,157,112,True,type ที่ค้นหาได้: restaurant
+3702,ชาบูโฮม พิษณุโลก,ร้านสุกี้ยากี้และชาบูชาบู,"restaurant,food,point_of_interest,establishment",scrape,141,112,True,type ที่ค้นหาได้: restaurant
+109,วัดเจดีย์ยอดทอง พิษณุโลก,วัด,"establishment,place_of_worship,point_of_interest,tourist_attraction",scrape,202,111,True,type ที่ค้นหาได้: tourist_attraction
+131,"Blur Cafe, Phitsanulok",ร้านกาแฟ,"bakery,cafe,establishment,food,point_of_interest,restaurant,store",scrape,184,110,True,"type ที่ค้นหาได้: bakery,cafe,restaurant"
+3113,พระบรมราชานุสาวรีย์สมเด็จพระนเรศวรมหาราช,อนุสรณ์สถาน,"tourist_attraction,point_of_interest,establishment",api,303,110,True,ตัดสินรายแห่ง: พระบรมราชานุสาวรีย์สมเด็จพระนเรศวรมหาราช — อนุสรณ์สถาน เป็นจุดท่องเที่ยว
+3167,Mai Oak Coffee ร้านกาแฟไม้โอ๊ค พิษณุโลก,ร้านกาแฟ,"cafe,store,point_of_interest,food,establishment",api,210,110,True,type ที่ค้นหาได้: cafe
+3194,ครัวประดับดี,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,167,110,True,type ที่ค้นหาได้: restaurant
+387,สถานีรถไฟพิษณุโลก,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",(null),233,109,True,type ที่ค้นหาได้: tourist_attraction
+3168,ข้าวมันไก่พังกี่,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,191,109,True,type ที่ค้นหาได้: restaurant
+3220,หมูย่างอโคจร,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,145,109,True,type ที่ค้นหาได้: restaurant
+296,ร้านข้าวต้มอารมณ์ดี,ภัตตาคารอาหารไทย,"establishment,food,point_of_interest,restaurant",scrape,226,108,True,type ที่ค้นหาได้: restaurant
+3189,HOME BY THE LIBRARY,ร้านอาหาร,"restaurant,cafe,bar,point_of_interest,store,food,establishment",api,168,108,True,"type ที่ค้นหาได้: cafe,restaurant"
+3233,Golden Pig Korean BBQ - กึมเดจี,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,140,108,True,type ที่ค้นหาได้: restaurant
+130,Slow Bear Coffee,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,147,107,True,type ที่ค้นหาได้: cafe
+360,Fareen & gift cafe,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,162,107,True,type ที่ค้นหาได้: cafe
+90,Jipiti (Coffee and friends),ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,122,106,True,type ที่ค้นหาได้: cafe
+198,ร้านศาลาขาว​(Salakhaow),ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,215,106,True,type ที่ค้นหาได้: cafe
+3145,ร้านจิ้มจุ่มสองแคว พิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,196,106,True,type ที่ค้นหาได้: restaurant
+3208,Black Bakery,ร้านเบเกอรี่,"bakery,food,point_of_interest,store,establishment",api,161,106,True,type ที่ค้นหาได้: bakery
+3185,เสาวรสโภชนา,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,174,105,True,type ที่ค้นหาได้: restaurant
+3205,ร้านข้าวซอย เชียงใหม่ พิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,163,105,True,type ที่ค้นหาได้: restaurant
+3164,ไก่ทอดเกาหลี โซล ชิกคิน,ภัตตาคารอาหารเกาหลี,"restaurant,point_of_interest,food,establishment",api,195,104,True,type ที่ค้นหาได้: restaurant
+3179,Robber Den,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,186,104,True,type ที่ค้นหาได้: restaurant
+3234,เหล่าอี้โภชนา 老忆味道,ร้านอาหารครอบครัว,"restaurant,food,point_of_interest,establishment",api,138,104,True,type ที่ค้นหาได้: restaurant
+100,วงเวียนหอนาฬิกาพิษณุโลก,สถานที่สำคัญทางประวัติศาสตร์,"establishment,point_of_interest,tourist_attraction",scrape,221,103,True,type ที่ค้นหาได้: tourist_attraction
+3198,วันละแบนWAN LA BAND,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,170,103,True,type ที่ค้นหาได้: cafe
+3155,ก๋วยเตี๋ยวกากหมู หัวรอพิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,217,102,True,type ที่ค้นหาได้: restaurant
+3171,ข้าวต้มอินโดจีน,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,180,102,True,type ที่ค้นหาได้: restaurant
+3176,Pi : พาย,ร้านกาแฟ,"cafe,point_of_interest,food,establishment",api,186,102,True,type ที่ค้นหาได้: cafe
+517,สวนอาหารกุ้งแก้ว,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,242,101,True,type ที่ค้นหาได้: restaurant
+3257,ตำนิยมพิดโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,127,101,True,type ที่ค้นหาได้: restaurant
+366,มหาวิทยาลัยราชภัฏพิบูลสงคราม,มหาวิทยาลัย,"establishment,point_of_interest,university",scrape,348,100,True,ตัดสินรายแห่ง: มหาวิทยาลัยราชภัฏพิบูลสงคราม — เหตุผลเดียวกับ 668
+3152,นัทเบเกอรี่,ร้านเบเกอรี่,"bakery,point_of_interest,store,food,establishment",api,212,100,True,type ที่ค้นหาได้: bakery
+3159,ร้านก๋วยจั๊บป้าจมริมน้ำ,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,206,100,True,type ที่ค้นหาได้: restaurant
+132,Hon Cafe,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,143,99,True,type ที่ค้นหาได้: cafe
+3157,ร้านอาหาร “ครัวครูกุ้ง”,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,216,99,True,type ที่ค้นหาได้: restaurant
+3209,นายห้าง,ภัตตาคารอาหารไทย,"restaurant,point_of_interest,food,establishment",api,162,99,True,type ที่ค้นหาได้: restaurant
+514,อาป๋า ทะเลเผา พิษณุโลก,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,156,98,True,type ที่ค้นหาได้: restaurant
+375,ครัวท่าโพธิ์,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,203,97,True,type ที่ค้นหาได้: restaurant
+3214,ฮิมิซึ ชาบู,ร้านอาหารชาบูชาบู,"restaurant,point_of_interest,food,establishment",api,151,97,True,type ที่ค้นหาได้: restaurant
+3226,ราชา จิ้มจุ่มแจ่วฮ้อน,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,147,97,True,type ที่ค้นหาได้: restaurant
+3154,เจ้หน่อย ต้มเลือดหมู,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,219,96,True,type ที่ค้นหาได้: restaurant
+3178,ร้านก๋วยเตี๋ยวน้ำตกป้าเนียร,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,171,96,True,type ที่ค้นหาได้: restaurant
+3193,It's Cake,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,168,96,True,type ที่ค้นหาได้: restaurant
+3229,ร้านอะกาแฟโบราณ,ร้านกาแฟ,"cafe,store,food,point_of_interest,establishment",api,140,96,True,type ที่ค้นหาได้: cafe
+537,Ruma Cafe & Co-Working Space,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,152,95,True,type ที่ค้นหาได้: cafe
+3181,ครัวรุ่งขวัญ พิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,179,95,True,type ที่ค้นหาได้: restaurant
+3232,Groom cat craft cafe,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,138,95,True,type ที่ค้นหาได้: cafe
+3199,ร้านก๋วยเตี๋ยวไทยยายส่ง สงครามโลกครั้งที่2,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,166,94,True,type ที่ค้นหาได้: restaurant
+1890,ตำซวดลวด,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,107,93,True,type ที่ค้นหาได้: restaurant
+3133,Wood Stock,ร้านอาหาร,"restaurant,bar,food,point_of_interest,establishment",api,243,93,True,type ที่ค้นหาได้: restaurant
+3228,Lavana cafe’& Bistro พิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,145,93,True,type ที่ค้นหาได้: restaurant
+3246,F2.8 Coffee Lab,คาเฟ่ศิลปะ,"cafe,food,point_of_interest,establishment",api,137,93,True,type ที่ค้นหาได้: cafe
+101,วัดวิหารทอง,สถานที่สำคัญทางประวัติศาสตร์,"establishment,point_of_interest,tourist_attraction",scrape,123,92,True,type ที่ค้นหาได้: tourist_attraction
+3165,ก๋วยเตี๋ยวเรือ ดำเนินฯ,ร้านก๋วยเตี๋ยว,"restaurant,point_of_interest,food,establishment",api,196,92,True,type ที่ค้นหาได้: restaurant
+3196,เจ้ตา ข้าวแกงริมน้ำ,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,167,92,True,type ที่ค้นหาได้: restaurant
+3221,ร้านลดาปลาร้าหอม สาขาพิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,147,92,True,type ที่ค้นหาได้: restaurant
+3244,ยำโด่ง คาเฟ่- สาขาตลาดใต้,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,137,92,True,type ที่ค้นหาได้: restaurant
+128,Morning Bliss - All Day Breakfast,ภัตตาคารอาหารเช้าและกลางวัน,"cafe,establishment,food,point_of_interest,restaurant,store",scrape,118,91,True,"type ที่ค้นหาได้: cafe,restaurant"
+3137,วัดคูหาสวรรค์ พิษณุโลก,วัด,"place_of_worship,point_of_interest,establishment",api,241,91,True,type ในขอบเขต: place_of_worship
+3560,พุงเลอ หมูกระทะ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",scrape,193,91,True,type ที่ค้นหาได้: restaurant
+3200,ใจเย็นก๋วยเตี๋ยวน้ำข้น เนื้อตุ๋นหมูตุ๋น,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,165,90,True,type ที่ค้นหาได้: restaurant
+3256,ธรรมดาบิสโทร,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,124,89,True,type ที่ค้นหาได้: restaurant
+3261,เทียน เทียน สุกี้โบราณ,ภัตตาคารอาหารจีน,"restaurant,food,point_of_interest,establishment",api,126,89,True,type ที่ค้นหาได้: restaurant
+9,สวนสาธารณะบึงราชนก,อุทยาน,"establishment,park,point_of_interest,tourist_attraction",scrape,108,87,True,"type ที่ค้นหาได้: park,tourist_attraction"
+3210,ร้านก๋วยเตี๋ยวบ้านทุ่ง,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,151,87,True,type ที่ค้นหาได้: restaurant
+3225,ส เลิศรส ภัตตาคาร,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,142,87,True,type ที่ค้นหาได้: restaurant
+87,Slowlife café and garden,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,134,86,True,type ที่ค้นหาได้: cafe
+3166,กุ้งข้าวแกงวังดาน,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,191,86,True,type ที่ค้นหาได้: restaurant
+1082,Barel Cafe,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,121,85,True,type ที่ค้นหาได้: cafe
+3183,สถานีป่าไผ่,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,163,85,True,type ที่ค้นหาได้: restaurant
+3280,หอมปูหอมกุ้ง​1,ร้านอาหารจานเล็ก,"restaurant,food,point_of_interest,establishment",api,115,85,True,type ที่ค้นหาได้: restaurant
+204,ฟาร์มคุณหนู สาขา ม.นเรศวร,ร้านขนมหวาน,"establishment,food,point_of_interest,restaurant",scrape,120,84,True,type ที่ค้นหาได้: restaurant
+3260,แปะกัน ตือฮวน•จุกบี้ หลังวัดใหญ่ พิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,125,84,True,type ที่ค้นหาได้: restaurant
+3753,สุข-ดี สุกี้ไหหลำ(ซอส​เต้าหู้​ยี้​),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",scrape,103,84,True,type ที่ค้นหาได้: restaurant
+3218,ขนมจีนน้ำเงี้ยว เชียงราย,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,143,83,True,type ที่ค้นหาได้: restaurant
+3255,Ramatiq รามาทีค,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,132,83,True,type ที่ค้นหาได้: cafe
+3259,ร้าน Vg. (Homemade Food & Drink),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,125,83,True,type ที่ค้นหาได้: restaurant
+3291,Fuji Matcha,ร้านน้ำชา,"cafe,store,food,point_of_interest,establishment",api,111,83,True,type ที่ค้นหาได้: cafe
+3203,ร้านข้าวกระด้ง,ภัตตาคารอาหารไทย,"restaurant,food,point_of_interest,establishment",api,154,82,True,type ที่ค้นหาได้: restaurant
+3288,Host. Mediterranean Asian Mix,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,112,82,True,type ที่ค้นหาได้: restaurant
+83,MINDMOST COFFEE,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,133,81,True,type ที่ค้นหาได้: cafe
+3202,ร้านจิ้มจุ่ม​ เขยร้อยเอ็ด,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,166,81,True,type ที่ค้นหาได้: restaurant
+3533,ร้านอาหารลุงแย้ม,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",scrape,154,81,True,type ที่ค้นหาได้: restaurant
+3857,อิ่มอร่อย หมูกระทะ พิษณุโลก,ปิ้งย่าง,"restaurant,food,point_of_interest,establishment",scrape,97,81,True,type ที่ค้นหาได้: restaurant
+666,168 HEAVEN CAFE Resort & Studio ร้านกาแฟ อาหาร รีสอร์ท และ สตูดิโอถ่ายภาพ MV ย้อนยุคท่ามกลางธรรมชาติ,ร้านกาแฟ,"cafe,establishment,food,lodging,point_of_interest,store",scrape,127,80,True,type ที่ค้นหาได้: cafe
+3180,ก๋วยเตี๋ยวน้ำตกสุดซอย,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,175,80,True,type ที่ค้นหาได้: restaurant
+3243,AVA Cafe & Eatery,ร้านกาแฟ,"cafe,point_of_interest,food,establishment",api,131,80,True,type ที่ค้นหาได้: cafe
+116,Teaspoon Tearoom,ร้านกาแฟ,"bakery,cafe,establishment,food,point_of_interest,restaurant,store",scrape,168,79,True,"type ที่ค้นหาได้: bakery,cafe,restaurant"
+175,Layers Cafe,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,110,79,True,type ที่ค้นหาได้: cafe
+3207,Shabu delight​ สาขา​ ถนนพระลือ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,160,79,True,type ที่ค้นหาได้: restaurant
+3217,ร้านข้าวซอยแม่สาย พิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,146,79,True,type ที่ค้นหาได้: restaurant
+3248,ทิพย์โอชา คาเฟ่,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,130,79,True,type ที่ค้นหาได้: restaurant
+3174,ปูม้าคึกคัก ท่าทอง วัดจุฬามณี,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,171,78,True,type ที่ค้นหาได้: restaurant
+3187,ร้านเตี๋ยวไข่วิศ-วะ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,169,78,True,type ที่ค้นหาได้: restaurant
+3177,แสนดี จิ้มจุ่ม นุ่มลิ้น & หมูกระทะ,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,175,77,True,type ที่ค้นหาได้: restaurant
+3192,ครัวหน้าบ้าน ไข่เจียว,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,163,77,True,type ที่ค้นหาได้: restaurant
+3235,ร้านรักษ์,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,139,77,True,type ที่ค้นหาได้: restaurant
+3258,ปูแพก๋วยเตี๋ยวสุโขทัย,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,123,77,True,type ที่ค้นหาได้: restaurant
+3161,เวิ้งมอ ชาบู,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,199,76,True,type ที่ค้นหาได้: restaurant
+3195,กาแลคซี่ หมูกระทะ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,157,76,True,type ที่ค้นหาได้: restaurant
+3563,ลดาบุฟเฟต์ หมูกระทะ,ภัตตาคารอาหารบุฟเฟต์,"restaurant,food,point_of_interest,establishment",scrape,194,76,True,type ที่ค้นหาได้: restaurant
+3191,สหาย โฟล์ค,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,168,75,True,type ที่ค้นหาได้: restaurant
+3724,แจ๋ว ข้าวต้ม-อาหารตามสั่ง,ร้านข้าวต้ม,"restaurant,food,point_of_interest,establishment",scrape,141,75,True,type ที่ค้นหาได้: restaurant
+224,ร้านมิสเตอร์ สเต็ก สาขา ม.นเรศวร,ร้านสเต็ก,"establishment,food,point_of_interest,restaurant",scrape,129,74,True,type ที่ค้นหาได้: restaurant
+3212,เจ๊ยุ เตี๋ยวพิด’โลก,ร้านก๋วยเตี๋ยว,"restaurant,point_of_interest,food,establishment",api,154,74,True,type ที่ค้นหาได้: restaurant
+3213,เจ๊น้อยก๋วยเตี๋ยวเรือพิษณุโลก,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,154,74,True,type ที่ค้นหาได้: restaurant
+3333,SUKKHO by i'CRAFT​,ร้านกาแฟ,"cafe,store,food,point_of_interest,establishment",api,91,74,True,type ที่ค้นหาได้: cafe
+3186,ก๋วยเตี๋ยวเรือนไม้ พิษณุโลก,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,175,73,True,type ที่ค้นหาได้: restaurant
+3245,ลุงหนั่นหมูกะทะ สาขา 1,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,130,73,True,type ที่ค้นหาได้: restaurant
+3327,The Horizon Café and Eatery,ร้านอาหารฟิวชั่น,"restaurant,food,point_of_interest,establishment",api,90,73,True,type ที่ค้นหาได้: restaurant
+2003,ตลาดกลางคืน night market มน. ประตู 5,ตลาดกลางคืน,"establishment,point_of_interest",scrape,202,72,True,ป้าย Google: ตลาดกลางคืน (ในขอบเขต)
+3241,ก๋วยเตี๋ยวริมสวน,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,133,72,True,type ที่ค้นหาได้: restaurant
+3252,THE FOREST COFFEE HAUS PHITSANULOK,ร้านกาแฟ,"cafe,store,point_of_interest,food,establishment",api,131,72,True,type ที่ค้นหาได้: cafe
+3344,SEIKI IZAKAYA เซกิ อิซากายะ,ภัตตาคารอาหารญี่ปุ่น,"restaurant,food,point_of_interest,establishment",api,87,72,True,type ที่ค้นหาได้: restaurant
+806,Prompt cup,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,92,71,True,type ที่ค้นหาได้: cafe
+3224,Phitsanulok Pakistan Mosque,มัสยิด,"mosque,tourist_attraction,place_of_worship,point_of_interest,establishment",api,137,71,True,type ที่ค้นหาได้: tourist_attraction
+3250,ขนมกุ้ยช่าย คุณละออ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,123,71,True,type ที่ค้นหาได้: restaurant
+3330,Takara The Palais Phitsanulok,ภัตตาคารอาหารญี่ปุ่น,"restaurant,store,food,point_of_interest,establishment",api,93,71,True,type ที่ค้นหาได้: restaurant
+3301,Ebisu Ramen - เอบิสึ ราเมน พิษณุโลก,ร้านอาหารราเมน,"restaurant,food,point_of_interest,establishment",api,105,70,True,type ที่ค้นหาได้: restaurant
+519,หลบร้อน คาเฟ่,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,restaurant",scrape,119,69,True,"type ที่ค้นหาได้: cafe,restaurant"
+3643,ครัวนายกะเพรา,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",scrape,132,69,True,type ที่ค้นหาได้: restaurant
+230,พันธุ์สุกรานต์คาเฟ่,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,108,68,True,type ที่ค้นหาได้: cafe
+3296,เชิดชู หมูกะทะ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,106,68,True,type ที่ค้นหาได้: restaurant
+3239,ก๋วยจั๊บป้าสาวห้อยขา วังส้มซ่า,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,131,67,True,type ที่ค้นหาได้: restaurant
+3341,ตั่วซุง ข้าวมันไก่สไตล์สิงคโปร์ เฝอ,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,85,67,True,type ที่ค้นหาได้: restaurant
+3632,ภัตตาคารอาหารญี่ปุ่นฟูจิ เซ็นทรัล พิษณุโลก,ภัตตาคารอาหารญี่ปุ่น,"restaurant,food,point_of_interest,establishment",scrape,127,67,True,type ที่ค้นหาได้: restaurant
+3230,ร้านริมสวน ขนมจีนหล่มสัก,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,136,66,True,type ที่ค้นหาได้: restaurant
+3262,ร้านแป๊ะเจ้าเก่า สาขา 2 (กองทราย)​,อาหารฟาสต์ฟูด,"restaurant,food,point_of_interest,establishment",api,125,66,True,type ที่ค้นหาได้: restaurant
+3292,ร้านก๋วยเตี๋ยวไทย นุชสุโขทัย 4,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,110,66,True,type ที่ค้นหาได้: restaurant
+6035,บ้านสวนกลิ่นฝัน ก๋วยเตี๋ยว,ร้านก๋วยเตี๋ยว,,(null),120,66,True,ป้าย Google: ร้านก๋วยเตี๋ยว (ในขอบเขต)
+129,"Grains Society - Sourdough, Coffee and everything nice👌",ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,108,65,True,type ที่ค้นหาได้: cafe
+192,Me katt' cafe NU - ม.นเรศวร,คาเฟ่แมว,"establishment,point_of_interest",scrape,96,65,True,ป้าย Google: คาเฟ่แมว (ในขอบเขต)
+1577,ร้านหม่าม้า Mama Coffee&Restaurant,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,85,65,True,type ที่ค้นหาได้: restaurant
+3265,หมูกรอบ-หมูแดง ริมทางรถไฟ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,118,64,True,type ที่ค้นหาได้: restaurant
+3269,ร้านไม้แบบ2,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,120,64,True,type ที่ค้นหาได้: restaurant
+3172,ร้านดอยคำ,ซูเปอร์มาร์เก็ต,"supermarket,cafe,grocery_or_supermarket,food,point_of_interest,store,establishment",api,197,63,True,ตัดสินรายแห่ง: ร้านดอยคำ — types มี cafe และขายของฝาก เข้าเกณฑ์ตลาด/ของฝาก
+3238,ลาบรอนแรม (Authentic Isan & Northern Thai Cuisine),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,131,63,True,type ที่ค้นหาได้: restaurant
+3297,ก๋วยเตี๋ยวสุโขทัย ลุง-ป้า สาย3 สาขาพิษณุโลก,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,104,63,True,type ที่ค้นหาได้: restaurant
+3317,พูลทวี,ร้านอาหาร,"restaurant,bar,food,point_of_interest,establishment",api,95,63,True,type ที่ค้นหาได้: restaurant
+3325,แอบแดกคอฟฟี่ริเวอร์ไซด์,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,93,63,True,type ที่ค้นหาได้: restaurant
+205,Muiwa Home Café and Eatery,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,restaurant,store",scrape,92,62,True,"type ที่ค้นหาได้: cafe,restaurant"
+3268,Happy Fattory,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,119,62,True,type ที่ค้นหาได้: restaurant
+172,กาแฟพันธุ์ไทย สาขาริมแม่น้ำน่าน 24 ชั่วโมง,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,77,61,True,type ที่ค้นหาได้: cafe
+3266,ลุงเมืองข้าวมันไก่,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,117,61,True,type ที่ค้นหาได้: restaurant
+3283,ผึ้งน้อยเบเกอรี่ ศูนย์กระจายพิษณุโลก,ร้านเบเกอรี่,"bakery,store,food,point_of_interest,establishment",api,107,61,True,type ที่ค้นหาได้: bakery
+265,เขาโปกโล้น,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,88,60,True,type ที่ค้นหาได้: tourist_attraction
+3274,เจ๊วรรณข้าวราดแกง,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,117,60,True,type ที่ค้นหาได้: restaurant
+3306,ร้านก๋วยเตี๋ยวย่ากอบปู่แจ้วัดจันทร์,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,98,60,True,type ที่ค้นหาได้: restaurant
+213,Lada ร้านอาหาร,ภัตตาคารอาหารไทย,"establishment,food,point_of_interest,restaurant",scrape,94,59,True,type ที่ค้นหาได้: restaurant
+3267,แพเพ็ญ,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,117,59,True,type ที่ค้นหาได้: restaurant
+3272,ครัว มรดก kitchen bar&Steakhouse,ร้านสเต็ก,"cafe,store,restaurant,food,point_of_interest,establishment",api,116,59,True,"type ที่ค้นหาได้: cafe,restaurant"
+3276,ร้านแอนส้มตำริมทาง,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,115,59,True,type ที่ค้นหาได้: restaurant
+3302,ขนมจีนหล่มเก่าคุณใบเตย,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,102,59,True,type ที่ค้นหาได้: restaurant
+3303,สวนกลางเมือง พิษณุโลก,สวนสาธารณะ,"park,point_of_interest,establishment",api,98,59,True,type ที่ค้นหาได้: park
+3340,ร้านอาหารต้นตาล สาขา 2 (บ้านต้นตาล ถ.ศรีธรรมไตรปิฏก) - Baan Tontan Restaurant พิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,85,59,True,type ที่ค้นหาได้: restaurant
+206,"KRAM, long time no sea : ครามคาเฟ่",ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,92,58,True,type ที่ค้นหาได้: cafe
+3219,วัดเซนต์นิโกลาส พิษณุโลก,โบสถ์คาทอลิก,"tourist_attraction,church,place_of_worship,point_of_interest,establishment",api,141,58,True,type ที่ค้นหาได้: tourist_attraction
+3278,กะเพราถาดคุณยาย สาขาพิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,107,58,True,type ที่ค้นหาได้: restaurant
+3300,ร้านสเต็กมาดาม Steak Madam,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,104,58,True,type ที่ค้นหาได้: restaurant
+3734,INTOWN,ร้านอาหาร,"restaurant,liquor_store,bar,store,food,point_of_interest,establishment",scrape,127,58,True,type ที่ค้นหาได้: restaurant
+361,ซิลเวอร์ สปูน เรสเตอรอง แอนด์ คาเฟ่ พิษณุโลก,ร้านอาหาร,"cafe,establishment,food,point_of_interest,restaurant,store",scrape,73,57,True,"type ที่ค้นหาได้: cafe,restaurant"
+1671,ร้านอาหารสถานีรสแซ่บ,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,115,57,True,type ที่ค้นหาได้: restaurant
+3286,ร้านอาหารก๋วยไต๋เทียว,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,110,57,True,type ที่ค้นหาได้: restaurant
+3383,ร้านอาหาร โมดิช,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,72,57,True,type ที่ค้นหาได้: restaurant
+3786,กาแฟเอร้อยปั่น,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",scrape,119,57,True,type ที่ค้นหาได้: cafe
+202,yesterday cafe,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,105,56,True,type ที่ค้นหาได้: cafe
+567,ตำหลังสวน แจ่วฺฮ้อน พิษณุโลก,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,94,56,True,type ที่ค้นหาได้: restaurant
+3290,อิสานแซบนัวร์,ภัตตาคารอาหารไทย,"restaurant,point_of_interest,food,establishment",api,107,56,True,type ที่ค้นหาได้: restaurant
+3305,สนามชนไก่ ส.แปดเซียน,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,93,56,True,type ที่ค้นหาได้: restaurant
+3343,Sip Cafe,ร้านกาแฟ,"cafe,art_gallery,food,point_of_interest,establishment",api,84,56,True,type ที่ค้นหาได้: cafe
+3350,WANG KIRIN COFFEE,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,83,56,True,type ที่ค้นหาได้: restaurant
+3409,กิมเกี๊ยวกุ้ง บะหมี่ไข่เยาวราช พิษณุโลก,ภัตตาคารอาหารจีน,"restaurant,food,point_of_interest,establishment",api,68,56,True,type ที่ค้นหาได้: restaurant
+3411,ก๋วยเตี๋ยวเรือ ป.ประทีป สาขาม.นเรศวร,ร้านก๋วยเตี๋ยว,"restaurant,point_of_interest,food,establishment",api,66,56,True,type ที่ค้นหาได้: restaurant
+125,ITSARA Coffee Phitsanulok,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,71,55,True,type ที่ค้นหาได้: cafe
+3313,Couple Brew,ร้านกาแฟ,"cafe,store,point_of_interest,food,establishment",api,98,55,True,type ที่ค้นหาได้: cafe
+3362,กิ๋นลำ อาหารเหนือ(พิษณุโลก),ภัตตาคารอาหารไทย,"restaurant,food,point_of_interest,establishment",api,79,55,True,type ที่ค้นหาได้: restaurant
+3369,ลองดูว์ (LongDoo),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,77,55,True,type ที่ค้นหาได้: restaurant
+3380,Pique Nique,ร้านกาแฟ,"cafe,bakery,store,food,point_of_interest,establishment",api,75,55,True,"type ที่ค้นหาได้: bakery,cafe"
+3386,Refreshing Cafe & Gallery,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,72,55,True,type ที่ค้นหาได้: cafe
+3406,ร้านกาแฟ Space.phs,ร้านกาแฟ,"cafe,store,food,point_of_interest,establishment",api,68,55,True,type ที่ค้นหาได้: cafe
+1187,ร้านเล็กข้าวต้มร้านอร่อยพิษณุโลก,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,91,54,True,type ที่ค้นหาได้: restaurant
+3311,ก๋วยเตี๋ยวไทยสวรรคโลก,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,98,54,True,type ที่ค้นหาได้: restaurant
+3323,ครัวพี่น้องกลางซอย,ร้านอาหารครอบครัว,"restaurant,food,point_of_interest,establishment",api,92,54,True,type ที่ค้นหาได้: restaurant
+3342,ครัวขนุน,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,81,54,True,type ที่ค้นหาได้: restaurant
+134,Blue Craft Coffee,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,88,53,True,type ที่ค้นหาได้: cafe
+137,A-Kong.Kafei,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,99,53,True,type ที่ค้นหาได้: cafe
+227,KITCHIN,ภัตตาคารอาหารญี่ปุ่น,"establishment,food,point_of_interest,restaurant",scrape,95,53,True,type ที่ค้นหาได้: restaurant
+3285,เย็นตาโฟเชียงคำ สาขา ม.นเรศวรพิษณุโลก,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,108,53,True,type ที่ค้นหาได้: restaurant
+3281,FoodPark ROBINSON Phitsanulok,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,109,52,True,type ที่ค้นหาได้: restaurant
+3294,ชูบัน chubun,ร้านขนมหวาน,"restaurant,food,point_of_interest,establishment",api,109,52,True,type ที่ค้นหาได้: restaurant
+3335,Seize the sip,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,89,52,True,type ที่ค้นหาได้: cafe
+3347,เปี๊ยกสุกี้ พระลือ - sukiyakipeiyk,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,83,52,True,type ที่ค้นหาได้: restaurant
+3408,ร้านมิสเตอร์สเต็กสาขา 3 เรือนแพ(Mr. Steak 3),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,68,52,True,type ที่ค้นหาได้: restaurant
+3308,ส้มตำท่าเสด็จ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,95,51,True,type ที่ค้นหาได้: restaurant
+3309,ก๋วยเตี๋ยวป้าใบ,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,99,51,True,type ที่ค้นหาได้: restaurant
+3314,ก๋วยเตี๋ยวไก่มะระบุฟเฟ่ต์40 บ.(บุฟเฟ่ต์ข้อ),ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,90,51,True,type ที่ค้นหาได้: restaurant
+3331,Cafe At Wood (เรือนไม้กาแฟ),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,92,51,True,type ที่ค้นหาได้: restaurant
+3376,พิซซ่า 616,ร้านพิซซ่า,"restaurant,point_of_interest,food,establishment",api,73,51,True,type ที่ค้นหาได้: restaurant
+3431,ร้านคุณยายก๋วยเตี๋ยวต้มยำไทยโบราณ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,63,51,True,type ที่ค้นหาได้: restaurant
+3633,ไอชาบู,ภัตตาคารอาหารบุฟเฟต์,"restaurant,point_of_interest,food,establishment",scrape,122,51,True,type ที่ค้นหาได้: restaurant
+3282,ข้าวมันไก่ข้างศาลปู่ดำ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,108,50,True,type ที่ค้นหาได้: restaurant
+3287,ร้านขนมปังโอชิน สาขาพิษณุโลก สาขา 1,ร้านเบเกอรี่,"bakery,point_of_interest,store,food,establishment",api,105,50,True,type ที่ค้นหาได้: bakery
+3373,เจ๊จูบะหมี่ไข่,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,76,50,True,type ที่ค้นหาได้: restaurant
+3378,ร้านส้มตำท่านซิ่ง&เมี่ยงปลาอบโอ่งสมุนไพร,อาหารฟาสต์ฟูด,"restaurant,food,point_of_interest,establishment",api,73,50,True,type ที่ค้นหาได้: restaurant
+3391,หอเจี๊ยะ หมาล่าทั่ง,ภัตตาคารอาหารจีน,"restaurant,food,point_of_interest,establishment",api,70,50,True,type ที่ค้นหาได้: restaurant
+3664,ร้านก๋วยเตี๋ยวห้อยขาป้ากฐิน,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",scrape,70,50,True,type ที่ค้นหาได้: restaurant
+3860,ปัทมานนท์ฟาร์มจระเข้,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",scrape,92,50,True,type ที่ค้นหาได้: cafe
+136,29 CAFE’ สองก้าวพิษณุโลก,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,57,49,True,type ที่ค้นหาได้: cafe
+3334,ก๋วยเตี๋ยวเนื้อตุ๋นโพธิงาม,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,89,49,True,type ที่ค้นหาได้: restaurant
+3358,26SHABU,ร้านอาหารชาบูชาบู,"restaurant,food,point_of_interest,establishment",api,78,49,True,type ที่ค้นหาได้: restaurant
+3364,"คาเฟ่ เดอ ลิ้ม Cafe de Lim Restaurant, Phitsanulok Town",ร้านอาหาร,"restaurant,bakery,cafe,bar,store,food,point_of_interest,establishment",api,76,49,True,"type ที่ค้นหาได้: bakery,cafe,restaurant"
+3429,ASADO พิษณุโลก - Kansai Yakiniku bar,ร้านบาร์บีคิว,"restaurant,food,point_of_interest,establishment",api,72,49,True,type ที่ค้นหาได้: restaurant
+3435,ตงเจียลี่ เซียนน้อยหวานเย็น,ร้านขนมหวาน,"restaurant,food,point_of_interest,establishment",api,62,49,True,type ที่ค้นหาได้: restaurant
+3437,Wang Cafe&You,ร้านกาแฟ,"cafe,food,point_of_interest,store,establishment",api,63,49,True,type ที่ค้นหาได้: cafe
+3453,สเต็กมอนสเตอร์,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,59,49,True,type ที่ค้นหาได้: restaurant
+3227,เป๋าตุงหมูกระทะ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,125,48,True,type ที่ค้นหาได้: restaurant
+3351,ร้านเห็นแล้วหิว หมูกระทะ ชาบู บุฟเฟ่ต์,ภัตตาคารอาหารบุฟเฟต์,"restaurant,food,point_of_interest,establishment",api,81,48,True,type ที่ค้นหาได้: restaurant
+3405,ร้านคุณตา Grandpa,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,67,48,True,type ที่ค้นหาได้: cafe
+239,Coffee Space สาขาประตู 4,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,103,47,True,type ที่ค้นหาได้: cafe
+3316,บ้านหมูกระทะ พิดโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,88,47,True,type ที่ค้นหาได้: restaurant
+3322,ก๋วยเตี๋ยวเสธ.,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,94,47,True,type ที่ค้นหาได้: restaurant
+3346,ร้านอาหารอีซ้ายรสเด็ด,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,85,47,True,type ที่ค้นหาได้: restaurant
+3397,ญ่าคาเฟ่ • Coffee & Desserts •,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,70,47,True,type ที่ค้นหาได้: cafe
+3400,ฉลู ก๋วยเตี๋ยวเนื้อตุ๋น ราชวัตร - โรงหนังราม่าพิษณุโลก,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,64,47,True,type ที่ค้นหาได้: restaurant
+3455,สุข-ดี สุกี้ไหหลำ สาขาพระลือ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,59,47,True,type ที่ค้นหาได้: restaurant
+89,Ease cafe พิษณุโลก,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,73,46,True,type ที่ค้นหาได้: cafe
+3289,ส้มตำครกไม้,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,106,46,True,type ที่ค้นหาได้: restaurant
+3326,Steak Bkk ถนนไชยานุภาพ วัดจันทร์ตะวันตก ( พิษณุโลก ),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,94,46,True,type ที่ค้นหาได้: restaurant
+3371,ร้านเจี๊ยบ ข้าวเหนียวมูน เจ้าเก่าประตูมอญ,ร้านขนมหวาน,"restaurant,food,point_of_interest,establishment",api,75,46,True,type ที่ค้นหาได้: restaurant
+3379,Rubber tree Cafe,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,74,46,True,type ที่ค้นหาได้: cafe
+3482,ครัวบุญศรี สถานีนมสด,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,52,46,True,type ที่ค้นหาได้: restaurant
+3916,เบอร์เกอร์เทรลเลอร์,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",scrape,56,46,True,type ที่ค้นหาได้: restaurant
+3293,ร้านก๋วยเตี๋ยวเรือคุยเส้น,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,105,45,True,type ที่ค้นหาได้: restaurant
+3295,สแตมป์ คาร์แคร์&คาเฟ่ ในพิษณุโลก My-name-is Stamp,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,104,45,True,type ที่ค้นหาได้: cafe
+3348,เฮียเหลียงข้าวหมูทอด ก๋วยเตี๋ยวต้มยำ-หมูบะเต็ง พิษณุโลก,อาหารฟาสต์ฟูด,"restaurant,food,point_of_interest,establishment",api,80,45,True,type ที่ค้นหาได้: restaurant
+3381,มิสเตอร์สเต็ก2ตรงข้ามวิทลัยพยาบาล(Mr.steak2),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,73,45,True,type ที่ค้นหาได้: restaurant
+3388,EatsyEatzy,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,72,45,True,type ที่ค้นหาได้: cafe
+3456,หมูย่างอโคจร สาขาเรือนแพ,อาหารฟาสต์ฟูด,"restaurant,food,point_of_interest,establishment",api,62,45,True,type ที่ค้นหาได้: restaurant
+3465,ศรีสองแคว,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,57,45,True,type ที่ค้นหาได้: restaurant
+3354,ร้านข้าวต้มกุ๊ยจ่าตู๋,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,81,44,True,type ที่ค้นหาได้: restaurant
+3361,ไข่หวานบ้านซูชิ สาขาเอกาทศรถพิษณุโลก,ร้านซูชิ,"restaurant,food,point_of_interest,establishment",api,76,44,True,type ที่ค้นหาได้: restaurant
+3390,ก๋วยเตี๋ยวบ้านสวนท่าโพธิ์,ร้านก๋วยเตี๋ยว,"restaurant,point_of_interest,food,establishment",api,70,44,True,type ที่ค้นหาได้: restaurant
+3394,อ้วนตุ๊บ ปิ้งย่าง ชาบู หมูกระทะ สาขา พิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,71,44,True,type ที่ค้นหาได้: restaurant
+1715,Chill All Day Cafe ชิลล์ออลเดย์คาเฟ่,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,56,43,True,type ที่ค้นหาได้: cafe
+1800,Molen Cafe,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,48,43,True,type ที่ค้นหาได้: cafe
+3338,ร้านอาหารป่า ลุงจ้ำ ป้าฝน,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,86,43,True,type ที่ค้นหาได้: restaurant
+3382,Old School Steak House,ร้านอาหารตะวันตก,"restaurant,food,point_of_interest,establishment",api,78,43,True,type ที่ค้นหาได้: restaurant
+3392,วิษณุคาร์แคร์ & Coffee Bar Cafe,บริการล้างรถ,"car_wash,cafe,restaurant,food,point_of_interest,store,establishment",api,67,43,True,ตัดสินรายแห่ง: วิษณุคาร์แคร์ & Coffee Bar Cafe — เป็นคาเฟ่จริงที่ล้างรถด้วย (types มี cafe และ restaurant) รีวิวที่พูดถึงบริการล้างรถ เป็นปัญหาระดับเนื้อหา จัดการด้วยหมวด 13 ไม่ใช่ตัดสถานที่ทิ้ง
+3416,นายอร่อย - เมืองพิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,64,43,True,type ที่ค้นหาได้: restaurant
+516,Deep Sea Café & Bistro,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,76,42,True,type ที่ค้นหาได้: restaurant
+3320,ร้าน ก๋วยเตี๋ยวเรือ มูมมาม,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,95,42,True,type ที่ค้นหาได้: restaurant
+3339,ร้านอาหารทางเกวียน จ.พิษณุโลก,ไนท์คลับ,"night_club,restaurant,food,point_of_interest,establishment",api,83,42,True,type ที่ค้นหาได้: restaurant
+3365,ร้านสเต็กกระทะร้อนหน้ามอนอ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,76,42,True,type ที่ค้นหาได้: restaurant
+3370,Hashtag coffee & cafe.,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,74,42,True,type ที่ค้นหาได้: cafe
+3430,รับรอง Restaurant,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,62,42,True,type ที่ค้นหาได้: restaurant
+3459,ป.ประทีป ก๋วยเตี๋ยวเรือ สาขา Chill All Day พิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,58,42,True,type ที่ค้นหาได้: restaurant
+3471,เสาวรสโภชนา2.1 ร้านอาหารตามสั่ง กาแฟสด ขนมไทยของฝาก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,56,42,True,type ที่ค้นหาได้: restaurant
+526,ออโรร่า คาเฟ่,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,64,41,True,type ที่ค้นหาได้: cafe
+3242,วัดพันปี,วัด,"tourist_attraction,place_of_worship,point_of_interest,establishment",api,121,41,True,type ที่ค้นหาได้: tourist_attraction
+3366,Cozy.PHS,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,77,41,True,type ที่ค้นหาได้: restaurant
+3389,ปิยะมาศเบเกอรี่ ( Piyamas bakery ),ร้านเบเกอรี่,"bakery,store,food,point_of_interest,establishment",api,69,41,True,type ที่ค้นหาได้: bakery
+3464,ร้าน กินนี่ดี,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,52,41,True,type ที่ค้นหาได้: restaurant
+3983,ข้าวเหนียวมะม่วง เจริญพร2,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",scrape,58,41,True,type ที่ค้นหาได้: restaurant
+7,วัดสระแก้วปทุมทอง,วัด,"establishment,place_of_worship,point_of_interest",scrape,101,39,True,type ในขอบเขต: place_of_worship
+3312,จิ้มจุ่มริมสวน,ภัตตาคารอาหารบุฟเฟต์,"restaurant,point_of_interest,food,establishment",api,87,39,True,type ที่ค้นหาได้: restaurant
+3329,บานาน่า คอฟฟี่,ร้านกาแฟ,"cafe,store,food,point_of_interest,establishment",api,94,39,True,type ที่ค้นหาได้: cafe
+3337,หนุบหนับ บุฟเฟ่หมูกระทะ,ภัตตาคารอาหารบุฟเฟต์,"restaurant,food,point_of_interest,establishment",api,88,39,True,type ที่ค้นหาได้: restaurant
+3345,ร้านตาโรจน์ข้าวต้มโต้รุ่ง,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,84,39,True,type ที่ค้นหาได้: restaurant
+3387,จุ่มแซ่บซ่าชาบูบุฟเฟต์,ร้านอาหารชาบูชาบู,"restaurant,food,point_of_interest,establishment",api,67,39,True,type ที่ค้นหาได้: restaurant
+3469,ต้าเฉิง - Dà Chéng.kāfēi,ร้านกาแฟ,"cafe,store,food,point_of_interest,establishment",api,56,39,True,type ที่ค้นหาได้: cafe
+3279,ต.โต้งก๋วยเตี๋ยวหมูตุ๋น ไก๋ตุ๋น ข้าวขาหมู อาหารตามสั่ง,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,107,38,True,type ที่ค้นหาได้: restaurant
+3368,ร้านอาหารปลายนาปลาเผา,ร้านอาหารธรรมชาติ,"grocery_or_supermarket,restaurant,food,point_of_interest,store,establishment",api,70,38,True,type ที่ค้นหาได้: restaurant
+3443,เส้นซอย เปิงใจ๋ (เฮือนเปิงใจ๋),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,58,38,True,type ที่ค้นหาได้: restaurant
+3450,ครัวบ้านแพ (NKRN),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,59,38,True,type ที่ค้นหาได้: restaurant
+3460,Thairaya,ภัตตาคารอาหารไทย,"restaurant,food,point_of_interest,establishment",api,57,38,True,type ที่ค้นหาได้: restaurant
+3463,ท่าฉลอง • MADE MY DAY,ร้านอาหาร,"restaurant,bar,point_of_interest,food,establishment",api,55,38,True,type ที่ค้นหาได้: restaurant
+3487,ฤดู,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,50,38,True,type ที่ค้นหาได้: restaurant
+111,บ้านวังส้มซ่า,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,76,37,True,type ที่ค้นหาได้: tourist_attraction
+629,Aggie Corner,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,87,37,True,type ที่ค้นหาได้: cafe
+3328,ร้านสถานตากอากาศ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,92,37,True,type ที่ค้นหาได้: restaurant
+3375,ก๋วยเตี๋ยวดู๋ดี๋ ชักธงชัย,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,71,37,True,type ที่ค้นหาได้: restaurant
+3427,ตำอร่อย (พี่กร),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,60,37,True,type ที่ค้นหาได้: restaurant
+3428,ร้านเสน่ห์หม้อแกง,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,63,37,True,type ที่ค้นหาได้: restaurant
+3438,SOMTHUY COFFEE BAR,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,58,37,True,type ที่ค้นหาได้: cafe
+3473,ป๋าเลี้ยง ถ้วยร้อน,ภัตตาคารอาหารเช้าและกลางวัน,"restaurant,food,point_of_interest,establishment",api,51,37,True,type ที่ค้นหาได้: restaurant
+3498,Carb and Cof.,ร้านกาแฟ,"cafe,store,food,point_of_interest,establishment",api,51,37,True,type ที่ค้นหาได้: cafe
+347,Oak Cafe and Bistro โอ๊คคาเฟ่แอนด์บิสโทร,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,88,36,True,type ที่ค้นหาได้: cafe
+3356,BEEF R US,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,79,36,True,type ที่ค้นหาได้: restaurant
+3395,SAFE ZONE Camp,ร้านอาหารประเภทข้าว,"restaurant,point_of_interest,food,establishment",api,66,36,True,type ที่ค้นหาได้: restaurant
+3418,จินจินลูกชิ้นปลาเย็นตาโฟ,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,63,36,True,type ที่ค้นหาได้: restaurant
+3502,ส้มตำหน้าเอสอาร์ พิษณุโลก,ร้านอาหารครอบครัว,"restaurant,food,point_of_interest,establishment",api,49,36,True,type ที่ค้นหาได้: restaurant
+82,Street art by Thong,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,50,35,True,type ที่ค้นหาได้: tourist_attraction
+551,10ตุลา Coffee,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,64,35,True,type ที่ค้นหาได้: cafe
+3349,วัดเด่นโบสถ์โพธิ์งาม,วัด,"place_of_worship,point_of_interest,establishment",api,76,35,True,type ในขอบเขต: place_of_worship
+3359,ครัวนายลาบเป็ด ร้านอาหารพิษณุโลก,ร้านอาหาร,"restaurant,grocery_or_supermarket,food,point_of_interest,store,establishment",api,79,35,True,type ที่ค้นหาได้: restaurant
+3415,หมูกรอบ ส.สามชั้น,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,64,35,True,type ที่ค้นหาได้: restaurant
+3419,ลุงหนั่นหมูกะทะ สาขา 2,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,63,35,True,type ที่ค้นหาได้: restaurant
+3499,ชามังกร,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,50,35,True,type ที่ค้นหาได้: cafe
+190,"Humming House, Phitsanulok",ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,69,34,True,type ที่ค้นหาได้: cafe
+397,พิพิธภัณฑ์ผ้า มหาวิทยาลัยนเรศวร,พิพิธภัณฑ์,"establishment,museum,point_of_interest,tourist_attraction",scrape,87,34,True,ตัดสินรายแห่ง: พิพิธภัณฑ์ผ้า ม.นเรศวร — เป็นพิพิธภัณฑ์เปิดให้คนทั่วไปเข้าชม
+452,สุขนิยม พิษณุโลก​,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,48,34,True,type ที่ค้นหาได้: restaurant
+562,อ่างเก็บน้ำห้วยส้มเค็ม,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,61,34,True,type ที่ค้นหาได้: tourist_attraction
+3355,ร้านอาหารหมู่เฮา,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,81,34,True,type ที่ค้นหาได้: restaurant
+3385,ส้มตำริมหลิ่ง,ภัตตาคารอาหารไทย,"restaurant,food,point_of_interest,establishment",api,72,34,True,type ที่ค้นหาได้: restaurant
+3403,ก๋วยเตี๋ยวปุ๊-หลังศาลากลาง,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,64,34,True,type ที่ค้นหาได้: restaurant
+3439,ร้านส้มตำป้าไหมใต้ร่มโพธิ์,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,59,34,True,type ที่ค้นหาได้: restaurant
+3444,ทิวมะขาม cafe & bistro,ร้านกาแฟ,"cafe,store,food,point_of_interest,establishment",api,58,34,True,type ที่ค้นหาได้: cafe
+3451,Steak monster garden,ร้านอาหาร,"restaurant,cafe,store,point_of_interest,food,establishment",api,54,34,True,"type ที่ค้นหาได้: cafe,restaurant"
+3492,ต้มตุ๋น บุฟเฟ่ต์ สุกี้ สายพาน พิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,51,34,True,type ที่ค้นหาได้: restaurant
+241,กาแฟพันธุ์ไทย สาขาพิษณุโลก3,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,57,33,True,type ที่ค้นหาได้: cafe
+3353,ร้านตอกไข่ใส่เส้น,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,74,33,True,type ที่ค้นหาได้: restaurant
+3412,ลูกชิ้นพิษณุโลกราม่า,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,64,33,True,type ที่ค้นหาได้: restaurant
+3436,ครัวบ้านส้ม - ประชาอุทิศ พิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,59,33,True,type ที่ค้นหาได้: restaurant
+3474,ญวน ปริญญา สาขาถนนบรมไตร(ก๋วยจั๊บญวน เล้งแซ่บ),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,54,33,True,type ที่ค้นหาได้: restaurant
+3508,บ้านติดดินสโลว์บาร์,ร้านกาแฟ,"campground,cafe,lodging,store,food,point_of_interest,establishment",api,49,33,True,type ที่ค้นหาได้: cafe
+3689,@ ลูกชิ้นปลาโกตุ๋ย,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",scrape,60,33,True,type ที่ค้นหาได้: restaurant
+207,Saringkan Café,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,47,32,True,type ที่ค้นหาได้: cafe
+3360,ก๋วยเตี๋ยวไก่ป้าสงบ(สาขาบ้านคลอง),ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,78,32,True,type ที่ค้นหาได้: restaurant
+3440,เจ๊อร ข้าวมันไก่,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,57,32,True,type ที่ค้นหาได้: restaurant
+3448,สุกี้บูมบูม 繁荣 หม่าล่าสายพาน พิษณุโลก,しゃぶしゃぶレストラン,"restaurant,food,point_of_interest,establishment",api,61,32,True,type ที่ค้นหาได้: restaurant
+3458,คอนเน็คชั่น,ร้านกาแฟ,"cafe,store,restaurant,point_of_interest,food,establishment",api,56,32,True,"type ที่ค้นหาได้: cafe,restaurant"
+234,Baan Wee .crema,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,37,31,True,type ที่ค้นหาได้: cafe
+1139,Kyoto Shi Cafe พิษณุโลก キョウトシ カフェ,コーヒーショップ・喫茶店,"bakery,establishment,food,point_of_interest,store",scrape,109,31,True,type ที่ค้นหาได้: bakery
+3367,วัดสะกัดน้ำมัน,วัด,"place_of_worship,point_of_interest,establishment",api,72,31,True,type ในขอบเขต: place_of_worship
+3404,ก๋วยเตี๋ยว โกเด้ง ท่าโพธิ์,ร้านก๋วยเตี๋ยว,"restaurant,point_of_interest,food,establishment",api,65,31,True,type ที่ค้นหาได้: restaurant
+3441,ร้านอาหารป้าบัวโรย,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,58,31,True,type ที่ค้นหาได้: restaurant
+194,Bakerneering,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,42,30,True,type ที่ค้นหาได้: cafe
+211,ศูนย์อาหาร NU Canteen,โรงอาหาร,"establishment,food,point_of_interest,restaurant",scrape,119,30,True,type ที่ค้นหาได้: restaurant
+251,ลานสมเด็จพระนเรศวรมหาราช,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,78,30,True,ตัดสินรายแห่ง: ลานสมเด็จพระนเรศวรมหาราช — มี type tourist_attraction
+542,บ้านสวนคาเฟ่ - Baan Suan Cafe Phitsanulok,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,65,30,True,type ที่ค้นหาได้: cafe
+3357,Cozy Cafe,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,30,30,True,type ที่ค้นหาได้: cafe
+3372,ลุงหนั่นหมูกระทะ สาขา6,ปิ้งย่าง,"restaurant,food,point_of_interest,establishment",api,72,30,True,type ที่ค้นหาได้: restaurant
+3374,โบตั๋น,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,70,30,True,type ที่ค้นหาได้: restaurant
+3401,น้อยส้มตำสารคาม,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,67,30,True,type ที่ค้นหาได้: restaurant
+3432,พิพิธภัณฑ์ มิตร ชัยบัญชา,พิพิธภัณฑ์,"museum,point_of_interest,establishment",api,56,30,True,type ที่ค้นหาได้: museum
+3433,ก๋วยเตี๋ยวบ้านกลางนา ติดถนนสายเลี่ยงเมือง จ.พิษณุโลก,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,59,30,True,type ที่ค้นหาได้: restaurant
+3442,ก๋วยเตี๋ยวสุดใจ,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,57,30,True,type ที่ค้นหาได้: restaurant
+3446,กินครบ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,61,30,True,type ที่ค้นหาได้: restaurant
+3472,เย็นตาโฟป้อมทอง,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,54,30,True,type ที่ค้นหาได้: restaurant
+3486,ร้านข้าวต้มเจ้าสัว2,ร้านข้าวต้ม,"restaurant,point_of_interest,food,establishment",api,51,30,True,type ที่ค้นหาได้: restaurant
+3490,Keller’s Smoothie & Coffee,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,51,30,True,type ที่ค้นหาได้: cafe
+3822,ส้มตำริมสระ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",scrape,47,30,True,type ที่ค้นหาได้: restaurant
+80,จุดชมวิวริมแม่น้ำน่าน​ วัด​พระ​ศรีรัตน​มหาธาตุ​วรมหาวิหาร​,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,65,29,True,type ที่ค้นหาได้: tourist_attraction
+3363,โจ๊กเทพ.​หลังมอนอ.ประตู4 พิโลก,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,75,29,True,type ที่ค้นหาได้: restaurant
+3393,ครัวละมัย,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,66,29,True,type ที่ค้นหาได้: restaurant
+3402,ก๋วยเตี๋ยวตีนไก่ต้นมะม่วงป้าเฉื่อย (เจ้าเก่า),ร้านก๋วยเตี๋ยว,"restaurant,point_of_interest,food,establishment",api,66,29,True,type ที่ค้นหาได้: restaurant
+3426,เตี๋ยวตุ๋น บุญช่วย,ร้านอาหารครอบครัว,"restaurant,food,point_of_interest,establishment",api,63,29,True,type ที่ค้นหาได้: restaurant
+3489,ร้านอาหารเจ๊แหว๋วโภชนา,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,52,29,True,type ที่ค้นหาได้: restaurant
+3505,ร้านน้าชวน,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,46,29,True,type ที่ค้นหาได้: restaurant
+3410,หม่าล่าพาเพลินphitsanulok​,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,66,28,True,type ที่ค้นหาได้: restaurant
+3417,ก๋วยเตี๋ยวเรือชามกะลาป้าแบน - มหาวิทยาลัยนเรศวร,ร้านก๋วยเตี๋ยว,"restaurant,point_of_interest,food,establishment",api,64,28,True,type ที่ค้นหาได้: restaurant
+3503,ร้านทมโภชนา,ภัตตาคารอาหารจีน,"restaurant,food,point_of_interest,establishment",api,49,28,True,type ที่ค้นหาได้: restaurant
+3510,โอเคคอฟฟี่(OK Coffee) พิษณุโลก-ตรงข้ามปั๊มบางจากผดุงราษฎร์,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",scrape,46,28,True,type ที่ค้นหาได้: cafe
+226,แลบัว ณ มอนอ,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,50,27,True,type ที่ค้นหาได้: restaurant
+376,หจก.โฮม ไดนิ่ง แอนด์ มิวสิค (HoDiMu) โรงหลู้ Restaurest & Folksong,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,45,27,True,type ที่ค้นหาได้: restaurant
+489,บ้านเพื่อน @แยกหนองอ้อ,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,39,27,True,type ที่ค้นหาได้: restaurant
+3434,ชาบูอินดี้ พิษณุโลก สาขา 2,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,58,27,True,type ที่ค้นหาได้: restaurant
+3445,ก๋วยเตี๋ยวเรือร้อยล้าน สาขา มอนอ.,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,61,27,True,type ที่ค้นหาได้: restaurant
+3481,ร้านส้มตำเป่าปาก,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,49,27,True,type ที่ค้นหาได้: restaurant
+3493,ก๋วยเตี๋ยวป้าสะอิ้ง ร้านใหม่,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,47,27,True,type ที่ค้นหาได้: restaurant
+121,KHIM'S CAFE,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,64,26,True,type ที่ค้นหาได้: cafe
+200,GATE cafe',ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,45,26,True,type ที่ค้นหาได้: cafe
+216,ร้านอรอรรถรส,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,76,26,True,type ที่ค้นหาได้: restaurant
+3377,วัดสระสี่เหลี่ยม ต.อรัญญิก พิษณุโลก,วัด,"place_of_worship,point_of_interest,establishment",api,70,26,True,type ในขอบเขต: place_of_worship
+3413,สเต็กลุงหนวด สาขาพิษณุโลก​2,ร้านสเต็ก,"restaurant,point_of_interest,food,establishment",api,64,26,True,type ที่ค้นหาได้: restaurant
+3494,ร้านเจ๊ยุโภชนา,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,52,26,True,type ที่ค้นหาได้: restaurant
+3675,ครัวแสงทวี,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",scrape,66,26,True,type ที่ค้นหาได้: restaurant
+201,warehouse.nu,ร้านอาหาร,"cafe,establishment,food,point_of_interest,restaurant,store",scrape,62,25,True,"type ที่ค้นหาได้: cafe,restaurant"
+602,ข้าวมันไก่สามเซียน สาขา ม.นเรศวร,ภัตตาคารอาหารประเภทไก่,"establishment,food,point_of_interest,restaurant",scrape,38,25,True,type ที่ค้นหาได้: restaurant
+3420,มิตร มี MITR ME,ร้านอาหาร,"restaurant,point_of_interest,food,establishment",api,65,25,True,type ที่ค้นหาได้: restaurant
+3423,ตำป่าฮานอย2@พิษณุโลก,ภัตตาคารอาหารเวียดนาม,"restaurant,food,point_of_interest,establishment",api,61,25,True,type ที่ค้นหาได้: restaurant
+3470,ผัดไทยตงฟาง,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,48,25,True,type ที่ค้นหาได้: restaurant
+3484,ก๋วยเตี๋ยวไก่มะระบ้านคลอง,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,52,25,True,type ที่ค้นหาได้: restaurant
+3488,ก๋วยเตี๋ยวฝิ่น,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,52,25,True,type ที่ค้นหาได้: restaurant
+3500,เรือนก๋วยเตี๋ยวรสเด็ด,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,45,25,True,type ที่ค้นหาได้: restaurant
+3913,ร้านกำแพงเพชรโภชนา สาขา 5 ข้าวมันไก่ ข้าวหมูแดง ก๋วยเตี๋ยว,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",scrape,55,25,True,type ที่ค้นหาได้: restaurant
+193,Ari•อารีย์,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,48,24,True,type ที่ค้นหาได้: cafe
+3384,น้ำผึ้งนมสด พิษณุโลก,ภัตตาคารอาหารไทย,"restaurant,point_of_interest,food,establishment",api,68,24,True,type ที่ค้นหาได้: restaurant
+3476,ก๋วยเตี๋ยวกวนอูเตี๋ยวนายนัย,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,52,24,True,type ที่ค้นหาได้: restaurant
+3477,เกี๋ยวเตี๋ยวไก่ตุ๋นมะระ (Kuai Tiao;Thai Noodle),ภัตตาคารอาหารไทย,"restaurant,food,point_of_interest,establishment",api,53,24,True,type ที่ค้นหาได้: restaurant
+3497,ร้าน บาร์หลี,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,47,24,True,type ที่ค้นหาได้: restaurant
+3422,กวางทองทะเลเผา,ภัตตาคารอาหารทะเล,"restaurant,food,point_of_interest,establishment",api,63,23,True,type ที่ค้นหาได้: restaurant
+3491,ครัว บ้าน บ้าน,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,29,23,True,type ที่ค้นหาได้: restaurant
+3496,บ้านอาหาร @แจ่ม พิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,47,23,True,type ที่ค้นหาได้: restaurant
+3501,ร้านอาหารลุงเณร,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,44,23,True,type ที่ค้นหาได้: restaurant
+1088,Cafe Craft Village - คาเฟ่ คราฟท์ วิลเลจ,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,45,22,True,type ที่ค้นหาได้: restaurant
+3447,ร้านอาหารเวียดนามจีราวรรณนกเล็ก บ้านคลอง,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,57,22,True,type ที่ค้นหาได้: restaurant
+195,Jaisu cafe,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,40,21,True,type ที่ค้นหาได้: cafe
+253,นาข้าวสีชมพู,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,33,21,True,type ที่ค้นหาได้: tourist_attraction
+3398,PhitClub football,สนามฟุตซอล,"bar,restaurant,food,point_of_interest,establishment",api,55,21,True,type ที่ค้นหาได้: restaurant
+3457,ร้านจั่นเจา ลาบอิสาน,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,54,21,True,type ที่ค้นหาได้: restaurant
+3480,ร้านคำนึง ชิฟฟ่อนลาวา สังขยาชาไทย - สาขาพิษณุโลก,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,50,21,True,type ที่ค้นหาได้: restaurant
+124,Built Bake,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,29,20,True,type ที่ค้นหาได้: cafe
+245,หลบ (LOB),ร้านกาแฟ,"book_store,cafe,establishment,food,point_of_interest,store",scrape,22,20,True,type ที่ค้นหาได้: cafe
+3414,น้องเก็ตต์ หมูกะทะ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,59,20,True,type ที่ค้นหาได้: restaurant
+590,Mongni Cafe Phitsanulok NU,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,48,19,True,type ที่ค้นหาได้: cafe
+1711,wabisabi matcha.cafe,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,restaurant,store",scrape,26,19,True,"type ที่ค้นหาได้: cafe,restaurant"
+3506,ครัวพัทลุง,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,49,19,True,type ที่ค้นหาได้: restaurant
+378,พี่ออยตามสั่ง,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,45,18,True,type ที่ค้นหาได้: restaurant
+1801,MiNE COFFEE,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,18,18,True,type ที่ค้นหาได้: cafe
+3462,PK CAFE,ร้านกาแฟ,"cafe,food,point_of_interest,establishment",api,56,18,True,type ที่ค้นหาได้: cafe
+3495,ร้านข้าวแกงปักษ์ใต้ครัวสุราษฎร์,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,46,18,True,type ที่ค้นหาได้: restaurant
+209,Minimal life room,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,25,17,True,type ที่ค้นหาได้: cafe
+238,พอดี คาเฟ่,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,41,17,True,type ที่ค้นหาได้: cafe
+1789,Zest&Co cafe,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,22,17,True,type ที่ค้นหาได้: cafe
+3399,แจ่วชาบู จุ่มแซ่บสุกี้ตามสั่ง/ม.นเรศวร ประตู4 พิษณุโลก,ภัตตาคารอาหารไทย,"restaurant,food,point_of_interest,establishment",api,66,17,True,type ที่ค้นหาได้: restaurant
+165,Khamta Cafe',ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,28,16,True,type ที่ค้นหาได้: cafe
+217,ชูรส มอนอ,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,38,16,True,type ที่ค้นหาได้: restaurant
+257,วัดยางเอน,วัด,"establishment,place_of_worship,point_of_interest",scrape,54,16,True,type ในขอบเขต: place_of_worship
+3332,นัทเบเกอรี่ สาขามอนอ ประตู6,ร้านเบเกอรี่,"bakery,store,food,point_of_interest,establishment",api,87,16,True,type ที่ค้นหาได้: bakery
+242,789 Cafe VIIIX (789 คอฟฟี่บาร์ คาเฟ่ มอนอ พิษณุโลก),ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,39,15,True,type ที่ค้นหาได้: cafe
+463,CATFEINE (แคทเฟอีน),ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,24,15,True,type ที่ค้นหาได้: cafe
+568,สำนักศิลปะและวัฒนธรรม,พิพิธภัณฑ์ประวัติศาสตร์ท้องถิ่น,"establishment,museum,point_of_interest",scrape,43,15,True,type ที่ค้นหาได้: museum
+3485,ก๋วยเตี๋ยวเรือ ป.ประทีป @พิษณุโลก,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,15,15,True,type ที่ค้นหาได้: restaurant
+139,The Lockers Phitsanulok,ร้านกาแฟ,"cafe,clothing_store,establishment,food,point_of_interest,store",scrape,31,14,True,type ที่ค้นหาได้: cafe
+189,Esc.coffee&more,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,26,14,True,type ที่ค้นหาได้: cafe
+244,Ranna Vietnamese coffee and tea,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,35,14,True,type ที่ค้นหาได้: cafe
+813,The 8 In House Cafe,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,25,14,True,type ที่ค้นหาได้: cafe
+86,เช้าเช้าคาเฟ่ พิษณุโลก ciaociao cafe,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,restaurant,store",scrape,21,13,True,"type ที่ค้นหาได้: cafe,restaurant"
+212,Seoul Chikin ม.นเรศวร,ภัตตาคารอาหารเกาหลี,"establishment,food,point_of_interest,restaurant",scrape,55,13,True,type ที่ค้นหาได้: restaurant
+214,ญวน ปริญญา สาขา ม.นเรศวร พิษณุโลก,ร้านก๋วยเตี๋ยว,"establishment,food,point_of_interest,restaurant",scrape,22,13,True,type ที่ค้นหาได้: restaurant
+645,จุดเล่นน้ำแห่งใหม่บ้านคันโช้ง,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,28,13,True,type ที่ค้นหาได้: tourist_attraction
+803,สติ-สุข คาเฟ่,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,28,13,True,type ที่ค้นหาได้: cafe
+3478,วิทยาลัยอาชีวศึกษาพิษณุโลก,วิทยาลัย,"university,point_of_interest,establishment",api,47,13,True,type ที่ค้นหาได้: university
+3479,มหาวิทยาลัยเทคโนโลยีราชมงคลล้านนา พิษณุโลก,มหาวิทยาลัย,"university,point_of_interest,establishment",api,48,13,True,type ที่ค้นหาได้: university
+191,USIT,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,40,12,True,type ที่ค้นหาได้: cafe
+249,Bubble Phitsanulok - บับเบิ้ล พิษณุโลก,ร้านอาหาร,"bakery,cafe,establishment,food,point_of_interest,restaurant,store",scrape,15,12,True,"type ที่ค้นหาได้: bakery,cafe,restaurant"
+380,ครัวบายใจ,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,21,12,True,type ที่ค้นหาได้: restaurant
+1283,it. time to eat,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,17,12,True,type ที่ค้นหาได้: cafe
+233,Alley Cafe,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,19,11,True,type ที่ค้นหาได้: cafe
+1888,Steak Bkk สาขา : ม.นเรศวร,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,15,11,True,type ที่ค้นหาได้: restaurant
+243,CozycafeNU,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,10,10,True,type ที่ค้นหาได้: cafe
+398,สระสองห้อง,สถานที่สำคัญทางประวัติศาสตร์,"establishment,point_of_interest,tourist_attraction",scrape,13,10,True,type ที่ค้นหาได้: tourist_attraction
+3204,กุ้งดองอีส้ม - พิษณุโลก,ภัตตาคารอาหารญี่ปุ่น,"restaurant,food,point_of_interest,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3249,วัดเสาหิน,วัด,"tourist_attraction,place_of_worship,point_of_interest,establishment",api,10,10,True,type ที่ค้นหาได้: tourist_attraction
+3254,นกเล็ก แหนมเนือง,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3264,ครัวอร่อย,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3270,ร้านอาหารปักษ์ใต้,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3275,Camper,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3284,โตเป็ดตุ๋น,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3298,อิ่มอุ่น,ภัตตาคารอาหารไทย,"restaurant,point_of_interest,food,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3299,จิ้มจุ่มลาบอีสานอุบล,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3307,ลาบหลู้ป้าติ๋ว,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3310,ส้มตำกะปิเหาะ,ภัตตาคารอาหารไทย,"restaurant,point_of_interest,food,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3318,ร้านก๋วยเตี๋ยวตาเนี้ยว,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3352,ร้านอาหาร กิน 𝗥𝗲𝘀𝘁𝗮𝘂𝗿𝗮𝗻𝘁,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3424,ร้านอาหารสถานีป่าใผ่,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3466,ข้าวต้มเจ้าสัว,ร้านข้าวต้ม,"restaurant,food,point_of_interest,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3475,กล้วยอาหารป่า,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3483,ยำป.ปูเป็น ซีฟู้ด,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,10,10,True,type ที่ค้นหาได้: restaurant
+3512,จงรัก,ร้านอาหาร,,(null),10,10,True,ป้าย Google: ร้านอาหาร (ในขอบเขต)
+3819,Baking Bear สาขา ประชาอุทิศ,ร้านกาแฟ,"bakery,cafe,establishment,food,point_of_interest,store",scrape,10,10,True,"type ที่ค้นหาได้: bakery,cafe"
+4926,รุ่งนภาหมูกะทะ ในเมือง ต้นตำหรับ,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,10,10,True,type ที่ค้นหาได้: restaurant
+236,ONEchana cafe’,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,18,9,True,type ที่ค้นหาได้: cafe
+1497,เป่าเล้อ หม่าล่าทั่ง ม.นเรศวร,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,14,9,True,type ที่ค้นหาได้: restaurant
+1787,RIOT CAFE,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,13,9,True,type ที่ค้นหาได้: cafe
+4886,Coffee mania @ ฟู๊ดทรัค(ชมน่าน),ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,10,9,True,type ที่ค้นหาได้: cafe
+104,Rama Street Art,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,13,8,True,type ที่ค้นหาได้: tourist_attraction
+115,Phster Creative Space,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,8,8,True,type ที่ค้นหาได้: tourist_attraction
+348,Craft camp coffee,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,25,7,True,type ที่ค้นหาได้: cafe
+576,Bakerneering Lounge,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,12,7,True,type ที่ค้นหาได้: cafe
+616,กาแฟพันธุ์ไทย สาขาพิษณุโลก4,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,19,7,True,type ที่ค้นหาได้: cafe
+1537,KIDSEE,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,13,7,True,type ที่ค้นหาได้: cafe
+1749,fresh me รพ.พุทธชินราช พิษณุโลก,ชาไข่มุก,"establishment,point_of_interest",scrape,10,7,True,ป้าย Google: ชาไข่มุก (ในขอบเขต)
+1928,Hipnotic,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,10,7,True,type ที่ค้นหาได้: restaurant
+455,มอน คาเฟ่,ร้านกาแฟ,,(null),7,6,True,ป้าย Google: ร้านกาแฟ (ในขอบเขต)
+571,Cafe Amazon สาขา ม.นเรศวรประตู 5,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,20,6,True,type ที่ค้นหาได้: cafe
+639,หอพระเทพรัตน์,สถานที่บูชาทางศาสนา,"establishment,place_of_worship,point_of_interest",scrape,10,6,True,type ในขอบเขต: place_of_worship
+1281,ศูนย์การเรียนรู้บ้านท่าโพธิ์ ม.8,อุทยาน,"establishment,park,point_of_interest",scrape,21,6,True,type ที่ค้นหาได้: park
+1792,Prana Slowbar,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,11,6,True,type ที่ค้นหาได้: cafe
+3273,Noodle Shop,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,10,6,True,type ที่ค้นหาได้: restaurant
+4542,ก๋วยเตี๋ยวสูตรมะนาว สถานีรถไฟพิษณุโลก,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,7,6,True,type ที่ค้นหาได้: restaurant
+103,Street art Phitsanulok,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,5,5,True,type ที่ค้นหาได้: tourist_attraction
+229,เฉิงฟู (成富) - หม่าล่าสายพาน ม.นเรศวร พิษณุโลก,レストラン,"establishment,food,point_of_interest,restaurant",scrape,6,5,True,type ที่ค้นหาได้: restaurant
+3197,ร้านป.เจริญชัย ไก่ตอน,ภัตตาคารอาหารไทย,"restaurant,food,point_of_interest,establishment",api,5,5,True,type ที่ค้นหาได้: restaurant
+3236,รุ่งนภาหมูกะทะ สาขา2,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,5,5,True,type ที่ค้นหาได้: restaurant
+3277,ก๋วยเตี๋ยวเรือเนื้อหอม,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,5,5,True,type ที่ค้นหาได้: restaurant
+3321,ร้านอาหารใบตอง,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,5,5,True,type ที่ค้นหาได้: restaurant
+3336,ก๋วยเตี๋ยวเนื้อสุดยอดเนื้อตุ๋น kobe 2019,ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",api,5,5,True,type ที่ค้นหาได้: restaurant
+3425,สหชัยบะหมี่เกี๊ยวปู,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,5,5,True,type ที่ค้นหาได้: restaurant
+3449,ครัวพเนจร,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,5,5,True,type ที่ค้นหาได้: restaurant
+3452,ข้าวมันไก่ประตู5,ภัตตาคารอาหารประเภทไก่,"restaurant,food,point_of_interest,establishment",api,5,5,True,type ที่ค้นหาได้: restaurant
+3507,Baking Bear (Pop-up Cafe),ร้านกาแฟ,"bakery,cafe,store,food,point_of_interest,establishment",api,5,5,True,"type ที่ค้นหาได้: bakery,cafe"
+3853,Trinolio pizza ร้านพิซซ่านาโปลี,ร้านอาหารอิตาเลียน,"restaurant,food,point_of_interest,establishment",scrape,5,5,True,type ที่ค้นหาได้: restaurant
+4836,ก๋วยเตี๋ยวเรือเข้าท่าหัวร้อง อ. นครไทย จ.พิษณุโลก,ร้านก๋วยเตี๋ยว,"establishment,food,point_of_interest,restaurant",scrape,5,5,True,type ที่ค้นหาได้: restaurant
+5859,ร้านอาหารบ้านเรา,ภัตตาคารอาหารไทย,"establishment,food,point_of_interest,restaurant",scrape,5,5,True,type ที่ค้นหาได้: restaurant
+219,วัวล้วนๆไม่มีควายผสม สาขาหลัง ม.นเรศวร พิษณุโลก,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,7,4,True,type ที่ค้นหาได้: restaurant
+345,Café Amazon สาขาราชภัฏพิบูลสงคราม,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,18,4,True,type ที่ค้นหาได้: cafe
+561,ทะเลสาบน้ำจืด ตำบลบ้านยาง,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,5,4,True,type ที่ค้นหาได้: tourist_attraction
+643,มหาวิทยาลัยนเรศวร ประตู1,มหาวิทยาลัย,"establishment,point_of_interest,university",scrape,11,4,True,type ที่ค้นหาได้: university
+734,Nurse Coffee,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,4,4,True,type ที่ค้นหาได้: cafe
+1195,ก๋วยเตี๋ยวโซ๊ยตี๋ถนนคนเดินพิษณุโลก,ร้านก๋วยเตี๋ยว,"establishment,food,point_of_interest,restaurant",scrape,4,4,True,type ที่ค้นหาได้: restaurant
+1870,ชาเจริญศุข ม.นเรศวร,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,4,4,True,type ที่ค้นหาได้: cafe
+2608,อิ่มพุง สะดุ้งลิ้น หมูกระทะ,ภัตตาคารอาหารบุฟเฟต์,"establishment,food,point_of_interest,restaurant",(null),17,4,True,type ที่ค้นหาได้: restaurant
+102,Street art Phitsanulok (tiger tunnel),สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,3,3,True,type ที่ค้นหาได้: tourist_attraction
+197,Bomb Lab Coffee & Bakery สาขาอาคารปราบไตรจักร1 มหาวิทยาลัยนเรศวร,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,6,3,True,type ที่ค้นหาได้: cafe
+222,ร้านช้อนทอง ม.นเรศวร,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,9,3,True,type ที่ค้นหาได้: restaurant
+247,Lunar Coffee & Things,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,6,3,True,type ที่ค้นหาได้: cafe
+297,หมี่ขยุ้มลุงเล็ก สาขา ม.นเรศวร,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,8,3,True,type ที่ค้นหาได้: restaurant
+488,ร้านอาหารกลางนา ราชภัฏประตู 3,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,4,3,True,type ที่ค้นหาได้: restaurant
+4222,แอ่นแอ๊นขนมจีนปักใต้คาเฟ่,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,5,3,True,type ที่ค้นหาได้: restaurant
+4491,เขยนครแกงใต้,ร้านอาหารครอบครัว,"establishment,food,point_of_interest,restaurant",scrape,5,3,True,type ที่ค้นหาได้: restaurant
+196,ร้าน Cherry-P Cafe' เชอร์รี่พี คาเฟ่ สาขามหาวิทยาลัยนเรศวร,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,7,2,True,type ที่ค้นหาได้: cafe
+203,Fresh me ม.นเรศวร,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,3,2,True,type ที่ค้นหาได้: cafe
+221,มุมอร่อยอาหารเวียดนามประตู4 ม.นเรศวร,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,2,2,True,type ที่ค้นหาได้: restaurant
+285,กาแฟพันธุ์ไทย สาขามหาวิทยาลัยนเรศวร ประตู 5,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,6,2,True,type ที่ค้นหาได้: cafe
+353,HOME CAFE PSRU,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,2,2,True,type ที่ค้นหาได้: cafe
+354,Beyond Milk Cafe at PSRU,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,2,2,True,type ที่ค้นหาได้: cafe
+368,ครัวจี๊ดจ๊าด พิษณุโลก (ราชภัฏพิบูลสงคราม),ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,12,2,True,type ที่ค้นหาได้: restaurant
+370,บ้านนมสด .PSRU ประตู2,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,2,2,True,type ที่ค้นหาได้: cafe
+400,พระบรมราชานุสาวรีย์สมเด็จพระนเรศวรมหาราช กองบิน46,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,10,2,True,type ที่ค้นหาได้: tourist_attraction
+559,ศาลเจ้าพ่อทะเลแก้ว,เทวสถาน,"establishment,place_of_worship,point_of_interest",scrape,3,2,True,type ในขอบเขต: place_of_worship
+585,Love Lib café,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,restaurant",scrape,5,2,True,"type ที่ค้นหาได้: cafe,restaurant"
+606,ร้าน ผึ้งน้อย เบอเกอรี่ สาขา โรงพยาบาล ม.นเรศวร,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,5,2,True,type ที่ค้นหาได้: restaurant
+932,ครัวบ้านฉัน ข้าวไข่ข้น@ม.น.,ร้านอาหารครอบครัว,"establishment,food,point_of_interest,restaurant",scrape,7,2,True,type ที่ค้นหาได้: restaurant
+1886,UB Cafe,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,2,2,True,type ที่ค้นหาได้: restaurant
+18,ศูนย์วัฒนธรรมภาคเหนือตอนล่าง มหาวิทยาลัยราชภัฏพิบูลสงคราม,ศูนย์การเรียนรู้,"establishment,point_of_interest",scrape,1,1,True,ตัดสินรายแห่ง: ศูนย์วัฒนธรรมภาคเหนือตอนล่าง — เปิดให้คนทั่วไปเข้าชม
+107,Street art Phitsanulok (Golden Tiger),สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,1,1,True,type ที่ค้นหาได้: tourist_attraction
+199,ร้านกาแฟอินทนิล ปั้มบางจาก สาขา ม.นเรศวร,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,20,1,True,type ที่ค้นหาได้: cafe
+252,ทุ่งโสกา,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,9,1,True,type ที่ค้นหาได้: tourist_attraction
+323,Inhouse cafe,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,8,1,True,type ที่ค้นหาได้: cafe
+346,Boom boom cafe’ มอนอ,ร้านกาแฟ,,scrape,1,1,True,ป้าย Google: ร้านกาแฟ (ในขอบเขต)
+369,เต็มกรุงพระนคร,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,1,1,True,type ที่ค้นหาได้: restaurant
+512,ศูนย์อาหารทะเลแก้ว,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,1,1,True,type ที่ค้นหาได้: restaurant
+513,Jed​Craft​ กาแฟจ่า,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,1,1,True,type ที่ค้นหาได้: cafe
+522,ร้านก๋วยเตี๋ยวลูกชิ้นปลาทะเลแก้ว,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,4,1,True,type ที่ค้นหาได้: restaurant
+644,ประตู 6 มหาวิทยาลัยนเรศวร,มหาวิทยาลัย,"establishment,point_of_interest,university",scrape,2,1,True,type ที่ค้นหาได้: university
+667,อ่างเก็บน้ำ 1 มหาวิทยาลัยนเรศวร,สวนสาธารณะ,"establishment,park,point_of_interest",scrape,1,1,True,ตัดสินรายแห่ง: อ่างเก็บน้ำ 1 ม.นเรศวร — มี type park ใช้พักผ่อนได้
+712,หอเจี๊ยะ หมาล่าทั่ง สาขาม.นเรศวร,ภัตตาคารอาหารจีน,"establishment,food,point_of_interest,restaurant",scrape,8,1,True,type ที่ค้นหาได้: restaurant
+714,ครัวต้นโชค2 สาขา ม.นเรศวร ประตู4,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,1,1,True,type ที่ค้นหาได้: restaurant
+1194,Picnic Market ปิคนิคมาร์เก็ต (ถนนคนเดินพิษณุโลก),ตลาดกลางคืน,"establishment,point_of_interest",scrape,11,1,True,ป้าย Google: ตลาดกลางคืน (ในขอบเขต)
+1903,Baanfaii Cafe’,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,3,1,True,type ที่ค้นหาได้: cafe
+3780,เนื้อหอมก๋วยเตี๋ยวเรือพรีเมี่ยม,ภัตตาคารอาหารไทย,"establishment,food,point_of_interest,restaurant",scrape,1,1,True,type ที่ค้นหาได้: restaurant
+4453,Coffee mania @ pailyn,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,1,1,True,type ที่ค้นหาได้: cafe
+81,Street art Phitsanulok (tiger&man),สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,6,0,True,type ที่ค้นหาได้: tourist_attraction
+113,บ้านสวนสุขสบาย,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,0,0,True,type ที่ค้นหาได้: tourist_attraction
+114,ย่านประตูมอญ,สถานที่ท่องเที่ยว,"establishment,point_of_interest,tourist_attraction",scrape,0,0,True,type ที่ค้นหาได้: tourist_attraction
+208,Mum Cafe 2 สาขา ม.นเรศวร,ร้านกาแฟ,"cafe,establishment,food,point_of_interest",scrape,2,0,True,type ที่ค้นหาได้: cafe
+218,ศูนย์อาหาร โรงพยาบาลมหาวิทยาลัยนเรศวร,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,1,0,True,type ที่ค้นหาได้: restaurant
+223,ร้านบะหมี่โหน่ง ชะชะช่า สาขา ม.นเรศวร,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,4,0,True,type ที่ค้นหาได้: restaurant
+225,เคลิ้ม ก๋วยเตี๋ยวต้มยำทะเลหม้อเขียว สาขา ม.นเรศวร พิษณุโลก,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,1,0,True,type ที่ค้นหาได้: cafe
+301,ร้านวรินทร อาหารตามสั่ง แฮปปี้โฮม ประตู 4 ม.นเรศวร,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,1,0,True,type ที่ค้นหาได้: restaurant
+350,ซุ้มกาแฟตึกฉ.,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,2,0,True,type ที่ค้นหาได้: cafe
+461,93 Cafe@พิด’โลก,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,3,0,True,type ที่ค้นหาได้: cafe
+570,ขนมจีนน้ำเงี้ยวเชียงใหม่,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,1,0,True,type ที่ค้นหาได้: restaurant
+584,Fresh me สาขารพ.มหาวิทยาลัยนเรศวร,ชาไข่มุก,"establishment,point_of_interest",scrape,1,0,True,ป้าย Google: ชาไข่มุก (ในขอบเขต)
+587,Taste of Tian,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,1,0,True,type ที่ค้นหาได้: cafe
+598,อาณาจักรไข่เจียว ม.นเรศวร,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,2,0,True,type ที่ค้นหาได้: restaurant
+624,อรรถรสท่าโพธิ์,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,1,0,True,type ที่ค้นหาได้: cafe
+696,Taruka สาขา ม.นเรศวร,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,0,0,True,type ที่ค้นหาได้: cafe
+708,เชิญchim ม.นเรศวร ประตู.4,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,3,0,True,type ที่ค้นหาได้: restaurant
+770,แปลงปลูกพันธุ์ไม้มหาวิทยาลัย,สวน,"establishment,point_of_interest",scrape,0,0,True,ป้าย Google: สวน (ในขอบเขต)
+790,สเต็กเด็กแนว Smith & Smile สาขาราชภัฏทะเลแก้วประตู2,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,0,0,True,type ที่ค้นหาได้: restaurant
+1196,Shareloma แชร์โลมา Outdoor x Grill,ครัวซุป,"establishment,food,point_of_interest",scrape,1,0,True,ป้าย Google: ครัวซุป (ในขอบเขต)
+1869,Sha bear นมหมีล้วนๆ สาขาม.นเรศวร,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,1,0,True,type ที่ค้นหาได้: cafe
+1902,CAMPER VAN CAFE,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,2,0,True,type ที่ค้นหาได้: cafe
+1906,Meet night coffee,ร้านกาแฟ,"cafe,establishment,food,point_of_interest,store",scrape,0,0,True,type ที่ค้นหาได้: cafe
+2067,ครัวมาดามอ้อ,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,4,0,True,type ที่ค้นหาได้: restaurant
+3184,Jong Rak,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,0,0,True,type ที่ค้นหาได้: restaurant
+3461,เลม่อน ฟูล ซูชิ,ร้านอาหาร,"restaurant,food,point_of_interest,establishment",api,0,0,True,type ที่ค้นหาได้: restaurant

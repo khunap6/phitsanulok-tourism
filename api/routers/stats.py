@@ -5,7 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_db
-from api.filters import category_v2_name, date_filter, status_filter
+from api.filters import category_v2_name, date_filter, scope_filter, status_filter
 from api.schemas.analysis import ScrapeJobResponse
 
 router = APIRouter(tags=["system"])
@@ -62,7 +62,8 @@ async def map_geojson(
     date_sql, date_params = date_filter(date_from, date_to, "r")
     # เมื่อกรองวันที่ ใช้ INNER JOIN reviews (ร้านที่ไม่มีรีวิวในช่วงจะหลุด) — ตามหลักการ
     join_kind = "JOIN" if date_sql else "LEFT JOIN"
-    status_sql = status_filter(status, "p")
+    # ⚠️ ต่อตัวกรองขอบเขตงานวิจัยเข้าไปด้วยเสมอ ดู api/filters.scope_filter
+    status_sql = status_filter(status, "p") + scope_filter("in", "p")
     result = await db.execute(
         text(f"""
             SELECT

@@ -33,6 +33,7 @@ from api.filters import (
     category_v2_name,
     date_filter,
     overall_sentiment_filter,
+    scope_filter,
     status_filter,
 )
 from api.schemas.aspects import (
@@ -57,7 +58,8 @@ _BASE = """
 
 
 def _base_sql(zone: str | None, status: str, date_from, date_to):
-    biz = status_filter(status, "p")
+    # ⚠️ ต่อตัวกรองขอบเขตงานวิจัยเข้าไปด้วยเสมอ ดู api/filters.scope_filter
+    biz = status_filter(status, "p") + scope_filter("in", "p")
     date_sql, params = date_filter(date_from, date_to, "r")
     zone_sql = ""
     if zone:

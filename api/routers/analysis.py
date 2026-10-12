@@ -15,6 +15,7 @@ from api.filters import (
     primary_category_filter,
     primary_sentiment_filter,
     resolve_category_id,
+    scope_filter,
     status_filter,
 )
 from api.schemas.analysis import (
@@ -113,7 +114,8 @@ async def zone_summary(
       (ของเดิมก็ไม่เท่าอยู่แล้ว เพราะมี 449 แถวที่เป็นคำบ่นแต่ severity เป็น NULL)
     """
     date_sql, date_params = date_filter(date_from, date_to)
-    biz_filter = status_filter(status)
+    # ⚠️ ต่อตัวกรองขอบเขตงานวิจัยเข้าไปด้วยเสมอ ดู api/filters.scope_filter
+    biz_filter = status_filter(status) + scope_filter()
     # เมื่อกรองวันที่ ใช้ INNER JOIN reviews (คนไม่มี date จะหลุด) — ตามหลักการ
     join_kind = "JOIN" if date_sql else "LEFT JOIN"
     result = await db.execute(
@@ -240,7 +242,8 @@ async def zone_pain_points(
       จึงอย่าเอา severity_share ไปคูณกับ sentiment_counts.negative
     """
     general_filter = primary_sentiment_filter(view_mode)
-    biz_filter = status_filter(status)
+    # ⚠️ ต่อตัวกรองขอบเขตงานวิจัยเข้าไปด้วยเสมอ ดู api/filters.scope_filter
+    biz_filter = status_filter(status) + scope_filter()
     date_sql, date_params = date_filter(date_from, date_to)
 
     # ── ฐานของโซนนี้ ใช้ตัวกรองชุดเดียวกับคิวรีหมวด (ต่างแค่ไม่กรอง sentiment/หมวด) ──
@@ -375,7 +378,8 @@ async def zone_breakdown(
         return 'ทั่วไป'
 
     # ดึงสถานที่ + รีวิวในโซนนี้ (กรองตามสถานะร้าน + ช่วงเวลา)
-    biz_filter = status_filter(status)
+    # ⚠️ ต่อตัวกรองขอบเขตงานวิจัยเข้าไปด้วยเสมอ ดู api/filters.scope_filter
+    biz_filter = status_filter(status) + scope_filter()
     date_sql, date_params = date_filter(date_from, date_to)
     # เมื่อกรองวันที่ ใช้ INNER JOIN เพื่อตัดรีวิวไม่มี date
     join_kind = "JOIN" if date_sql else "LEFT JOIN"
@@ -528,7 +532,8 @@ async def category_places(
         filters.append("COALESCE(p.zone, 'other') = :zone")
         params["zone"] = zone
     where = " AND ".join(filters)
-    biz_filter = status_filter(status)
+    # ⚠️ ต่อตัวกรองขอบเขตงานวิจัยเข้าไปด้วยเสมอ ดู api/filters.scope_filter
+    biz_filter = status_filter(status) + scope_filter()
     date_sql, date_params = date_filter(date_from, date_to)
     params.update(date_params)
 
@@ -676,7 +681,8 @@ async def insights_summary(
     date_sql, date_params = date_filter(date_from, date_to)
 
     general_filter = primary_sentiment_filter(view_mode)
-    biz_filter = status_filter(status)
+    # ⚠️ ต่อตัวกรองขอบเขตงานวิจัยเข้าไปด้วยเสมอ ดู api/filters.scope_filter
+    biz_filter = status_filter(status) + scope_filter()
 
     # ── นับรีวิว/วิเคราะห์/สถานที่ ตามช่วงเวลาและสถานะร้านที่เลือก ──
     #
@@ -882,7 +888,8 @@ async def top_problematic_places(
       high_rate ยังอ่านได้ เพราะตัวส่วน review_count นับจาก r.text_clean
       ซึ่งไม่ได้มาจากชั้นป้ายใดเลย ตัวเศษกับตัวส่วนจึงไม่ปนชั้นกัน
     """
-    biz_filter = status_filter(status)
+    # ⚠️ ต่อตัวกรองขอบเขตงานวิจัยเข้าไปด้วยเสมอ ดู api/filters.scope_filter
+    biz_filter = status_filter(status) + scope_filter()
     date_sql, date_params = date_filter(date_from, date_to)
     params: dict = {"lim": limit, **date_params}
 
@@ -964,7 +971,8 @@ async def positive_highlights(
         filters.append(date_sql.removeprefix("AND ").strip())
         params.update(date_params)
     where = " AND ".join(filters)
-    biz_filter = status_filter(status)
+    # ⚠️ ต่อตัวกรองขอบเขตงานวิจัยเข้าไปด้วยเสมอ ดู api/filters.scope_filter
+    biz_filter = status_filter(status) + scope_filter()
 
     result = await db.execute(
         text(f"""
@@ -1196,7 +1204,8 @@ async def trending_problems(
         zone_sql = "AND COALESCE(p.zone,'other') = :zone"
         params["zone"] = zone
 
-    status_sql = status_filter(status, "p")
+    # ⚠️ ต่อตัวกรองขอบเขตงานวิจัยเข้าไปด้วยเสมอ ดู api/filters.scope_filter
+    status_sql = status_filter(status, "p") + scope_filter("in", "p")
     date_sql, date_params = date_filter(date_from, date_to, "r")
     if date_sql:
         window_sql = date_sql
@@ -1402,7 +1411,8 @@ async def category_counts(
       นับจาก primary_category_id หน่วยนับยังเป็น "รีวิว" (1 รีวิว 1 หมวด)
       ถ้าต้องการหน่วย "การกล่าวถึง" (1 รีวิวนับได้หลายหมวด) ใช้ /aspects/summary
     """
-    biz = status_filter(status, "p")
+    # ⚠️ ต่อตัวกรองขอบเขตงานวิจัยเข้าไปด้วยเสมอ ดู api/filters.scope_filter
+    biz = status_filter(status, "p") + scope_filter("in", "p")
     date_sql, date_params = date_filter(date_from, date_to, "r")
     result = await db.execute(
         text(f"""
@@ -1440,7 +1450,8 @@ async def heatmap_geojson(
       dominant_severity และ high_count ยังเป็นป้ายชั้นเดิม
       เพราะ review_aspects.severity ว่างทั้งตาราง
     """
-    biz = status_filter(status, "p")
+    # ⚠️ ต่อตัวกรองขอบเขตงานวิจัยเข้าไปด้วยเสมอ ดู api/filters.scope_filter
+    biz = status_filter(status, "p") + scope_filter("in", "p")
     result = await db.execute(
         text(f"""
             SELECT

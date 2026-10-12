@@ -9,6 +9,7 @@ from api.filters import (
     date_filter,
     primary_sentiment_filter,
     resolve_category_id,
+    scope_filter,
     status_filter,
 )
 from api.schemas.review import ReviewListResponse, ReviewResponse
@@ -163,7 +164,8 @@ async def list_reviews(
     if view_sql:
         conds.append(view_sql.removeprefix("AND ").strip())
 
-    status_sql = status_filter(status, "p")
+    # ⚠️ ต่อตัวกรองขอบเขตงานวิจัยเข้าไปด้วยเสมอ ดู api/filters.scope_filter
+    status_sql = status_filter(status, "p") + scope_filter("in", "p")
     if status_sql:
         conds.append(status_sql.removeprefix("AND ").strip())
 

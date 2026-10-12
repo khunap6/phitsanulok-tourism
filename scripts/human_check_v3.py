@@ -48,14 +48,17 @@ sys.path.insert(0, str(ROOT))
 from scripts.human_check import kappa, kappa_word  # noqa: E402
 
 OUT = ROOT / "reports" / "evaluation"
-GOLD = OUT / "gold_v3_1_labeled.csv"
+# ⚠️ ใช้ชุดที่ตัดรีวิวนอกขอบเขตออกแล้ว (gold_v3_2) ไม่ใช่ v3_1
+#   v3_1 มีรีวิวร้านกล้อง สตูดิโอ ร้านเฟอร์นิเจอร์ ปนอยู่ 15 แถว
+#   ซึ่งอยู่นอกขอบเขตตาม shared/scope.json
+GOLD = OUT / "gold_v3_2_labeled.csv"
 CHANGELOG = OUT / "gold_v3_1_changelog.csv"
-NEEDS = OUT / "gold_v3_1_needs_human.csv"
+NEEDS = OUT / "gold_v3_1_needs_human.csv"   # ยังใช้ได้ id ไม่เปลี่ยน
 BLANK = OUT / "human_check_v3_blank.csv"
 GUIDE = OUT / "human_check_v3_guide.md"
 
 SEED = 20261013
-N_DEFAULT = 90
+N_DEFAULT = 100
 NEW_CATS = {9, 10, 11, 12}
 SENTS = ["positive", "neutral", "negative"]
 OVERALL = {"p": "positive", "n": "neutral", "g": "negative",
@@ -100,6 +103,8 @@ def groups_of(rows: list[dict]) -> dict[str, list[str]]:
         cats = set(parse_spec(r["aspects"]))
         if rid in needs:
             g["กติกาตอบไม่ได้"].append(rid)
+        elif r.get("label_source") == "claude_guided_v3_2":
+            g["ติดป้ายรอบแก้ขอบเขต"].append(rid)
         elif rid in changed:
             g["เพิ่งแก้ใน v3.1"].append(rid)
         elif cats & NEW_CATS:
@@ -120,6 +125,7 @@ def make(n: int) -> None:
     # เอาสองกลุ่มแรกทั้งหมด แล้วเติมที่เหลือตามสัดส่วน
     picked: list[str] = []
     picked += g["กติกาตอบไม่ได้"]
+    picked += g["ติดป้ายรอบแก้ขอบเขต"]
     picked += g["เพิ่งแก้ใน v3.1"]
     quota = {"ใช้หมวดใหม่ 9/10/11/12": 0.45, "มี metadata ปน": 0.20,
              "แถวธรรมดา": 0.35}
@@ -207,6 +213,7 @@ def make(n: int) -> None:
           "ค่าที่ได้จึงเป็นความสอดคล้องบนเคสที่ยากกว่าค่าเฉลี่ย ต้องระบุในเล่ม", "",
           "| กลุ่ม | จำนวน | ทำไมอยู่ในชุด |", "|---|---|---|"]
     why = {"กติกาตอบไม่ได้": "กติกาที่เขียนไว้ตอบไม่ได้จริง เอามาทั้งหมด",
+           "ติดป้ายรอบแก้ขอบเขต": "เพิ่งติดป้ายสดใหม่ ยังไม่เคยมีใครตรวจ เอามาทั้งหมด",
            "เพิ่งแก้ใน v3.1": "ป้ายใหม่สุด ผ่านการตรวจน้อยสุด เอามาทั้งหมด",
            "ใช้หมวดใหม่ 9/10/11/12": "เป็นเหตุผลทั้งหมดของการทำ v3",
            "มี metadata ปน": "ทดสอบว่าคนอ่านข้าม metadata ได้ไหม",

@@ -379,3 +379,36 @@ NON_PROBLEM_NAMES_ALL: list[str] = sorted({
 })
 _NONPROBLEM_ANY_IN = ", ".join(
     "'" + n.replace("'", "''") + "'" for n in NON_PROBLEM_NAMES_ALL) or "''"
+
+
+# ── ตัวกรองขอบเขตงานวิจัย (Phase 9) ──
+#
+# ⚠️ ต่างจาก status_filter ที่กรอง "ร้านเปิด/ปิด" คนละเรื่องกันสิ้นเชิง
+#   scope_filter กรอง "สถานที่นี้อยู่ในขอบเขตของงานวิจัยไหม"
+#   เกณฑ์อยู่ใน shared/scope.json และเขียนลง places.in_scope แล้ว
+#   ด้วย scripts/apply_scope_to_db.py
+#
+# ⚠️ ค่าตั้งต้นคือ "เฉพาะในขอบเขต" ซึ่ง **เปลี่ยนตัวเลขทุกตัวบนแดชบอร์ด**
+#   วัดได้ว่าตัดออก 42 สถานที่ · 1,095 รีวิวที่มีข้อความ (1.50%)
+#   · 1,824 การกล่าวถึงรายหมวด (1.29%)
+#   นี่เป็นการเปลี่ยนค่าโดยเจตนา ไม่ใช่บั๊ก และต้องระบุในเล่ม
+#   ถ้าต้องการตัวเลขแบบเดิมเพื่อเทียบ ให้ส่ง scope="all"
+#
+# ⚠️ ห้ามสับสนกับ places.scrape_excluded
+#   scrape_excluded = "ไม่เก็บรีวิวเพิ่ม"  ใช้ที่ชั้น scraper เท่านั้น
+#   in_scope        = "นับในสถิติไหม"     ใช้ที่ชั้น api เท่านั้น
+#   วัดแล้ว scrape_excluded (9 แห่ง) เป็นสับเซตของ in_scope=false (42 แห่ง)
+
+
+def scope_filter(scope: str = "in", alias: str = "p") -> str:
+    """คืน SQL fragment กรองสถานที่ตามขอบเขตงานวิจัย
+
+      'in'  (ค่าตั้งต้น) = เฉพาะสถานที่ในขอบเขต
+      'out'              = เฉพาะที่อยู่นอกขอบเขต (ไว้ตรวจว่าตัดอะไรออกไป)
+      'all'              = ไม่กรอง (ตัวเลขแบบก่อนมีขอบเขต ใช้เทียบย้อนหลัง)
+    """
+    if scope == "all":
+        return ""
+    if scope == "out":
+        return f"AND NOT {alias}.in_scope"
+    return f"AND {alias}.in_scope"
