@@ -6,11 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_db
 from api.filters import (
-    GENERAL_CATEGORY,
-    NON_PROBLEM_CATEGORIES,
-    _NONPROBLEM_IN,
+    SEVERITY_IS_LEGACY,
+    _NONPROBLEM_ANY_IN,
+    _NONPROBLEM_IDS_IN,
+    category_not_found,
+    category_v2_name,
     date_filter,
-    sentiment_filter,
+    primary_category_filter,
+    primary_sentiment_filter,
+    resolve_category_id,
     status_filter,
 )
 from api.schemas.analysis import (
@@ -26,15 +30,29 @@ router = APIRouter(prefix="/insights", tags=["insights"])
 # ตัวกรองที่ใช้ร่วมกับ router อื่น (และรายงาน) อยู่ที่ api/filters.py แหล่งเดียว
 # ห้าม copy-paste มาไว้ที่นี่ — ดูเหตุผลใน docstring ของไฟล์นั้น
 
-# นิยาม "pain point" = รีวิวเชิงลบ (คำบ่น) เท่านั้น — ไม่นับคำชม/ความเห็นทั่วไป
-# ⚠️ dead code: ไม่มีที่ไหนเรียก คงไว้ที่นี่โดยเจตนา ไม่ย้ายเข้า api/filters.py
-# (เอา dead code ไปไว้ในโมดูลกลางจะทำให้มันดูเหมือนของสำคัญ แล้วคนต่อไปไม่กล้าลบ)
-NEGATIVE_ONLY = "ar.sentiment = 'negative'"
+# ── ย้ายมาอ่านป้ายชุด v2 แล้ว (Phase 8) ──
+#
+# endpoint ในไฟล์นี้เคยอ่าน analyzed_reviews.sentiment และ .pain_point_category
+# ตอนนี้อ่าน .overall_sentiment และ .primary_category_id แทน
+#
+# ⚠️ หน่วยนับไม่เปลี่ยน ยังเป็น "รีวิว" (1 แถว/รีวิว) เหมือนเดิมทุก endpoint
+#   ที่เปลี่ยนคือแหล่งที่มาของป้ายเท่านั้น ตัวเลขจึงยังเทียบกับของเดิมได้
+#   ส่วนหน่วย "การกล่าวถึง" (1 รีวิวนับได้หลายหมวด) อยู่ที่ /aspects/* เท่านั้น
+#
+# ⚠️ กติกาที่ใช้ตลอดการย้าย — ตัวเลขที่ผูกกับ severity คงไว้ที่ชั้นเดิมทั้งก้อน
+#   review_aspects.severity ยังว่างทั้ง 140,967 แถว ความรุนแรงจึงมีแต่ในป้ายชุดเดิม
+#   ถ้าเอา severity ของชั้นเดิมไปจับคู่กับ overall_sentiment ของชั้นใหม่
+#   จะได้ตัวเลขที่ไม่ตรงกับชั้นไหนเลย จึงคงทั้ง ar.severity และ ar.sentiment
+#   ไว้คู่กันในทุกนิพจน์ที่มี severity และติดป้ายกำกับใน docstring ของ endpoint
+#
+# ⚠️ SQL คืน primary_category_id เป็นเลข แล้วแปลงเป็นชื่อด้วย category_v2_name()
+#   ไม่ JOIN categories ในคิวรี เพราะการแตะ FROM/JOIN ของคิวรีเดิม 14 ที่
+#   เสี่ยงทำตัวส่วนเพี้ยน (ละเมิดกฎ 1) และ Postgres ไม่ยอม GROUP BY subquery
 
-
-# ⚠️ dead code เช่นกัน — alias เดิมของ sentiment_filter ไม่มีที่ไหนเรียก
-def pain_filter(pain_only: bool, alias: str = "ar") -> str:
-    return sentiment_filter("complaints" if pain_only else "all", alias)
+# ⚠️ ลบ NEGATIVE_ONLY และ pain_filter() ออกตอนย้ายมาชุด v2 (Phase 8)
+#   ทั้งสองตัวเป็น dead code ที่อ้าง ar.sentiment ของชั้นเดิม
+#   ถ้าคงไว้ คนต่อไปอาจหยิบไปใช้แล้วได้ตัวเลขจากชั้นที่เลิกใช้แล้วโดยไม่รู้ตัว
+#   ถ้าต้องการตัวกรองคำบ่น ใช้ primary_sentiment_filter("complaints") จาก api/filters.py
 
 
 # ฐานต่ำกว่านี้ในหนึ่ง bucket → ติดธง low_confidence (อัตราแกว่งแรงเกินจะอ่าน)
@@ -84,6 +102,15 @@ async def zone_summary(
       total_with_text · negative_count · complaint_rate · severity_counts · severity_share
     ฟิลด์เดิม (review_count / analyzed_count / high_count / ...) ไม่กรอง text_clean
     จึงห้ามเอาไปเป็นตัวส่วนของสัดส่วนใหม่ (กฎ 1)
+
+    ⚠️ ย้ายมาอ่านป้ายชุด v2 แล้ว (Phase 8)
+      negative_count / complaint_rate / top_category อ่าน overall_sentiment
+      และ primary_category_id
+
+      แต่ high_count / medium_count / low_count ยังเป็นของชั้นเดิม เพราะ
+      review_aspects.severity ว่างทั้งตาราง
+      ผลคือ high+medium+low **ไม่เท่ากับ** negative_count และไม่ควรเท่า
+      (ของเดิมก็ไม่เท่าอยู่แล้ว เพราะมี 449 แถวที่เป็นคำบ่นแต่ severity เป็น NULL)
     """
     date_sql, date_params = date_filter(date_from, date_to)
     biz_filter = status_filter(status)
@@ -98,13 +125,16 @@ async def zone_summary(
                 COUNT(DISTINCT ar.id)                AS analyzed_count,
                 {_HIGH_WITH_TEXT}   AS high_count,
                 {_MEDIUM_WITH_TEXT} AS medium_count,
+                -- severity มีแต่ในป้ายชุดเดิม จึงคง ar.sentiment ไว้คู่กัน
                 COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'low'
                     AND ar.sentiment = 'negative' AND r.text_clean <> '') AS low_count,
-                MODE() WITHIN GROUP (ORDER BY ar.pain_point_category)
+                -- ย้ายมาชุด v2: คืนเป็น "เลขหมวด" แล้วแปลงเป็นชื่อใน Python
+                MODE() WITHIN GROUP (ORDER BY ar.primary_category_id)
                     FILTER (WHERE r.text_clean <> ''
-                            AND ar.sentiment = 'negative'
-                            AND ar.pain_point_category IS NOT NULL
-                            AND ar.pain_point_category NOT IN ({_NONPROBLEM_IN})) AS top_category
+                            AND ar.overall_sentiment = 'negative'
+                            AND ar.primary_category_id IS NOT NULL
+                            AND ar.primary_category_id NOT IN ({_NONPROBLEM_IDS_IN}))
+                    AS top_category_id
             FROM places p
             {join_kind} reviews r  ON r.place_id = p.id {date_sql}
             LEFT JOIN analyzed_reviews ar ON ar.review_id = r.id
@@ -113,7 +143,7 @@ async def zone_summary(
             GROUP BY COALESCE(p.zone, 'other')
             ORDER BY analyzed_count DESC
         """),
-        {"general": GENERAL_CATEGORY, **date_params},
+        date_params,
     )
     rows = result.fetchall()
 
@@ -122,7 +152,9 @@ async def zone_summary(
         text(f"""
             SELECT COALESCE(p.zone, 'other') AS zone,
                    COUNT(*)                                          AS total_with_text,
-                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative')  AS neg,
+                   -- ย้ายมาชุด v2
+                   COUNT(*) FILTER (WHERE ar.overall_sentiment = 'negative') AS neg,
+                   -- สามตัวล่างมี severity จึงคงชั้นเดิมทั้งก้อน (ar.sentiment)
                    COUNT(*) FILTER (WHERE ar.sentiment = 'negative'
                                       AND ar.severity = 'high')       AS sev_high,
                    COUNT(*) FILTER (WHERE ar.sentiment = 'negative'
@@ -163,7 +195,8 @@ async def zone_summary(
             "high_count": r.high_count or 0,
             "medium_count": r.medium_count or 0,
             "low_count": r.low_count or 0,
-            "top_category": r.top_category,
+            # แปลงเลข -> ชื่อหมวด v2 ตอนวาดผลลัพธ์ (สัญญา API ยังเป็นชื่อเหมือนเดิม)
+            "top_category": category_v2_name(r.top_category_id),
             # ── ฐานเชิงสัดส่วน ──
             # severity_counts/severity_share ถูกถอดออก 2026-10-10
             # เพราะซ้ำกับ high_count/medium_count/low_count ที่ตอนนี้นับ
@@ -195,20 +228,37 @@ async def zone_pain_points(
     {
       items: [{category, count, share_of_negative, rate_of_all}],
       total_with_text, sentiment_counts, complaint_rate,
-      severity_counts, severity_share
+      severity_counts, severity_share, severity_source
     }
+
+    ⚠️ ย้ายมาอ่านป้ายชุด v2 แล้ว (Phase 8)
+      items / sentiment_counts / complaint_rate อ่าน overall_sentiment
+      และ primary_category_id
+
+      severity_counts / severity_share ยังเป็นของชั้นเดิม และหารด้วยตัวนับคำบ่น
+      ของชั้นเดิม (neg_legacy) ไม่ใช่ sentiment_counts.negative
+      จึงอย่าเอา severity_share ไปคูณกับ sentiment_counts.negative
     """
-    general_filter = sentiment_filter(view_mode)
+    general_filter = primary_sentiment_filter(view_mode)
     biz_filter = status_filter(status)
     date_sql, date_params = date_filter(date_from, date_to)
 
     # ── ฐานของโซนนี้ ใช้ตัวกรองชุดเดียวกับคิวรีหมวด (ต่างแค่ไม่กรอง sentiment/หมวด) ──
+    #
+    # ⚠️ มีตัวนับคำบ่นสองตัวโดยเจตนา
+    #   neg        = ชุด v2 (overall_sentiment) ใช้เป็นตัวส่วนของ complaint_rate
+    #                และ share_of_negative ซึ่งตัวเศษก็มาจากชุด v2
+    #   neg_legacy = ชุดเดิม (sentiment) ใช้เป็นตัวส่วนของ severity_share เท่านั้น
+    #                เพราะ sev_high/medium/low มาจากชั้นเดิม
+    #   ถ้าหาร sev ด้วย neg จะได้ตัวเศษกับตัวส่วนมาจากคนละชั้น = ละเมิดกฎ 1
     base_result = await db.execute(
         text(f"""
             SELECT COUNT(*)                                         AS total_with_text,
-                   COUNT(*) FILTER (WHERE ar.sentiment='negative')  AS neg,
-                   COUNT(*) FILTER (WHERE ar.sentiment='positive')  AS pos,
-                   COUNT(*) FILTER (WHERE ar.sentiment='neutral')   AS neu,
+                   COUNT(*) FILTER (WHERE ar.overall_sentiment='negative') AS neg,
+                   COUNT(*) FILTER (WHERE ar.overall_sentiment='positive') AS pos,
+                   COUNT(*) FILTER (WHERE ar.overall_sentiment='neutral')  AS neu,
+                   -- สี่ตัวล่างเป็นของชั้นเดิมทั้งก้อน เพราะ severity มีแต่ที่ชั้นเดิม
+                   COUNT(*) FILTER (WHERE ar.sentiment='negative')  AS neg_legacy,
                    COUNT(*) FILTER (WHERE ar.sentiment='negative'
                                       AND ar.severity='high')       AS sev_high,
                    COUNT(*) FILTER (WHERE ar.sentiment='negative'
@@ -229,21 +279,21 @@ async def zone_pain_points(
 
     result = await db.execute(
         text(f"""
-            SELECT ar.pain_point_category AS category, COUNT(*) AS count
+            SELECT ar.primary_category_id AS category_id, COUNT(*) AS count
             FROM analyzed_reviews ar
             JOIN reviews r  ON r.id = ar.review_id
             JOIN places p   ON p.id = r.place_id
             WHERE COALESCE(p.zone, 'other') = :zone
-              AND ar.pain_point_category IS NOT NULL
+              AND ar.primary_category_id IS NOT NULL
               AND r.text_clean <> ''
               {general_filter}
               {biz_filter}
               {date_sql}
-            GROUP BY ar.pain_point_category
+            GROUP BY ar.primary_category_id
             ORDER BY count DESC
             LIMIT 10
         """),
-        {"zone": zone, "general": GENERAL_CATEGORY, **date_params},
+        {"zone": zone, **date_params},
     )
     # share_of_negative มีความหมายเฉพาะโหมด complaints (เหมือน /insights/summary)
     share_base = b.neg if view_mode == "complaints" else None
@@ -251,7 +301,7 @@ async def zone_pain_points(
     return {
         "items": [
             {
-                "category": r.category,
+                "category": category_v2_name(r.category_id),
                 "count": r.count,
                 "share_of_negative": _rate(r.count, share_base),
                 "rate_of_all": _rate(r.count, b.total_with_text),
@@ -262,7 +312,9 @@ async def zone_pain_points(
         "sentiment_counts": {"negative": b.neg, "positive": b.pos, "neutral": b.neu},
         "complaint_rate": _rate(b.neg, b.total_with_text),
         "severity_counts": sev,
-        "severity_share": {k: _rate(v, b.neg) for k, v in sev.items()},
+        # ⚠️ หารด้วย neg_legacy ไม่ใช่ neg — ตัวเศษเป็นของชั้นเดิม ตัวส่วนต้องเป็นด้วย
+        "severity_share": {k: _rate(v, b.neg_legacy) for k, v in sev.items()},
+        "severity_source": SEVERITY_IS_LEGACY,
     }
 
 
@@ -275,7 +327,15 @@ async def zone_breakdown(
     date_from: str | None = None,
     date_to: str | None = None,
 ):
-    """Pain point แยกตามประเภทสถานที่ภายในโซน (view_mode: complaints/praise/all)"""
+    """Pain point แยกตามประเภทสถานที่ภายในโซน (view_mode: complaints/praise/all)
+
+    ⚠️ ย้ายมาอ่านป้ายชุด v2 แล้ว (Phase 8)
+      pain_point_totals / top_pain_points อ่าน primary_category_id
+      และ overall_sentiment
+
+      high_count / medium_count / low_count ยังเป็นของชั้นเดิมทั้งก้อน
+      เพราะ review_aspects.severity ว่างทั้งตาราง
+    """
 
     # แผนที่ Google category → ประเภทที่ใช้ในระบบ
     _GOOGLE_CATEGORY_MAP = {
@@ -323,6 +383,7 @@ async def zone_breakdown(
         text(f"""
             SELECT p.id, p.name, p.google_category,
                    COUNT(DISTINCT r.id)  AS review_count,
+                   -- สามตัวนี้มี severity จึงคงชั้นเดิมทั้งก้อน (ar.sentiment)
                    COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high'   AND ar.sentiment='negative') AS high_count,
                    COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'medium' AND ar.sentiment='negative') AS medium_count,
                    COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'low'    AND ar.sentiment='negative') AS low_count
@@ -339,24 +400,24 @@ async def zone_breakdown(
     places = places_result.fetchall()
 
     # Pain points ต่อสถานที่
-    general_filter = sentiment_filter(view_mode)
+    general_filter = primary_sentiment_filter(view_mode)
     pain_result = await db.execute(
         text(f"""
             SELECT p.name AS place_name,
-                   ar.pain_point_category AS category,
+                   ar.primary_category_id AS category_id,
                    COUNT(*) AS cnt
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
             JOIN places p  ON p.id = r.place_id
             WHERE COALESCE(p.zone, 'other') = :zone
-              AND ar.pain_point_category IS NOT NULL
+              AND ar.primary_category_id IS NOT NULL
               AND r.text_clean <> ''
               {general_filter}
               {biz_filter}
               {date_sql}
-            GROUP BY p.name, ar.pain_point_category
+            GROUP BY p.name, ar.primary_category_id
         """),
-        {"zone": zone, "general": GENERAL_CATEGORY, **date_params},
+        {"zone": zone, **date_params},
     )
     pain_rows = pain_result.fetchall()
 
@@ -365,7 +426,11 @@ async def zone_breakdown(
     for row in pain_rows:
         if row.place_name not in pain_by_place:
             pain_by_place[row.place_name] = {}
-        pain_by_place[row.place_name][row.category] = row.cnt
+        # แปลงเลขหมวดเป็นชื่อตอนนี้ เพราะคีย์ของ dict นี้ถูกส่งออกเป็นชื่อหมวด
+        cat_name = category_v2_name(row.category_id)
+        if cat_name is None:
+            continue
+        pain_by_place[row.place_name][cat_name] = row.cnt
 
     # จัดกลุ่มตามประเภทสถานที่
     type_groups: dict[str, dict] = {}
@@ -428,20 +493,37 @@ async def category_places(
       ตัดหมวดที่ไม่ใช่ปัญหาออกเมื่อไม่ระบุหมวด เพื่อให้ "ร้านที่ถูกบ่น" หมายถึง
       ร้านที่มีคำบ่นจริง ไม่ใช่ร้านที่มีคนคอมเมนต์เฉย ๆ — ตรงกับที่ /summary
       และกราฟแท่งใช้อยู่ (กฎ 1) ส่วนโหมด all ไม่ตัด เพราะตั้งใจให้เห็นทุกอย่าง
+
+    ⚠️ ย้ายมาอ่านป้ายชุด v2 แล้ว (Phase 8)
+      total / neg / pos / neu และตัวกรองหมวด อ่าน overall_sentiment
+      และ primary_category_id
+
+      high / medium / low ยังเป็นป้ายชั้นเดิม จึงเพิ่มฟิลด์ sev_total มาให้
+      **ใช้ sev_total เป็นตัวส่วนของแถบความรุนแรง ห้ามใช้ total**
+      ไม่งั้นตัวเศษกับตัวส่วนมาจากคนละชั้น (ละเมิดกฎ 1)
+
+      category รับได้ทั้งชื่อหมวด v2 ชื่อเดิม v1 และเลข id
+      ถ้าส่งชื่อที่ไม่รู้จักมา จะคืนลิสต์ว่าง ไม่ใช่คืนทุกหมวด
     """
     filters = ["r.text_clean <> ''"]
     params: dict = {}
     if category:
-        filters.append("ar.pain_point_category = :category")
-        params["category"] = category
+        # รับได้ทั้งชื่อหมวด v2 ชื่อเดิม v1 และเลข id (ดู resolve_category_id)
+        cid = resolve_category_id(category)
+        if cid is None:
+            # ส่งชื่อมาแต่ map ไม่ได้ -> ต้องคืนลิสต์ว่าง ไม่ใช่คืนทุกหมวด
+            filters.append("1 = 0")
+        else:
+            filters.append("ar.primary_category_id = :pcat_id")
+            params["pcat_id"] = cid
     elif view_mode in ("complaints", "praise"):
-        filters.append("ar.pain_point_category IS NOT NULL")
-        filters.append(f"ar.pain_point_category NOT IN ({_NONPROBLEM_IN})")
+        filters.append("ar.primary_category_id IS NOT NULL")
+        filters.append(f"ar.primary_category_id NOT IN ({_NONPROBLEM_IDS_IN})")
     # กรอง sentiment ตาม view_mode (complaints=negative, praise=positive, all=ไม่กรอง)
     if view_mode == "complaints":
-        filters.append("ar.sentiment = 'negative'")
+        filters.append("ar.overall_sentiment = 'negative'")
     elif view_mode == "praise":
-        filters.append("ar.sentiment = 'positive'")
+        filters.append("ar.overall_sentiment = 'positive'")
     if zone:
         filters.append("COALESCE(p.zone, 'other') = :zone")
         params["zone"] = zone
@@ -456,15 +538,21 @@ async def category_places(
                    COALESCE(p.zone, 'other') AS zone,
                    COALESCE(p.business_status, 'operational') AS business_status,
                    COUNT(*) AS total,
-                   -- ระดับความรุนแรง (ใช้ในโหมด complaints)
+                   -- ระดับความรุนแรง (ใช้ในโหมด complaints) — ป้ายชั้นเดิม
+                   -- ⚠️ sev_total คือตัวส่วนของแถบสามสีนี้ ห้ามหารด้วย total
+                   --   เพราะ total มาจากป้ายชุด v2 แต่สามตัวนี้มาจากชั้นเดิม
+                   --   high+medium+low = sev_total เป๊ะเสมอ จึงอ่านเป็นองค์ประกอบได้
                    COUNT(*) FILTER (WHERE ar.severity = 'high')   AS high,
                    COUNT(*) FILTER (WHERE ar.severity = 'medium') AS medium,
                    COUNT(*) FILTER (WHERE ar.severity = 'low')    AS low,
+                   COUNT(*) FILTER (WHERE ar.severity IS NOT NULL) AS sev_total,
                    -- ประเภทความรู้สึก (ใช้ในโหมด all ที่รีวิวปนกันทุกแบบ)
-                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative') AS neg,
-                   COUNT(*) FILTER (WHERE ar.sentiment = 'positive') AS pos,
-                   COUNT(*) FILTER (WHERE ar.sentiment NOT IN ('negative','positive')
-                                       OR ar.sentiment IS NULL)      AS neu
+                   -- neg+pos+neu = total เป๊ะเสมอ เพราะ neu รับทุกค่าที่เหลือ
+                   COUNT(*) FILTER (WHERE ar.overall_sentiment = 'negative') AS neg,
+                   COUNT(*) FILTER (WHERE ar.overall_sentiment = 'positive') AS pos,
+                   COUNT(*) FILTER (WHERE ar.overall_sentiment
+                                            NOT IN ('negative','positive')
+                                       OR ar.overall_sentiment IS NULL)      AS neu
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
             JOIN places p  ON p.id = r.place_id
@@ -500,27 +588,43 @@ async def category_reviews(
 
     ⚠️ ตัวกรองหมวดต้องตรงกับ /category-places เป๊ะ
       ไม่งั้นจำนวนที่โชว์ข้างชื่อร้านจะไม่เท่ากับจำนวนรีวิวที่กางออกมา (กฎ 1)
+
+    ⚠️ ย้ายมาอ่านป้ายชุด v2 แล้ว (Phase 8)
+      ตัวกรอง category / view_mode / sentiment อ่าน primary_category_id
+      และ overall_sentiment ให้ตรงกับ /category-places
+
+      ฟิลด์ severity และตัวกรอง severity ยังเป็นป้ายชั้นเดิม
+      ฟิลด์ sentiment ที่คืนมาคือชุดใหม่ และเพิ่ม sentiment_legacy มาด้วย
+      เพื่อให้เห็นว่าป้ายสองชุดต่างกันที่รีวิวใบไหน
     """
     filters = ["r.place_id = :place_id", "r.text_clean <> ''"]
     params: dict = {"place_id": place_id}
     if category:
-        filters.append("ar.pain_point_category = :category")
-        params["category"] = category
+        cid = resolve_category_id(category)
+        if cid is None:
+            filters.append("1 = 0")
+        else:
+            filters.append("ar.primary_category_id = :pcat_id")
+            params["pcat_id"] = cid
     elif view_mode in ("complaints", "praise"):
-        filters.append("ar.pain_point_category IS NOT NULL")
-        filters.append(f"ar.pain_point_category NOT IN ({_NONPROBLEM_IN})")
+        filters.append("ar.primary_category_id IS NOT NULL")
+        filters.append(f"ar.primary_category_id NOT IN ({_NONPROBLEM_IDS_IN})")
     if view_mode == "complaints":
-        filters.append("ar.sentiment = 'negative'")
+        filters.append("ar.overall_sentiment = 'negative'")
     elif view_mode == "praise":
-        filters.append("ar.sentiment = 'positive'")
+        filters.append("ar.overall_sentiment = 'positive'")
     if severity:
+        # ⚠️ severity เป็นป้ายชั้นเดิม กรองร่วมกับ overall_sentiment ได้
+        #   เพราะเป็นการ "คัดรีวิว" ไม่ใช่การคิดสัดส่วน จึงไม่ละเมิดกฎ 1
+        #   แต่ผลที่ได้คือชุดลูกผสม ต้องบอกผู้ใช้ว่าแถบความรุนแรงมาจากป้ายชุดเดิม
         filters.append("ar.severity = :severity")
         params["severity"] = severity
     if sentiment == "neutral":
         # "กลางๆ" = ไม่ใช่ทั้งลบและบวก (รวม neutral/mixed/NULL)
-        filters.append("(ar.sentiment NOT IN ('negative','positive') OR ar.sentiment IS NULL)")
+        filters.append("(ar.overall_sentiment NOT IN ('negative','positive') "
+                       "OR ar.overall_sentiment IS NULL)")
     elif sentiment in ("negative", "positive"):
-        filters.append("ar.sentiment = :sentiment")
+        filters.append("ar.overall_sentiment = :sentiment")
         params["sentiment"] = sentiment
     date_sql, date_params = date_filter(date_from, date_to)
     if date_sql:
@@ -531,7 +635,12 @@ async def category_reviews(
 
     result = await db.execute(
         text(f"""
-            SELECT r.text_clean AS text, r.rating, ar.severity, ar.sentiment,
+            -- ⚠️ ส่งทั้งอารมณ์ชุดใหม่และชุดเดิม
+            --   sentiment        = ชุดใหม่ (overall_sentiment) ตรงกับตัวกรอง
+            --   sentiment_legacy = ชุดเดิม เก็บไว้ให้เทียบได้ว่าป้ายต่างกันที่ไหน
+            SELECT r.text_clean AS text, r.rating, ar.severity,
+                   ar.overall_sentiment AS sentiment,
+                   ar.sentiment AS sentiment_legacy,
                    r.review_date_approx AS date
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
@@ -566,7 +675,7 @@ async def insights_summary(
     """สรุปภาพรวม + top categories + severity + worst places (view_mode: complaints/praise/all)"""
     date_sql, date_params = date_filter(date_from, date_to)
 
-    general_filter = sentiment_filter(view_mode)
+    general_filter = primary_sentiment_filter(view_mode)
     biz_filter = status_filter(status)
 
     # ── นับรีวิว/วิเคราะห์/สถานที่ ตามช่วงเวลาและสถานะร้านที่เลือก ──
@@ -607,9 +716,12 @@ async def insights_summary(
         text(f"""
             SELECT
                 COUNT(*)                                                    AS total_with_text,
-                COUNT(*) FILTER (WHERE ar.sentiment = 'negative')           AS neg,
-                COUNT(*) FILTER (WHERE ar.sentiment = 'positive')           AS pos,
-                COUNT(*) FILTER (WHERE ar.sentiment = 'neutral')            AS neu,
+                COUNT(*) FILTER (WHERE ar.overall_sentiment = 'negative')   AS neg,
+                COUNT(*) FILTER (WHERE ar.overall_sentiment = 'positive')   AS pos,
+                COUNT(*) FILTER (WHERE ar.overall_sentiment = 'neutral')    AS neu,
+                -- สี่ตัวล่างเป็นของชั้นเดิมทั้งก้อน เพราะ severity มีแต่ที่ชั้นเดิม
+                -- neg_legacy คือตัวส่วนของ severity_share ห้ามใช้ neg
+                COUNT(*) FILTER (WHERE ar.sentiment = 'negative')           AS neg_legacy,
                 COUNT(*) FILTER (WHERE ar.sentiment = 'negative'
                                    AND ar.severity = 'high')                AS sev_high,
                 COUNT(*) FILTER (WHERE ar.sentiment = 'negative'
@@ -629,25 +741,27 @@ async def insights_summary(
     total_with_text = b.total_with_text
     sentiment_counts = {"negative": b.neg, "positive": b.pos, "neutral": b.neu}
     # severity มีความหมายเฉพาะรีวิวเชิงลบ → ตัวส่วนของ severity_share คือคำบ่นทั้งหมด
+    # ⚠️ ใช้ neg_legacy ไม่ใช่ neg เพราะ sev_* เป็นป้ายชั้นเดิม
+    #   ถ้าหารด้วย neg (ชุด v2) ตัวเศษกับตัวส่วนจะมาจากคนละชั้น = ละเมิดกฎ 1
     severity_counts = {"high": b.sev_high, "medium": b.sev_medium, "low": b.sev_low}
-    severity_share = {k: _rate(v, b.neg) for k, v in severity_counts.items()}
+    severity_share = {k: _rate(v, b.neg_legacy) for k, v in severity_counts.items()}
 
     cat_result = await db.execute(
         text(f"""
-            SELECT ar.pain_point_category AS category, COUNT(*) AS count
+            SELECT ar.primary_category_id AS category_id, COUNT(*) AS count
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
             JOIN places p  ON p.id = r.place_id
-            WHERE ar.pain_point_category IS NOT NULL
+            WHERE ar.primary_category_id IS NOT NULL
               AND r.text_clean <> ''
               {general_filter}
               {biz_filter}
               {date_sql}
-            GROUP BY ar.pain_point_category
+            GROUP BY ar.primary_category_id
             ORDER BY count DESC
             LIMIT 10
         """),
-        {"general": GENERAL_CATEGORY, **date_params},
+        date_params,
     )
     # share_of_negative มีความหมายเฉพาะโหมด complaints เพราะตัวเศษเป็นรีวิวเชิงลบ
     # โหมด praise ตัวเศษเป็นรีวิวเชิงบวก / โหมด all รวมทุกอารมณ์ → หารด้วยคำบ่น
@@ -655,7 +769,7 @@ async def insights_summary(
     _share_base = b.neg if view_mode == "complaints" else None
     top_categories = [
         {
-            "category": r.category,
+            "category": category_v2_name(r.category_id),
             "count": r.count,
             "share_of_negative": _rate(r.count, _share_base),
             "rate_of_all": _rate(r.count, total_with_text),
@@ -759,6 +873,14 @@ async def top_problematic_places(
       review_count = รีวิวที่มีข้อความ = ตัวส่วนของ high_rate
       high_count   = ปัญหาระดับสูง     = ตัวเศษของ high_rate
     ตรงกับ /summary และ snapshot จึงเอาไปวางข้างกันบนหน้าจอได้ (กฎ 1)
+
+    ⚠️ endpoint นี้ **ไม่ได้ย้าย**มาป้ายชุด v2 และไม่ควรย้าย
+      ทุกตัวเลขขับด้วย severity ซึ่งมีแต่ในป้ายชั้นเดิม
+      (review_aspects.severity ว่างทั้ง 140,967 แถว)
+      จึงคง ar.severity คู่กับ ar.sentiment ไว้ทั้งก้อนตามกติกาการย้าย
+
+      high_rate ยังอ่านได้ เพราะตัวส่วน review_count นับจาก r.text_clean
+      ซึ่งไม่ได้มาจากชั้นป้ายใดเลย ตัวเศษกับตัวส่วนจึงไม่ปนชั้นกัน
     """
     biz_filter = status_filter(status)
     date_sql, date_params = date_filter(date_from, date_to)
@@ -822,12 +944,16 @@ async def positive_highlights(
       total_praise = คำชมทั้งหมดที่ผ่านตัวกรองชุดเดียวกับ items เป๊ะ
       จึงเอาไปเป็นตัวส่วนได้ตรงตามกฎ 1 — ถ้าคำนวณจากคิวรีคนละชุด
       จะได้สัดส่วนที่ตัวเศษกับตัวส่วนมาจากคนละประชากร
+
+    ⚠️ ย้ายมาอ่านป้ายชุด v2 แล้ว (Phase 8)
+      อ่าน overall_sentiment และ primary_category_id
+      ตัวเศษกับตัวส่วนยังใช้ตัวกรองชุดเดียวกันเป๊ะเหมือนเดิม
     """
     filters = [
-        "ar.sentiment = 'positive'",
+        "ar.overall_sentiment = 'positive'",
         "r.text_clean <> ''",
-        "ar.pain_point_category IS NOT NULL",
-        f"ar.pain_point_category NOT IN ({_NONPROBLEM_IN})",
+        "ar.primary_category_id IS NOT NULL",
+        f"ar.primary_category_id NOT IN ({_NONPROBLEM_IDS_IN})",
     ]
     params: dict = {"lim": limit}
     if zone:
@@ -842,19 +968,20 @@ async def positive_highlights(
 
     result = await db.execute(
         text(f"""
-            SELECT ar.pain_point_category AS category, COUNT(*) AS count
+            SELECT ar.primary_category_id AS category_id, COUNT(*) AS count
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
             JOIN places p  ON p.id = r.place_id
             WHERE {where}
               {biz_filter}
-            GROUP BY ar.pain_point_category
+            GROUP BY ar.primary_category_id
             ORDER BY count DESC
             LIMIT :lim
         """),
         params,
     )
-    items = [{"category": r.category, "count": r.count} for r in result.fetchall()]
+    items = [{"category": category_v2_name(r.category_id), "count": r.count}
+             for r in result.fetchall()]
 
     # ตัวส่วน: คำชมทั้งหมดที่ผ่าน "ตัวกรองชุดเดียวกัน" — ต่างกันแค่ไม่ LIMIT
     # ใช้ where/biz_filter/params ตัวเดียวกับคิวรีบน จึงไม่มีทางหลุดจากกัน
@@ -957,7 +1084,10 @@ async def compare_snapshots(
             FULL JOIN (SELECT category, complaint_count FROM snapshot_categories
                        WHERE snapshot_id = :from AND {zone_cond}) b
               ON a.category = b.category
-            WHERE COALESCE(a.category, b.category) NOT IN ({_NONPROBLEM_IN})
+            -- ⚠️ สแนปช็อตเก็บ "ชื่อหมวด" ไม่ใช่เลข และมีทั้งแถว v1 และ v2
+            --   (ดู category_version) จึงต้องกรองด้วยชื่อของทั้งสองรุ่น
+            --   ถ้ากรองชุดเดียว แถวอีกรุ่นจะหลุดตัวกรองเงียบ ๆ
+            WHERE COALESCE(a.category, b.category) NOT IN ({_NONPROBLEM_ANY_IN})
         """),
         params,
     )
@@ -1082,42 +1212,45 @@ async def trending_problems(
     # 1) หา top N หมวดในช่วงที่สนใจ (ใช้เป็นแถวของตาราง)
     top_rows = await db.execute(
         text(f"""
-            SELECT ar.pain_point_category AS category, COUNT(*) AS total
+            SELECT ar.primary_category_id AS category_id, COUNT(*) AS total
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
             JOIN places  p ON p.id = r.place_id
-            WHERE ar.sentiment = 'negative'
+            WHERE ar.overall_sentiment = 'negative'
               AND r.text_clean <> ''
               AND r.review_date_approx IS NOT NULL
               {window_sql}
-              AND ar.pain_point_category NOT IN ({_NONPROBLEM_IN})
+              AND ar.primary_category_id IS NOT NULL
+              AND ar.primary_category_id NOT IN ({_NONPROBLEM_IDS_IN})
               {zone_sql}
               {status_sql}
-            GROUP BY ar.pain_point_category
+            GROUP BY ar.primary_category_id
             ORDER BY total DESC
             LIMIT :top
         """),
         params,
     )
-    top_categories = [r.category for r in top_rows.fetchall()]
+    # เก็บทั้งเลขและชื่อ — เลขใช้กับ SQL ชื่อใช้กับ response
+    top_cat_ids = [r.category_id for r in top_rows.fetchall()]
+    top_categories = [category_v2_name(cid) for cid in top_cat_ids]
     if not top_categories:
         return {"period": unit, "categories": [], "buckets": []}
 
     # 2) นับแต่ละหมวดแยกตามช่วงเวลา
-    params["cats"] = top_categories
+    params["cats"] = top_cat_ids
     cell_rows = await db.execute(
         text(f"""
             SELECT DATE_TRUNC('{unit}', r.review_date_approx)::date AS bucket,
-                   ar.pain_point_category AS category,
+                   ar.primary_category_id AS category_id,
                    COUNT(*) AS count
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
             JOIN places  p ON p.id = r.place_id
-            WHERE ar.sentiment = 'negative'
+            WHERE ar.overall_sentiment = 'negative'
               AND r.text_clean <> ''
               AND r.review_date_approx IS NOT NULL
               {window_sql}
-              AND ar.pain_point_category = ANY(:cats)
+              AND ar.primary_category_id = ANY(:cats)
               {zone_sql}
               {status_sql}
             GROUP BY 1, 2
@@ -1129,7 +1262,10 @@ async def trending_problems(
     grid: dict[str, dict[str, int]] = {}
     for r in cell_rows.fetchall():
         key = r.bucket.isoformat()
-        grid.setdefault(key, {})[r.category] = r.count
+        name = category_v2_name(r.category_id)
+        if name is None:
+            continue
+        grid.setdefault(key, {})[name] = r.count
 
     # ── ตัวส่วนของแต่ละ bucket ──────────────────────────────────────────────
     # ใช้ชุดกรองเดียวกับคิวรี counts ทุกมิติที่ใช้ร่วมกัน (window / text_clean /
@@ -1139,7 +1275,9 @@ async def trending_problems(
         text(f"""
             SELECT DATE_TRUNC('{unit}', r.review_date_approx)::date AS bucket,
                    COUNT(*)                                          AS bucket_total,
-                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative') AS bucket_negative
+                   -- ต้องย้ายพร้อมคิวรีตัวเศษด้านบน ไม่งั้นตัวเศษกับตัวส่วนคนละชั้น
+                   COUNT(*) FILTER (WHERE ar.overall_sentiment = 'negative')
+                       AS bucket_negative
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
             JOIN places  p ON p.id = r.place_id
@@ -1259,25 +1397,30 @@ async def category_counts(
       เพื่อให้ผู้เรียกเดิมได้ผลเท่าเดิมทุกค่า (กฎ 3)
       ผู้เรียกที่ต้องการตัวเลขตรงกับ /summary ต้องส่ง status="operational"
       และช่วงเวลาเดียวกันมาด้วย — ไม่ส่ง = คนละฐาน เทียบกันไม่ได้ (กฎ 1)
+
+    ⚠️ ย้ายมาอ่านป้ายชุด v2 แล้ว (Phase 8)
+      นับจาก primary_category_id หน่วยนับยังเป็น "รีวิว" (1 รีวิว 1 หมวด)
+      ถ้าต้องการหน่วย "การกล่าวถึง" (1 รีวิวนับได้หลายหมวด) ใช้ /aspects/summary
     """
     biz = status_filter(status, "p")
     date_sql, date_params = date_filter(date_from, date_to, "r")
     result = await db.execute(
         text(f"""
-            SELECT ar.pain_point_category AS category, COUNT(*) AS count
+            SELECT ar.primary_category_id AS category_id, COUNT(*) AS count
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
             JOIN places p ON p.id = r.place_id
-            WHERE ar.pain_point_category IS NOT NULL
+            WHERE ar.primary_category_id IS NOT NULL
               AND r.text_clean <> ''          -- ตัดรีวิวที่ให้ดาวอย่างเดียว
               {biz}
               {date_sql}
-            GROUP BY ar.pain_point_category
+            GROUP BY ar.primary_category_id
             ORDER BY count DESC
         """),
         date_params,
     )
-    return [{"category": r.category, "count": r.count} for r in result.fetchall()]
+    return [{"category": category_v2_name(r.category_id), "count": r.count}
+            for r in result.fetchall()]
 
 
 @router.get("/heatmap", response_model=GeoJSONCollection)
@@ -1292,6 +1435,10 @@ async def heatmap_geojson(
     ⚠️ high_count ที่นี่ไม่กรอง sentiment และไม่กรอง text_clean จึงไม่ใช่
       ตัวเลขเดียวกับ /summary หรือ /top-places — ห้ามเอาไปวางข้างกันบนหน้าจอ
       โดยไม่เขียนกำกับว่าคนละฐาน (กฎ 1)
+
+    ⚠️ ย้ายมาอ่านป้ายชุด v2 แล้ว (Phase 8) เฉพาะ pain_point_categories
+      dominant_severity และ high_count ยังเป็นป้ายชั้นเดิม
+      เพราะ review_aspects.severity ว่างทั้งตาราง
     """
     biz = status_filter(status, "p")
     result = await db.execute(
@@ -1301,9 +1448,11 @@ async def heatmap_geojson(
                 p.overall_rating,
                 ST_X(p.location) AS lng,
                 ST_Y(p.location) AS lat,
+                -- severity เป็นป้ายชั้นเดิม (review_aspects.severity ว่างทั้งตาราง)
                 MODE() WITHIN GROUP (ORDER BY ar.severity)           AS dominant_severity,
-                ARRAY_AGG(DISTINCT ar.pain_point_category)
-                    FILTER (WHERE ar.pain_point_category IS NOT NULL) AS pain_categories,
+                -- หมวดย้ายมาชุด v2 แล้ว คืนเป็นอาร์เรย์ของเลข แปลงชื่อใน Python
+                ARRAY_AGG(DISTINCT ar.primary_category_id)
+                    FILTER (WHERE ar.primary_category_id IS NOT NULL) AS pain_category_ids,
                 COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high') AS high_count
             FROM places p
             LEFT JOIN reviews r  ON r.place_id = p.id
@@ -1329,7 +1478,13 @@ async def heatmap_geojson(
                     "name": row.name,
                     "rating": float(row.overall_rating) if row.overall_rating else None,
                     "dominant_severity": row.dominant_severity,
-                    "pain_point_categories": row.pain_categories or [],
+                    # เรียงชื่อตามลำดับ id เพื่อให้ผลคงที่ทุกครั้ง
+                    # (ARRAY_AGG DISTINCT ไม่รับประกันลำดับ)
+                    "pain_point_categories": [
+                        n for n in (category_v2_name(c)
+                                    for c in sorted(row.pain_category_ids or []))
+                        if n is not None
+                    ],
                     "high_count": row.high_count or 0,
                 },
             )

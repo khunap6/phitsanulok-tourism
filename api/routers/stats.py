@@ -5,7 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_db
-from api.filters import date_filter, status_filter
+from api.filters import category_v2_name, date_filter, status_filter
 from api.schemas.analysis import ScrapeJobResponse
 
 router = APIRouter(tags=["system"])
@@ -72,8 +72,9 @@ async def map_geojson(
                 COUNT(DISTINCT r.id)                                         AS review_count,
                 COUNT(DISTINCT ar.id) FILTER (WHERE ar.severity = 'high')   AS high_count,
                 MODE() WITHIN GROUP (ORDER BY ar.severity)                   AS dominant_severity,
-                ARRAY_AGG(DISTINCT ar.pain_point_category)
-                    FILTER (WHERE ar.pain_point_category IS NOT NULL)        AS pain_categories
+                -- ย้ายมาชุด v2: คืนอาร์เรย์ของเลขหมวด แปลงเป็นชื่อใน Python
+                ARRAY_AGG(DISTINCT ar.primary_category_id)
+                    FILTER (WHERE ar.primary_category_id IS NOT NULL) AS pain_category_ids
             FROM places p
             {join_kind} reviews r  ON r.place_id = p.id {date_sql}
             LEFT JOIN analyzed_reviews ar ON ar.review_id = r.id
@@ -98,7 +99,12 @@ async def map_geojson(
                 "review_count": row.review_count,
                 "high_count": row.high_count or 0,
                 "dominant_severity": row.dominant_severity,
-                "pain_point_categories": row.pain_categories or [],
+                # เรียงตามลำดับ id เพื่อให้ผลคงที่ (ARRAY_AGG DISTINCT ไม่การันตีลำดับ)
+                "pain_point_categories": [
+                    n for n in (category_v2_name(c)
+                                for c in sorted(row.pain_category_ids or []))
+                    if n is not None
+                ],
             },
         })
     return {"type": "FeatureCollection", "features": features}

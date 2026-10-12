@@ -24,9 +24,17 @@ interface PlaceRow {
   business_status?: string
   total: number
   // ระดับความรุนแรง (ใช้ในโหมด complaints)
+  //
+  // ⚠️ สามตัวนี้มาจากป้ายชั้นเดิม (analyzed_reviews.severity)
+  //   ขณะที่ total/neg/pos/neu มาจากป้ายชุด v2 (overall_sentiment)
+  //   เพราะ review_aspects.severity ยังว่างทั้งตาราง
+  //   ตัวส่วนของแถบความรุนแรงจึงต้องเป็น sev_total ไม่ใช่ total
+  //   ถ้าหารด้วย total แถบจะไม่เต็มเส้นและสื่อสัดส่วนผิด (ละเมิดกฎ 1)
   high: number
   medium: number
   low: number
+  /** ตัวส่วนของแถบความรุนแรง = high+medium+low เป๊ะ (backend การันตี) */
+  sev_total: number
   // ประเภทความรู้สึก (ใช้ในโหมด all)
   neg: number
   pos: number
@@ -128,6 +136,12 @@ const ZONE_LABEL: Record<string, string> = {
   city_center: 'ตัวเมือง', naresuan: 'ม.นเรศวร', rajabhat: 'ม.ราชภัฏ', other: 'อื่นๆ',
 }
 // badge ในโหมด complaints — ทุกรีวิวคือคำบ่นแล้ว บอกแค่ระดับความรุนแรง
+/** ร้อยละสำหรับความกว้างของแถบ — ตัวส่วน 0 คืน 0 ไม่ใช่ NaN
+ *  (ของเดิมหารตรง ๆ ร้านที่ total=0 จึงได้ width: NaN% แล้วเบราว์เซอร์ทิ้ง style) */
+function pct(n: number, d: number): number {
+  return d > 0 ? (n / d) * 100 : 0
+}
+
 const SEV_LABEL: Record<string, string> = { high: 'สูง', medium: 'กลาง', low: 'ต่ำ' }
 const SEV_ICON: Record<string, LucideIcon> = {
   high: SeverityHigh, medium: SeverityMedium, low: SeverityLow,
@@ -362,17 +376,19 @@ export default function CategoryDrilldown({
                     </div>
                     {/* mini bar สัดส่วน (เมื่อดู "ทั้งหมด") — โหมด complaints=ความรุนแรง, all=ประเภทรีวิว */}
                     {!isFiltered && viewMode === 'complaints' && (
-                      <div className="flex h-1 rounded-full overflow-hidden mt-1 w-40">
-                        <div className="bg-red-500"    style={{ width: `${(p.high / p.total) * 100}%` }} />
-                        <div className="bg-yellow-500" style={{ width: `${(p.medium / p.total) * 100}%` }} />
-                        <div className="bg-green-500"  style={{ width: `${(p.low / p.total) * 100}%` }} />
+                      /* ⚠️ หารด้วย sev_total ไม่ใช่ total — ดูเหตุผลที่ interface PlaceRow */
+                      <div className="flex h-1 rounded-full overflow-hidden mt-1 w-40"
+                           title={`ความรุนแรงจากป้ายชุดเดิม ${p.sev_total} รีวิวที่มีค่าความรุนแรง`}>
+                        <div className="bg-red-500"    style={{ width: `${pct(p.high, p.sev_total)}%` }} />
+                        <div className="bg-yellow-500" style={{ width: `${pct(p.medium, p.sev_total)}%` }} />
+                        <div className="bg-green-500"  style={{ width: `${pct(p.low, p.sev_total)}%` }} />
                       </div>
                     )}
                     {!isFiltered && viewMode === 'all' && (
                       <div className="flex h-1 rounded-full overflow-hidden mt-1 w-40">
-                        <div className="bg-red-500"   style={{ width: `${(p.neg / p.total) * 100}%` }} />
-                        <div className="bg-green-500" style={{ width: `${(p.pos / p.total) * 100}%` }} />
-                        <div className="bg-slate-500" style={{ width: `${(p.neu / p.total) * 100}%` }} />
+                        <div className="bg-red-500"   style={{ width: `${pct(p.neg, p.total)}%` }} />
+                        <div className="bg-green-500" style={{ width: `${pct(p.pos, p.total)}%` }} />
+                        <div className="bg-slate-500" style={{ width: `${pct(p.neu, p.total)}%` }} />
                       </div>
                     )}
                   </div>

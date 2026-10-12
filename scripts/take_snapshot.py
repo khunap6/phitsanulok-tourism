@@ -21,6 +21,7 @@ load_dotenv()
 
 from sqlalchemy import text
 
+from api.filters import _NONPROBLEM_ANY_IN
 from db.database import AsyncSessionLocal
 
 
@@ -86,26 +87,36 @@ async def take_snapshot(session, label: str | None, as_of: date | None, note: st
     # GROUPING SETS ทำให้ได้ทั้ง 2 ระดับพร้อมกัน แถวภาพรวมจะมี zone = NULL
     await session.execute(
         text(f"""
+            -- ⚠️ ย้ายมาเก็บป้ายชุด v2 แล้ว (Phase 8) และตั้ง category_version='v2'
+            --   แถวสแนปช็อตเก่าเป็น v1 และ **ห้ามแก้ย้อนหลัง**
+            --   ผู้อ่านต้อง map ตาม category_version ไม่ใช่เดาจากชื่อ
+            --
+            -- ⚠️ complaint_count/praise_count ใช้ overall_sentiment (ชุดใหม่)
+            --   แต่ high/medium/low_count ใช้ severity ซึ่งมีแต่ในป้ายชั้นเดิม
+            --   จึงคง ar.sentiment ไว้คู่กับ severity ทั้งสามตัว
+            --   ผลคือ high+medium+low ไม่เท่า complaint_count และไม่ควรเท่า
             INSERT INTO snapshot_categories
                 (snapshot_id, zone, category, complaint_count, praise_count,
-                 high_count, medium_count, low_count)
+                 high_count, medium_count, low_count, category_version)
             SELECT :sid,
                    COALESCE(p.zone, 'other') AS zone,
-                   ar.pain_point_category    AS category,
-                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative') AS complaint_count,
-                   COUNT(*) FILTER (WHERE ar.sentiment = 'positive') AS praise_count,
+                   cat.name                  AS category,
+                   COUNT(*) FILTER (WHERE ar.overall_sentiment = 'negative') AS complaint_count,
+                   COUNT(*) FILTER (WHERE ar.overall_sentiment = 'positive') AS praise_count,
                    COUNT(*) FILTER (WHERE ar.sentiment = 'negative' AND ar.severity = 'high')   AS high_count,
                    COUNT(*) FILTER (WHERE ar.sentiment = 'negative' AND ar.severity = 'medium') AS medium_count,
-                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative' AND ar.severity = 'low')    AS low_count
+                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative' AND ar.severity = 'low')    AS low_count,
+                   'v2'
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
             JOIN places  p ON p.id = r.place_id
-            WHERE ar.pain_point_category IS NOT NULL
+            JOIN categories cat ON cat.id = ar.primary_category_id
+            WHERE ar.primary_category_id IS NOT NULL
               AND r.text_clean <> ''
               {date_sql}
             GROUP BY GROUPING SETS (
-                (ar.pain_point_category),                          -- ภาพรวมทั้งจังหวัด
-                (COALESCE(p.zone, 'other'), ar.pain_point_category) -- แยกโซน
+                (cat.name),                          -- ภาพรวมทั้งจังหวัด
+                (COALESCE(p.zone, 'other'), cat.name) -- แยกโซน
             )
         """),
         {**params, "sid": snap_id},
@@ -115,19 +126,22 @@ async def take_snapshot(session, label: str | None, as_of: date | None, note: st
     await session.execute(
         text(f"""
             INSERT INTO snapshot_places
-                (snapshot_id, place_id, category, complaint_count, praise_count, high_count)
+                (snapshot_id, place_id, category, complaint_count, praise_count,
+                 high_count, category_version)
             SELECT :sid,
                    r.place_id,
-                   ar.pain_point_category,
-                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative') AS complaint_count,
-                   COUNT(*) FILTER (WHERE ar.sentiment = 'positive') AS praise_count,
-                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative' AND ar.severity = 'high') AS high_count
+                   cat.name,
+                   COUNT(*) FILTER (WHERE ar.overall_sentiment = 'negative') AS complaint_count,
+                   COUNT(*) FILTER (WHERE ar.overall_sentiment = 'positive') AS praise_count,
+                   COUNT(*) FILTER (WHERE ar.sentiment = 'negative' AND ar.severity = 'high') AS high_count,
+                   'v2'
             FROM analyzed_reviews ar
             JOIN reviews r ON r.id = ar.review_id
-            WHERE ar.pain_point_category IS NOT NULL
+            JOIN categories cat ON cat.id = ar.primary_category_id
+            WHERE ar.primary_category_id IS NOT NULL
               AND r.text_clean <> ''
               {date_sql}
-            GROUP BY r.place_id, ar.pain_point_category
+            GROUP BY r.place_id, cat.name
         """),
         {**params, "sid": snap_id},
     )
@@ -160,9 +174,11 @@ async def show_snapshot(session, snap_id: int) -> None:
     safe_print(f"   บันทึก: หมวดภาพรวม {c.overall} | หมวดแยกโซน {c.by_zone} | ร้าน×หมวด {r2.scalar():,}")
 
     r = await session.execute(
-        text("""SELECT category, complaint_count FROM snapshot_categories
+        # ⚠️ ใช้ชื่อหมวดไม่ใช่ปัญหาของทั้งสองรุ่น เพราะสแนปช็อตเก่าเป็น v1
+        #   ถ้าฝังชื่อ v1 ไว้ตรงนี้ สแนปช็อต v2 จะกรองไม่ติดเงียบ ๆ
+        text(f"""SELECT category, complaint_count FROM snapshot_categories
                 WHERE snapshot_id = :id AND zone IS NULL
-                  AND category NOT IN ('ความคิดเห็นทั่วไป (ไม่ระบุปัญหา)','อื่นๆ','ไม่มี')
+                  AND category NOT IN ({_NONPROBLEM_ANY_IN})
                 ORDER BY complaint_count DESC LIMIT 5"""),
         {"id": snap_id},
     )

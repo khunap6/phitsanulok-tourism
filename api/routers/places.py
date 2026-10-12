@@ -4,7 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.filters import date_filter, sentiment_filter
+from api.filters import (
+    category_v2_name,
+    date_filter,
+    primary_sentiment_filter,
+)
 from api.dependencies import get_db
 from api.schemas.place import (
     NearbyPlaceResponse,
@@ -114,13 +118,19 @@ async def place_pain_points(
       view_mode="complaints" + ช่วงเวลาเดียวกัน + with_text_only=True
       ไม่งั้นตัวเศษกับตัวส่วนผ่านตัวกรองคนละชุด (กฎ 1) — ที่ default นี้
       จะนับรีวิวเชิงบวกและรีวิวที่ให้ดาวเปล่าเป็น pain point ไปด้วย
+
+    ⚠️ ย้ายมาอ่านป้ายชุด v2 แล้ว (Phase 8)
+      category มาจาก primary_category_id และ view_mode อ่าน overall_sentiment
+      ส่วน severity ยังเป็นป้ายชั้นเดิม เพราะ review_aspects.severity ว่างทั้งตาราง
+      ผลคือหนึ่งแถวมีหมวดจากชุดใหม่คู่กับความรุนแรงจากชุดเดิม
     """
-    sent = sentiment_filter(view_mode, "ar")
+    # ย้ายหมวดมาชุด v2 แล้ว แต่ severity ยังเป็นป้ายชั้นเดิม (ว่างใน review_aspects)
+    sent = primary_sentiment_filter(view_mode, "ar")
     date_sql, date_params = date_filter(date_from, date_to, "r")
     text_sql = "AND r.text_clean <> ''" if with_text_only else ""
     result = await db.execute(
         text(f"""
-            SELECT ar.pain_point_category AS category,
+            SELECT ar.primary_category_id AS category_id,
                    ar.severity,
                    COUNT(*) AS count
             FROM analyzed_reviews ar
@@ -129,9 +139,13 @@ async def place_pain_points(
               {sent}
               {text_sql}
               {date_sql}
-            GROUP BY ar.pain_point_category, ar.severity
+            GROUP BY ar.primary_category_id, ar.severity
             ORDER BY count DESC
         """),
         {"pid": place_id, **date_params},
     )
-    return [dict(row._mapping) for row in result.fetchall()]
+    return [
+        {"category": category_v2_name(r.category_id),
+         "severity": r.severity, "count": r.count}
+        for r in result.fetchall()
+    ]

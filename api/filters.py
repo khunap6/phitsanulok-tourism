@@ -248,3 +248,134 @@ def overall_sentiment_filter(view_mode: str, alias: str = "ar") -> str:
     if view_mode == "praise":
         return f"AND {alias}.overall_sentiment = 'positive'"
     return ""
+
+
+# ── ชั้นเดิมที่ย้ายมาอ่านผลชุด v2 แล้ว (Phase 8) ──
+#
+# ⚠️ ทำไมต้องมีชุดนี้ แยกจาก aspect_filter()
+#   aspect_filter() ทำงานบน review_aspects หน่วยนับคือ "การกล่าวถึง" (รวมเกิน 100%)
+#   ชุดนี้ทำงานบน analyzed_reviews หน่วยนับคือ "รีวิว" (รวมได้ 100%)
+#   endpoint เดิมทั้งหมดใช้หน่วย "รีวิว" การย้ายมาชุดนี้จึง **ไม่เปลี่ยนหน่วยนับ**
+#   เป็นการเปลี่ยนแหล่งที่มาของป้ายเท่านั้น ตัวเลขจึงยังเทียบกับของเดิมได้
+#
+# ⚠️ ที่เปลี่ยนคือ
+#   sentiment           -> overall_sentiment      (ครอบคลุม 114,091 vs 113,642 แถว)
+#   pain_point_category -> primary_category_id    (ครอบคลุม 94,131 vs 93,682 แถว)
+#   วัดแล้วไม่มีแถวใดที่มีค่าเดิมแต่ขาดค่าใหม่ (ทั้งสองตัวนับได้ 0) จึงย้ายได้ปลอดภัย
+#
+# ⚠️ severity ย้ายไม่ได้
+#   review_aspects.severity ยังว่างทั้ง 140,967 แถว ความรุนแรงจึงอ่านได้จาก
+#   analyzed_reviews.severity (ชั้นเดิม) เท่านั้น ทุกที่ที่ใช้ severity ต้องคงไว้
+#   ที่ชั้นเดิมและติดป้ายกำกับว่าเป็นของเดิม ดู SEVERITY_IS_LEGACY ด้านล่าง
+#
+# ⚠️ SQL คืน primary_category_id เป็น "เลข" แล้วแปลงเป็นชื่อด้วย category_v2_name()
+#   ใน Python ไม่แปลงใน SQL เพราะ
+#     1. ไม่ต้องเพิ่ม JOIN เข้าไปในคิวรีเดิม 14 ที่ (เสี่ยงพังตัวส่วน = ละเมิดกฎ 1)
+#     2. Postgres ไม่ยอมให้ GROUP BY ด้วย scalar subquery
+#     3. ชื่อหมวดมีแหล่งเดียวคือ shared/categories.json อยู่แล้ว
+
+SEVERITY_IS_LEGACY = (
+    "ความรุนแรงมาจากคอลัมน์เดิม analyzed_reviews.severity "
+    "เพราะ review_aspects.severity ยังว่างทั้งตาราง"
+)
+
+# ชื่อหมวด (ทั้ง v2 และชื่อเดิม v1 ที่ยุบเข้ามา) -> id
+# ⚠️ ต้องรับชื่อเดิมด้วย ไม่งั้น URL ที่ผู้ใช้ bookmark ไว้หรือหน้าเว็บรุ่นเก่า
+#   จะกรองไม่ได้เงียบ ๆ (คืนลิสต์ว่างแทนที่จะคืนข้อมูล)
+CATEGORY_NAME_TO_ID: dict[str, int] = {}
+for _c in CATEGORIES_V2:
+    CATEGORY_NAME_TO_ID[_c["name"]] = _c["id"]
+    for _old in _c.get("old_names", []):
+        CATEGORY_NAME_TO_ID.setdefault(_old, _c["id"])
+
+
+def resolve_category_id(value: str | int | None) -> int | None:
+    """แปลงค่าที่ client ส่งมาเป็น id หมวด v2
+
+    รับได้ทั้ง
+      เลข ('3' หรือ 3)           -> ใช้ตรง ๆ ถ้าเป็น id ที่มีจริง
+      ชื่อหมวด v2                 -> map ตามชื่อ
+      ชื่อหมวดเดิม v1 ที่ยุบเข้ามา -> map ตาม old_names
+
+    คืน None เมื่อ value เป็น None หรือหาไม่เจอ
+    ⚠️ ผู้เรียกต้องแยกสองกรณีนี้เอง: value=None แปลว่า "ไม่กรอง"
+      แต่ value ที่หาไม่เจอแปลว่า "กรองแล้วไม่มีอะไรตรง" ซึ่งไม่เหมือนกัน
+      ใช้ category_not_found() ช่วยตรวจ
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, int):
+        return value if value in CATEGORY_V2_NAME else None
+    v = str(value).strip()
+    if v.isdigit():
+        cid = int(v)
+        return cid if cid in CATEGORY_V2_NAME else None
+    return CATEGORY_NAME_TO_ID.get(v)
+
+
+def category_not_found(value: str | int | None) -> bool:
+    """True เมื่อ client ส่งชื่อหมวดมาแต่ map ไม่ได้ — ควรคืนผลว่าง ไม่ใช่ทุกหมวด"""
+    return bool(value) and resolve_category_id(value) is None
+
+
+def primary_category_filter(
+    category: str | int | None,
+    *,
+    exclude_non_problem: bool = False,
+    alias: str = "ar",
+) -> tuple[str, dict]:
+    """ตัวกรองหมวดบนชั้นรีวิว (หน่วยนับ = รีวิว) ใช้ primary_category_id
+
+    exclude_non_problem=True -> ตัดหมวด 2 (ความคิดเห็นทั่วไป) และ 11 (อื่นๆ)
+      พฤติกรรมเดียวกับของเดิมที่ใช้ pain_point_category NOT IN (...)
+      รวมถึงกรณี NULL ซึ่งถูกตัดออกทั้งแบบเดิมและแบบใหม่
+    """
+    cid = resolve_category_id(category)
+    conds, params = [], {}
+    if cid is not None:
+        conds.append(f"{alias}.primary_category_id = :pcat_id")
+        params["pcat_id"] = cid
+    elif category:
+        # ส่งชื่อมาแต่ map ไม่ได้ -> ต้องไม่คืนอะไรเลย ไม่ใช่คืนทุกหมวด
+        conds.append("1 = 0")
+    if exclude_non_problem:
+        conds.append(f"{alias}.primary_category_id IS NOT NULL")
+        conds.append(f"{alias}.primary_category_id NOT IN ({_NONPROBLEM_IDS_IN})")
+    return ("AND " + " AND ".join(conds) if conds else ""), params
+
+
+def primary_sentiment_filter(view_mode: str, alias: str = "ar") -> str:
+    """แทน sentiment_filter() สำหรับ endpoint ที่ย้ายมาชุด v2 แล้ว
+
+    พฤติกรรมเหมือน sentiment_filter() ทุกอย่าง ต่างแค่อ่าน
+      overall_sentiment   แทน sentiment
+      primary_category_id แทน pain_point_category
+
+    ⚠️ ยังตัดหมวดที่ไม่ใช่ปัญหาในโหมด complaints และ praise เหมือนของเดิม
+      ถ้าไม่ตัด ตัวเลขทุกหมวดจะเปลี่ยนไปจากที่หน้าเว็บเคยแสดง
+    """
+    if view_mode == "complaints":
+        return (f"AND {alias}.overall_sentiment = 'negative' "
+                f"AND {alias}.primary_category_id NOT IN ({_NONPROBLEM_IDS_IN})")
+    if view_mode == "praise":
+        return (f"AND {alias}.overall_sentiment = 'positive' "
+                f"AND {alias}.primary_category_id NOT IN ({_NONPROBLEM_IDS_IN})")
+    return ""
+
+
+# ชื่อหมวด "ไม่ใช่ปัญหา" ของทั้งสองรุ่นรวมกัน
+#
+# ⚠️ ใช้กับตารางสแนปช็อตเท่านั้น ไม่ใช้กับ analyzed_reviews
+#   snapshot_categories.category เก็บ "ชื่อ" ไม่ใช่เลข และมีทั้งแถว v1 กับ v2
+#   (แถวเก่าเป็น v1 ตาม category_version และห้ามแก้ย้อนหลัง)
+#   ถ้ากรองด้วยชื่อชุดเดียว แถวอีกรุ่นจะหลุดตัวกรองเงียบ ๆ
+#   เช่น v1 ใช้ "ความคิดเห็นทั่วไป (ไม่ระบุปัญหา)" แต่ v2 ใช้ "...(ไม่ระบุประเด็น)"
+#   ต่างกันคำเดียวตรงท้าย
+NON_PROBLEM_NAMES_ALL: list[str] = sorted({
+    *NON_PROBLEM_CATEGORIES,
+    *(CATEGORY_V2_NAME[i] for i in NON_PROBLEM_CATEGORY_IDS if i in CATEGORY_V2_NAME),
+    *(o for c in CATEGORIES_V2 if c["id"] in NON_PROBLEM_CATEGORY_IDS
+      for o in c.get("old_names", [])),
+})
+_NONPROBLEM_ANY_IN = ", ".join(
+    "'" + n.replace("'", "''") + "'" for n in NON_PROBLEM_NAMES_ALL) or "''"

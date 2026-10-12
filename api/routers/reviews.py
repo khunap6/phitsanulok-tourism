@@ -5,7 +5,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_db
-from api.filters import date_filter, sentiment_filter, status_filter
+from api.filters import (
+    date_filter,
+    primary_sentiment_filter,
+    resolve_category_id,
+    status_filter,
+)
 from api.schemas.review import ReviewListResponse, ReviewResponse
 
 router = APIRouter(tags=["reviews"])
@@ -21,11 +26,19 @@ _REVIEW_SELECT = """
     SELECT
         r.id, r.place_id, p.name AS place_name,
         r.rating, r.text_clean AS text, r.review_date, r.review_date_approx,
-        ar.sentiment, ar.pain_point_category,
+        -- ⚠️ ย้ายมาชุด v2 แล้ว: sentiment/category ที่ส่งออกคือของชุดใหม่
+        --   แต่ยังส่งของชั้นเดิมไปด้วยในชื่อ *_legacy (ไม่ลบของเดิมตามกฎ 3)
+        --   เพื่อให้เทียบได้ว่าป้ายสองชุดต่างกันที่รีวิวใบไหน
+        ar.overall_sentiment AS sentiment,
+        cat_v2.name          AS pain_point_category,
+        ar.sentiment         AS sentiment_legacy,
+        ar.pain_point_category AS pain_point_category_legacy,
         ar.pain_point_thai, ar.severity, ar.keywords
     FROM reviews r
     JOIN places p ON p.id = r.place_id
     LEFT JOIN analyzed_reviews ar ON ar.review_id = r.id
+    -- JOIN ได้ที่นี่เพราะคิวรีนี้ไม่มี GROUP BY และไม่ได้ใช้เป็นตัวส่วนของสัดส่วนใด
+    LEFT JOIN categories cat_v2 ON cat_v2.id = ar.primary_category_id
 """
 
 # เรียงแบบเดียวกับ category_reviews() ใน analysis.py — รุนแรงก่อน แล้วใหม่ก่อน
@@ -72,8 +85,12 @@ async def reviews_for_place(
         filters += " AND ar.severity = :sev"
         params["sev"] = severity
     if category:
-        filters += " AND ar.pain_point_category = :cat"
-        params["cat"] = category
+        cid = resolve_category_id(category)
+        if cid is None:
+            filters += " AND 1 = 0"
+        else:
+            filters += " AND ar.primary_category_id = :cat"
+            params["cat"] = cid
 
     result = await db.execute(
         text(f"{_REVIEW_SELECT} {filters} ORDER BY r.id DESC LIMIT :lim OFFSET :off"),
@@ -105,6 +122,12 @@ async def list_reviews(
     hidden_no_text = จำนวนรีวิวที่เข้าเงื่อนไขอื่นครบแต่ไม่มีข้อความ (ให้ดาวอย่างเดียว)
     ส่งมาเพื่อให้หน้าเว็บบอกผู้ใช้ได้ว่าซ่อนไปกี่รายการ ไม่ใช่ทำข้อมูลหายเงียบ ๆ
 
+    ⚠️ ย้ายมาอ่านป้ายชุด v2 แล้ว (Phase 8)
+      ฟิลด์ sentiment และ pain_point_category ที่ส่งออกคือของชุดใหม่
+      และเพิ่ม sentiment_legacy / pain_point_category_legacy มาด้วย (ไม่ลบของเดิม)
+      ตัวกรอง category รับได้ทั้งชื่อ v2 ชื่อเดิม v1 และเลข id
+      ส่วน severity ยังเป็นป้ายชั้นเดิมและกรองได้เหมือนเดิม
+
     place_id = กรองเฉพาะร้านเดียว มีไว้ให้ Dashboard ใช้ endpoint เดียวทั้งโหมด
     "ทุกร้าน" และ "เลือกร้าน" — ไม่งั้นโหมดเลือกร้านจะไปใช้ /places/{id}/reviews
     ซึ่งไม่รู้จัก date/view_mode/status แล้วบรรทัดกำกับบนหน้าเว็บจะโฆษณาตัวกรอง
@@ -120,8 +143,13 @@ async def list_reviews(
         conds.append("r.place_id = :pid")
         params["pid"] = place_id
     if category:
-        conds.append("ar.pain_point_category = :cat")
-        params["cat"] = category
+        # รับได้ทั้งชื่อหมวด v2 ชื่อเดิม v1 และเลข id
+        cid = resolve_category_id(category)
+        if cid is None:
+            conds.append("1 = 0")
+        else:
+            conds.append("ar.primary_category_id = :cat")
+            params["cat"] = cid
     if severity:
         conds.append("ar.severity = :sev")
         params["sev"] = severity
@@ -131,7 +159,7 @@ async def list_reviews(
         conds.append(date_sql.removeprefix("AND ").strip())
         params.update(date_params)
 
-    view_sql = sentiment_filter(view_mode, "ar")
+    view_sql = primary_sentiment_filter(view_mode, "ar")
     if view_sql:
         conds.append(view_sql.removeprefix("AND ").strip())
 
