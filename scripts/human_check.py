@@ -80,6 +80,10 @@ def kappa_word(k: float) -> str:
     """เกณฑ์ Landis & Koch (1977)"""
     if k < 0:
         return "แย่กว่าการสุ่ม"
+    # ⚠️ kappa = 0 แปลว่า "ตรงกันพอดีกับที่การสุ่มจะให้" ไม่ใช่ "สอดคล้องเล็กน้อย"
+    #   ถ้ารายงานว่าสอดคล้องเล็กน้อยจะดูเหมือนมีความสอดคล้องอยู่บ้าง ซึ่งไม่จริง
+    if k == 0:
+        return "เท่ากับการสุ่ม (ไม่มีความสอดคล้องเลย)"
     for lim, w in ((0.20, "สอดคล้องเล็กน้อย"), (0.40, "พอใช้"),
                    (0.60, "ปานกลาง"), (0.80, "ดี")):
         if k <= lim:
@@ -87,7 +91,7 @@ def kappa_word(k: float) -> str:
     return "ดีมาก"
 
 
-def make(n: int) -> None:
+def make(n: int, guide_only: bool = False) -> None:
     rev, asp = load_gold()
     rnd = random.Random(SEED)
     ids = sorted(rev)
@@ -117,6 +121,19 @@ def make(n: int) -> None:
     rnd.shuffle(picked)
 
     OUT.mkdir(parents=True, exist_ok=True)
+
+    # ⚠️ โหมดสร้างคู่มือใหม่อย่างเดียว ห้ามเขียนทับ BLANK/KEY
+    #   BLANK อาจมีคำตอบที่คนกรอกไว้แล้ว เขียนทับคือทำงานคนหาย
+    #   (SEED คงที่ ชุด 100 รายการจึงเหมือนเดิม ไม่จำเป็นต้องเขียนทับ)
+    if guide_only:
+        if not BLANK.exists():
+            p("ไม่พบไฟล์ให้กรอก — รัน --make ก่อน")
+            return
+        _write_guide(picked, rev, asp, mixed)
+        p(f"เขียนคู่มือใหม่ที่ {GUIDE.relative_to(ROOT)}")
+        p("  ไม่แตะไฟล์ให้กรอกและไฟล์เฉลย")
+        return
+
     with open(BLANK, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
         w.writerow(["review_id", "ข้อความรีวิว", "อารมณ์รวม(คนกรอก)",
@@ -132,6 +149,19 @@ def make(n: int) -> None:
                 for c, s in asp.get(i, {}).items())
             w.writerow([i, rev[i]["overall"], spec])
 
+    _write_guide(picked, rev, asp, mixed)
+
+    dist = Counter(rev[i]["overall"] for i in picked)
+    p(f"สร้างชุดให้คนตรวจ {len(picked)} รายการ")
+    p(f"  ไฟล์ให้กรอก : {BLANK.relative_to(ROOT)}")
+    p(f"  คู่มือ      : {GUIDE.relative_to(ROOT)}")
+    p(f"  เฉลย       : {KEY.relative_to(ROOT)}  (อย่าเปิดก่อนกรอกเสร็จ)")
+    p("")
+    p("  การกระจาย : " + " | ".join(f"{x} {dist[x]}" for x in SENTS))
+    p(f"  รีวิวที่อารมณ์ผสม : {sum(1 for i in picked if i in set(mixed))}")
+
+
+def _write_guide(picked, rev, asp, mixed) -> None:
     cats = json.loads((ROOT / "shared" / "categories.json").read_text(encoding="utf-8"))
     dist = Counter(rev[i]["overall"] for i in picked)
     g = ["# ชุดให้คนตรวจป้าย — คู่มือกรอก", "",
@@ -149,31 +179,82 @@ def make(n: int) -> None:
          "   ตัวอย่าง `4-,1+` = ติบริการ ชมอาหาร",
          "4. ไม่แน่ใจจริง ๆ ให้เว้นว่าง ดีกว่าเดา (ช่องว่างถูกข้าม ไม่นับผิด)",
          "5. กรอกเสร็จรัน `uv run python scripts/human_check.py --score`", "",
-         "## นิยามที่ต้องใช้", "",
-         "ใช้กติกาชุดเดียวกับที่ติดป้าย gold — อ่านได้ที่",
-         "`reports/evaluation/sentiment_guideline.md` (อารมณ์ + กติกาเลือกหมวด)", "",
-         "⚠️ กติกาที่ตกลงเพิ่มภายหลัง: รีวิวที่พูดถึง **กราบ / สักการะ / ไหว้พระ / ขอพร**",
-         "ให้เป็น **หมวด 2** ไม่ใช่หมวด 10 (ยกเว้นมีเรื่องตลาด ของฝาก โบราณสถาน",
-         "นิทรรศการ หรือกิจกรรมอื่นด้วย จึงใช้หมวด 10)", "",
-         "## หมวดทั้งหมด", ""]
+         "## นิยามของอารมณ์ 3 แบบ", ""]
+
+    # ⚠️ คู่มือต้องพึ่งตัวเองได้ ห้ามชี้ไปไฟล์อื่น
+    #   รุ่นก่อนชี้ไป reports/evaluation/sentiment_guideline.md ซึ่ง "ไม่มีอยู่จริง"
+    #   (ไฟล์นั้นต้องสร้างด้วย nlp/train/evaluate.py --guideline ซึ่งไม่เคยถูกรัน
+    #    และถ้ารันก็จะได้คู่มือของ workflow เดิมที่ใช้หมวดชุด v1 12 หมวด
+    #    ซึ่งผิดสำหรับงานนี้) ผลคือคนกรอกไม่มีนิยามให้อ่านเลย
+    #
+    # ⚠️ อ่านจาก shared/ ทั้งหมด ห้ามพิมพ์ซ้ำ
+    #   ถ้าพิมพ์ซ้ำแล้วเพี้ยนจากที่ระบบใช้จริง ค่า kappa จะต่ำเพราะ
+    #   "กติกาไม่ตรงกัน" ไม่ใช่เพราะคนกับ AI เห็นต่าง แล้วจะสรุปงานวิจัยผิด
+    from api.filters import sentiment_guideline_text
+    g += [sentiment_guideline_text(), ""]
+
+    # ⚠️ ไม่ต้องเติม decision_rules เองที่นี่
+    #   sentiment_guideline_text() รวม "ลำดับการตัดสิน" มาให้แล้ว
+    #   ถ้าเติมอีกจะได้สองชุดซ้อนกันและเลขข้อซ้ำ ("1. 1. ...")
+    senti = json.loads(
+        (ROOT / "shared" / "sentiment_labels.json").read_text(encoding="utf-8"))
+    for h in (senti.get("เคสตัดสินยาก") or []):
+        g += ["### เคสที่ตัดสินยาก (เคยถกกันแล้ว)", ""] if h is (
+            senti["เคสตัดสินยาก"][0]) else []
+        g += ["- " + (" · ".join(f"**{k}** {v}" for k, v in h.items())
+                      if isinstance(h, dict) else str(h))]
+    if senti.get("เคสตัดสินยาก"):
+        g += [""]
+
+    g += ["## หมวดทั้งหมด (11 หมวด ชุด v2)", "",
+          "| เลข | ชื่อหมวด | เป็นปัญหาไหม |", "|---|---|---|"]
     for c in cats["categories"]:
-        g.append(f"{c['id']}. {c['name']}")
+        g.append(f"| {c['id']} | {c['name']} | "
+                 f"{'ไม่ใช่ปัญหา' if c['is_non_problem'] else 'เป็นปัญหา'} |")
+    g += [""]
+
+    g += ["## กติกาเลือกหมวด", "",
+          "⚠️ **ส่วนนี้สำคัญที่สุด** ชุด gold ถูกติดป้ายตามกติกาเหล่านี้",
+          "ถ้ากรอกด้วยกติกาคนละชุด ค่าที่ได้จะวัด 'กติกาไม่ตรงกัน'",
+          "ไม่ใช่ 'คนกับ AI เห็นต่าง' แล้วจะสรุปผลงานวิจัยผิด", ""]
+    for key, r in (cats.get("labeling_rules") or {}).items():
+        if key.startswith("_") or not isinstance(r, dict):
+            continue
+        # ใช้ title ภาษาไทยถ้ามี ไม่โชว์คีย์ดิบให้คนกรอกอ่าน
+        g += [f"### {r.get('title') or key}", ""]
+        if r.get("rule"):
+            g += [f"**{r['rule']}**", ""]
+        if r.get("exception"):
+            g += [f"ข้อยกเว้น: {r['exception']}", ""]
+        if isinstance(r.get("mapping"), dict):
+            g += ["| ถ้ารีวิวพูดถึง | ให้ใช้หมวด |", "|---|---|"]
+            g += [f"| {k} | {v} |" for k, v in r["mapping"].items()]
+            g += [""]
+        if r.get("warning"):
+            g += [f"⚠️ {r['warning']}", ""]
     g += ["", "## การกระจายของชุดนี้", "",
           "⚠️ ชุดนี้ **ถ่วงน้ำหนักให้มีเคสยาก** ไม่ใช่สุ่มล้วน",
           "เพราะ gold เป็นคำชม 88% ถ้าสุ่มล้วนจะได้ตรวจแต่รีวิวที่ง่ายและตรงกันอยู่แล้ว",
           "ค่าที่ได้จึงเป็นความสอดคล้องบน *เคสที่ยากกว่าค่าเฉลี่ย* ต้องระบุข้อนี้ในเล่ม", "",
-          "| อารมณ์รวมตาม gold | จำนวน |", "|---|---|"]
-    for s in SENTS:
-        g.append(f"| {s} | {dist[s]} |")
+          "| อารมณ์รวมตาม gold | ในชุดนี้ | มีในชุด gold ทั้งหมด | ครอบคลุม |",
+          "|---|---|---|---|"]
+    # ⚠️ โควตาบังคับให้เอา negative และ neutral มา "ทั้งหมด" ที่มีในชุด gold
+    #   ซึ่งแปลว่าค่าที่ได้บนสองกลุ่มนี้วัดจากทั้งประชากร ไม่ใช่กลุ่มตัวอย่าง
+    #   เป็นข้อดีที่ต้องบอก ไม่ใช่ซ่อน — และเป็นข้อเสียพร้อมกันคือ
+    #   ถ้ากรอกชุดนี้แล้ว จะไม่มีรีวิวคำติเหลือไว้ตรวจซ้ำอีกเลย
+    total = Counter(v["overall"] for v in rev.values())
+    for x in SENTS:
+        pctv = f"{dist[x] / total[x] * 100:.0f}%" if total[x] else "—"
+        g.append(f"| {x} | {dist[x]} | {total[x]} | {pctv} |")
+    g += ["",
+          f"**รีวิวที่หมวดต่าง ๆ มีอารมณ์ไม่เหมือนกัน {sum(1 for i in picked if i in set(mixed))}"
+          f" ใบ ({sum(1 for i in picked if i in set(mixed)) * 100 // len(picked)}%)**"
+          " เทียบกับในชุด gold ทั้งหมดที่มี 13.1%",
+          "",
+          "⚠️ กลุ่ม negative และ neutral ถูกเอามา **ทั้งหมด** ที่มีในชุด gold",
+          "ค่าที่ได้บนสองกลุ่มนี้จึงวัดจากทั้งประชากร ไม่ใช่กลุ่มตัวอย่าง",
+          "แต่หมายความว่าถ้ากรอกชุดนี้แล้ว จะไม่มีรีวิวคำติเหลือไว้ตรวจซ้ำอีก"]
     GUIDE.write_text("\n".join(g) + "\n", encoding="utf-8")
-
-    p(f"สร้างชุดให้คนตรวจ {len(picked)} รายการ")
-    p(f"  ไฟล์ให้กรอก : {BLANK.relative_to(ROOT)}")
-    p(f"  คู่มือ      : {GUIDE.relative_to(ROOT)}")
-    p(f"  เฉลย       : {KEY.relative_to(ROOT)}  (อย่าเปิดก่อนกรอกเสร็จ)")
-    p("")
-    p("  การกระจาย : " + " | ".join(f"{s} {dist[s]}" for s in SENTS))
-    p(f"  รีวิวที่อารมณ์ผสม : {sum(1 for i in picked if i in set(mixed))}")
 
 
 def parse_spec(spec: str) -> dict:
@@ -269,9 +350,11 @@ if __name__ == "__main__":
     ap.add_argument("--make", action="store_true")
     ap.add_argument("--score", action="store_true")
     ap.add_argument("--n", type=int, default=100)
+    ap.add_argument("--guide-only", action="store_true",
+                    help="สร้างคู่มือใหม่ ไม่แตะไฟล์ให้กรอกและไฟล์เฉลย")
     a = ap.parse_args()
-    if a.make:
-        make(a.n)
+    if a.make or a.guide_only:
+        make(a.n, guide_only=a.guide_only)
     elif a.score:
         score()
     else:
