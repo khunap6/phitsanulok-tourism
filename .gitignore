@@ -49,3 +49,4 @@ backup/**/*.dump
 backup/*/db/
 backup/*/training/
 backup/rating_only_text_*.json
+backup/silver_before_cat2_*/
