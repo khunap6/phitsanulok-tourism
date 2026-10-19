@@ -380,6 +380,7 @@ def check() -> int:
         n = len(d.get("categories") or d.get("keys") or [])
         p(f"  มี    {nm}: {f.name} version={d.get('version', '-')} {n} หมวด")
 
+    problems += check_venv_scripts()
     problems += check_doc_paths()
 
     p("")
@@ -390,6 +391,74 @@ def check() -> int:
         p("  สรุป: path ครบทุกอย่าง")
     p("=" * 70)
     return problems
+
+
+def check_venv_scripts() -> int:
+    """ตรวจว่า console script ใน .venv ยังเรียกได้หลังย้ายโฟลเดอร์
+
+    ⚠️ ทำไมต้องตรวจ เกิดขึ้นจริงตอนย้ายโฟลเดอร์โปรเจกต์นี้
+      ไฟล์ .exe ใน .venv/Scripts ที่ uv สร้างเป็น "trampoline"
+      ซึ่งฝัง path เต็มของ python.exe ไว้ข้างในตัวไฟล์
+      พอย้ายโฟลเดอร์ path ที่ฝังไว้ชี้ไปที่ไม่มีอยู่ แล้วขึ้น
+      "uv trampoline failed to canonicalize script path"
+
+    ⚠️ จุดที่หลอกตา: `uv run python` ยังใช้ได้ปกติ
+      เพราะ uv แก้ python.exe ให้เองตอนเรียก
+      แต่ `uv run uvicorn` / `uv run alembic` พังหมด
+      ถ้าตรวจด้วย `uv run python` อย่างเดียวจะคิดว่า venv ปกติ
+      ทั้งที่ console script พังทั้ง 29 ตัว
+
+    ⚠️ ทางแก้คือ `uv sync --reinstall` (สร้าง trampoline ใหม่ทั้งหมด)
+      ใช้เวลาราว 1 นาที และไม่ต้องโหลดใหม่ถ้ามี cache อยู่แล้ว
+      ทางเลี่ยงชั่วคราวคือ `uv run python -m uvicorn ...`
+      ซึ่งไม่ผ่าน trampoline จึงใช้ได้เสมอ
+    """
+    import subprocess
+
+    scripts_dir = PROJECT_ROOT / ".venv" / "Scripts"      # Windows
+    if not scripts_dir.is_dir():
+        scripts_dir = PROJECT_ROOT / ".venv" / "bin"      # Linux / macOS
+    p("")
+    p("=" * 70)
+    p("  console script ใน .venv")
+    p("=" * 70)
+    if not scripts_dir.is_dir():
+        p("  ไม่มี .venv — สร้างด้วย uv sync")
+        return 0
+
+    # ตรวจเฉพาะตัวที่โปรเจกต์นี้ใช้จริง ไม่ต้องไล่ทั้ง 29 ตัวให้ช้า
+    want = ["uvicorn", "alembic", "playwright"]
+    broken: list[str] = []
+    missing: list[str] = []
+    for name in want:
+        exe = scripts_dir / f"{name}.exe"
+        if not exe.exists():
+            exe = scripts_dir / name
+        if not exe.exists():
+            missing.append(name)
+            continue
+        try:
+            r = subprocess.run([str(exe), "--version"], capture_output=True,
+                               text=True, timeout=30, errors="replace")
+            out = (r.stdout or "") + (r.stderr or "")
+        except (OSError, subprocess.SubprocessError) as e:
+            out = f"{type(e).__name__}: {e}"
+        if "trampoline" in out or "canonicalize" in out:
+            broken.append(name)
+            p(f"  พัง   {name} — trampoline ชี้ไป path เก่า")
+        else:
+            p(f"  ใช้ได้ {name}")
+    for name in missing:
+        p(f"  ไม่มี  {name} (ไม่ได้ติดตั้ง หรือไม่มี console script)")
+
+    if broken:
+        p("")
+        p("  ⚠️ เกิดจากการย้ายโฟลเดอร์โปรเจกต์ แก้ด้วย:")
+        p("        uv sync --reinstall")
+        p("     ทางเลี่ยงชั่วคราว: uv run python -m <ชื่อโมดูล> ...")
+        p("     หมายเหตุ: `uv run python` ยังใช้ได้ปกติแม้ตัวอื่นพัง")
+        p("              จึงตรวจด้วย python อย่างเดียวไม่พอ")
+    return len(broken)
 
 
 def check_doc_paths() -> int:
