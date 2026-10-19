@@ -7,7 +7,19 @@
 #  หรือ copy คำสั่งไปวางใน PowerShell โดยตรง
 # ============================================================
 
-Set-Location "D:\Claude_Workspace\New\WebScraping\phitsanulok-tourism"
+# -- ตำแหน่งโปรเจกต์ --------------------------------------------
+#
+# ⚠️ ห้ามเขียน path เต็มตรงนี้ โปรเจกต์นี้ถูกย้ายโฟลเดอร์มาแล้วจริง
+#   (D:\Claude_Workspace\... -> D:\Workspace\...)
+#   ตอนนั้นบรรทัดนี้ยังชี้ path เก่า สคริปต์จึงไป Set-Location
+#   ที่โฟลเดอร์ที่ไม่มีอยู่ แล้วพังเงียบ ๆ ไม่มีอะไรฟ้อง
+#   $PSScriptRoot คือโฟลเดอร์ที่ไฟล์นี้อยู่ ย้ายไปไหนก็ถูกเสมอ
+Set-Location $PSScriptRoot
+
+# ดึง path ทั้งหมดจากแหล่งความจริงเดียว (project_paths.py)
+# ได้ตัวแปร $PROJECT_ROOT $PG $PSQL $PGDUMP $DATA $MODELS $REPORTS ฯลฯ
+# ⚠️ ถ้าบรรทัดนี้ error ให้รัน `uv run python project_paths.py` ดูว่าอะไรขาด
+uv run python project_paths.py --ps1 | Out-String | Invoke-Expression
 
 # ── UTF-8 ENCODING (ให้ terminal แสดงภาษาไทยถูกต้อง) ──────────
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -191,10 +203,18 @@ chcp 65001 > $null
 # ── BACKUP / SEED DATABASE (สำหรับ git) ──────────────────────
 # ⚠️ pg_dump / psql ไม่ได้อยู่ใน PATH ของเครื่องนี้ ต้องเรียกด้วย full path
 #    (พิมพ์ pg_dump เปล่า ๆ จะได้ "not recognized as the name of a cmdlet")
-#    ปรับ path ให้ตรงเวอร์ชันที่ติดตั้ง — เครื่องนี้คือ D:\PostgreSQL\16\bin
-#    ถ้าไม่ตั้ง PGPASSWORD มันจะถามรหัสให้พิมพ์ (รหัสอยู่ใน .env: SYNC_DATABASE_URL)$PG = "D:\PostgreSQL\16\bin"
+#    ไม่ต้องปรับ path เองแล้ว project_paths.py หาโฟลเดอร์ bin ให้อัตโนมัติ
+#    (ไล่หาใน PATH ก่อน แล้วค่อยหาในที่ที่พบได้บ่อย เลือกเวอร์ชันสูงสุด)
+#    ถ้าหาไม่เจอหรืออยากบังคับ ให้ตั้ง PG_BIN ใน .env
+#    ถ้าไม่ตั้ง PGPASSWORD มันจะถามรหัสให้พิมพ์ (รหัสอยู่ใน .env: SYNC_DATABASE_URL)
+#
+# ⚠️ เดิมบรรทัดกำหนด $PG ถูกเขียนต่อท้ายคอมเมนต์ในบรรทัดเดียวกัน
+#   จึงถูกคอมเมนต์ไปทั้งบรรทัด ใครเปิดใช้คำสั่ง pg_dump ด้านล่าง
+#   จะได้ $PG เป็นค่าว่าง แล้วเรียก "\pg_dump.exe" ซึ่งไม่มีอยู่
+#   ตอนนี้ $PG / $PSQL / $PGDUMP มาจาก project_paths.py ที่หัวไฟล์แล้ว
+#   ไม่ต้องตั้งเอง (ถ้าจะ override ตั้ง PG_BIN ใน .env)
 #    $env:PGPASSWORD = "<รหัสใน .env>"    # ตั้งไว้ถ้าไม่อยากพิมพ์รหัสทุกครั้ง
-#    $env:PGPASSWORD = "<รหัสใน .env>"; & "D:\PostgreSQL\16\bin\pg_dump.exe" -U postgres -d phitsanulok_tourism -f "backup\seed.sql"
+#    $env:PGPASSWORD = "<รหัสใน .env>"; & "$PGDUMP" -U postgres -d phitsanulok_tourism -f "backup\seed.sql"
 
 # อัพเดต seed.sql ก่อน commit เข้า git (มีทั้ง schema + ข้อมูล)
 # & "$PG\pg_dump.exe" -U postgres -d phitsanulok_tourism -f "backup\seed.sql"
