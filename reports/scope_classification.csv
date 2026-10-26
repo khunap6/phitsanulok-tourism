@@ -1,4 +1,5 @@
 ﻿id,name,google_category,google_types,discovered_by,rev_all,rev_text,in_scope,reason
+13,อุทยานแห่งชาติทุ่งแสลงหลวง,อุทยานแห่งชาติ,"establishment,park,point_of_interest",scrape,850,847,False,ตัดสินรายแห่ง: อุทยานแห่งชาติทุ่งแสลงหลวง — ที่อยู่ตาม Google คือ ตำบลหนองแม่นา อำเภอเขาค้อ จังหวัดเพชรบูรณ์ อยู่นอกจังหวัดที่ศึกษา
 1185,อินเด็กซ์ ลิฟวิ่งมอลล์ พิษณุโลก,ร้านเฟอร์นิเจอร์,"establishment,furniture_store,home_goods_store,point_of_interest,store",scrape,696,482,False,ตัดสินรายแห่ง: อินเด็กซ์ ลิฟวิ่งมอลล์ — ร้านเฟอร์นิเจอร์
 3123,Aroma Shop พิษณุโลก,ร้านอุปกรณ์กาแฟ,"cafe,store,food,point_of_interest,establishment",api,271,147,False,ตัดสินรายแห่ง: Aroma Shop — ร้านขายอุปกรณ์กาแฟ เป็นร้านเฉพาะทาง ไม่ใช่ที่นั่งพักผ่อน
 3132,หอประชุมศรีวชิรโชติ,มหาวิทยาลัย,"university,point_of_interest,establishment",api,216,67,False,ตัดสินรายแห่ง: หอประชุมศรีวชิรโชติ — หอประชุมของมหาวิทยาลัย
@@ -45,7 +46,6 @@
 1702,พระพุทธชินราช,วัด,"establishment,place_of_worship,point_of_interest",scrape,858,858,True,type ในขอบเขต: place_of_worship
 3693,ก๋วยเตี๋ยวไก่วัดจันทร์ (ป้าล้อม),ร้านก๋วยเตี๋ยว,"restaurant,food,point_of_interest,establishment",scrape,857,854,True,type ที่ค้นหาได้: restaurant
 10,ถนนคนเดินพิษณุโลก,ตลาดนัด,"establishment,point_of_interest,tourist_attraction",scrape,851,849,True,type ที่ค้นหาได้: tourist_attraction
-13,อุทยานแห่งชาติทุ่งแสลงหลวง,อุทยานแห่งชาติ,"establishment,park,point_of_interest",scrape,850,847,True,type ที่ค้นหาได้: park
 1182,ร้านขนมจีนต้นก้ามปู พิษณุโลก,ภัตตาคารอาหารไทย,"establishment,food,point_of_interest,restaurant",scrape,846,846,True,type ที่ค้นหาได้: restaurant
 1,วัดพระศรีรัตนมหาธาตุวรมหาวิหาร,วัด,"establishment,place_of_worship,point_of_interest",scrape,836,833,True,type ในขอบเขต: place_of_worship
 1175,กนกภัณฑ์,ร้านอาหาร,"establishment,food,point_of_interest,restaurant",scrape,825,821,True,type ที่ค้นหาได้: restaurant
