@@ -46,7 +46,14 @@ from db.database import AsyncSessionLocal, engine
 
 M_CAT = ROOT / "models" / "wangchanberta-category-multilabel"
 M_ASP = ROOT / "models" / "wangchanberta-aspect-sentiment"
-MODEL_TAG = "multiaspect-v1"
+# ⚠️ ป้ายรุ่นของผลทำนาย — ใช้เป็นตัวบอกว่าแถวไหนทำด้วยโมเดลรุ่นไหนแล้ว
+#   สคริปต์ข้ามแถวที่ model_used ตรงกับค่านี้ ดังนั้น **ต้องเปลี่ยนค่านี้ทุกครั้ง
+#   ที่เทรนโมเดลใหม่** ไม่งั้นจะข้ามทั้งฐานแล้วผลเก่าค้างอยู่โดยไม่มีใครเห็น
+#
+#   multiaspect-v1  2026-10-11  โมเดลชุดแรก (ชุดเทรนยังมีสถานที่นอกขอบเขตปน)
+#   multiaspect-v2  2026-10-13  หลังตัดสถานที่นอกจังหวัดออกแล้วเทรนใหม่
+#                               ดู docs/limitations.md ข้อ 2.11
+MODEL_TAG = "multiaspect-v2"
 PROTECTED = ("claude_guided", "claude_silver", "human_verified")
 SENTS = ["positive", "neutral", "negative"]
 CHUNK = 2000

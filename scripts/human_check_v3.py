@@ -1,7 +1,7 @@
-"""human_check_v3.py — ชุดให้คนตรวจป้าย gold v3.1 แล้วคำนวณความสอดคล้อง
+"""human_check_v3.py — ชุดให้คนตรวจป้าย gold v3.2 แล้วคำนวณความสอดคล้อง
 
 ⚠️ ทำไมต้องมี
-  ป้ายในชุด gold v3.1 ทั้ง 194 แถวติดโดย Claude และการตรวจทีละบรรทัดก็ทำโดย Claude
+  ป้ายในชุด gold v3.2 ทั้ง 199 แถวติดโดย Claude และการตรวจทีละบรรทัดก็ทำโดย Claude
   ตัวเลขทุกตัวที่คำนวณจากชุดนี้จึงวัด "ความเหมือน Claude" ไม่ใช่ความถูกต้อง
   รอบ v2 เคยให้คนตรวจแล้วได้ kappa อารมณ์รวม 0.8156 และหมวด micro-F1 0.8101
   ซึ่งต่ำกว่าที่โมเดลทำได้ (0.8771) แปลว่าโมเดลเหมือน Claude มากกว่าที่คนเหมือน Claude
@@ -24,7 +24,7 @@
     - --score รายงานแถวหาย แถวเกิน และแถวที่ข้อความเพี้ยน แล้วข้ามเฉพาะแถวนั้น
       ไม่ล้มทั้งไฟล์และไม่เงียบ
 
-⚠️ ห้ามเปิดไฟล์ gold_v3_1_labeled.csv ก่อนกรอกเสร็จ
+⚠️ ห้ามเปิดไฟล์ gold_v3_2_labeled.csv ก่อนกรอกเสร็จ
   ถ้าเห็นป้ายของ Claude ก่อน ค่าที่ได้ใช้อ้างอิงไม่ได้เลย
 
 รัน
@@ -40,6 +40,7 @@ import random
 import re
 import sys
 from collections import Counter, defaultdict
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -55,6 +56,8 @@ GOLD = OUT / "gold_v3_2_labeled.csv"
 CHANGELOG = OUT / "gold_v3_1_changelog.csv"
 NEEDS = OUT / "gold_v3_1_needs_human.csv"   # ยังใช้ได้ id ไม่เปลี่ยน
 BLANK = OUT / "human_check_v3_blank.csv"
+# ผลการให้คะแนนในรูป JSON ให้ scripts/measure_everything.py อ่านไปรวมในเล่ม
+RESULT = OUT / "human_check_v3_result.json"
 GUIDE = OUT / "human_check_v3_guide.md"
 
 SEED = 20261013
@@ -150,11 +153,12 @@ def make(n: int) -> None:
     for rid in picked:
         cnt[rev[rid]] += 1
 
-    L = [f"# ชุดให้คนตรวจป้าย gold v3.1 ({len(picked)} รายการ)", "",
+    L = [f"# ชุดให้คนตรวจป้าย gold v3.2 ({len(picked)} รายการ)", "",
          "⚠️ **ไฟล์นี้ generate อัตโนมัติ** แก้ที่ `scripts/human_check_v3.py`", "",
          f"ไฟล์ที่ต้องกรอก: `{BLANK.name}`", "",
          "## ทำไมต้องกรอก", "",
-         "ป้ายในชุด gold v3.1 ทั้ง 194 แถวติดโดย Claude และการตรวจทีละบรรทัด",
+         f"ป้ายในชุด gold v3.2 ทั้ง {len(rows)} แถวติดโดย Claude "
+         "และการตรวจทีละบรรทัด",
          "ก็ทำโดย Claude ตัวเลขทุกตัวที่คำนวณจากชุดนี้จึงวัด **ความเหมือน Claude**",
          "ไม่ใช่ความถูกต้อง", "",
          "รอบ v2 เคยวัดแล้วได้ kappa อารมณ์รวม **0.8156** และหมวด micro-F1 **0.8101**",
@@ -163,7 +167,7 @@ def make(n: int) -> None:
          "และรอบนั้นคุณจับผิด gold ได้ 3 ใน 3 ใบที่มีช่วงราคา `฿` ต่อท้าย", "",
          "รอบนี้ต้องวัดซ้ำ เพราะหมวดเปลี่ยนไป 4 หมวดและกติกาเพิ่ม 7 ข้อ", "",
          "## กติกาการกรอก", "",
-         "1. **ห้ามเปิด `gold_v3_1_labeled.csv` ก่อนกรอกเสร็จ** ถ้าเห็นป้ายของ Claude",
+         "1. **ห้ามเปิด `gold_v3_2_labeled.csv` ก่อนกรอกเสร็จ** ถ้าเห็นป้ายของ Claude",
          "   ก่อน ค่าที่ได้ใช้อ้างอิงไม่ได้เลย",
          "2. ช่อง `อารมณ์รวม(คนกรอก)` กรอก **p** = ชม · **n** = กลางๆ · **g** = ติ",
          "   (พิมพ์เต็มว่า positive/neutral/negative ก็ได้)",
@@ -221,7 +225,7 @@ def make(n: int) -> None:
     for name in why:
         if cnt[name]:
             L.append(f"| {name} | {cnt[name]} | {why[name]} |")
-    L += ["", f"รวม **{len(picked)}** รายการ จาก 194 แถวในชุด gold v3.1", ""]
+    L += ["", f"รวม **{len(picked)}** รายการ จาก {len(rows)} แถวในชุด gold v3.2", ""]
     GUIDE.write_text("\n".join(L) + "\n", encoding="utf-8")
 
     p(f"สร้างชุดให้คนตรวจ {len(picked)} รายการ")
@@ -253,7 +257,7 @@ def score() -> None:
         if r.get("text_hash", "").strip() and r["text_hash"].strip() != h(r["ข้อความรีวิว"]):
             broken.append(rid)
     p("=" * 70)
-    p("  ความสอดคล้องระหว่างคนกับป้าย gold v3.1")
+    p("  ความสอดคล้องระหว่างคนกับป้าย gold v3.2")
     p("=" * 70)
     p(f"ไฟล์มี {len(rows)} แถว · ตรงกับชุด gold {len(seen)}")
     if missing_g:
@@ -267,7 +271,13 @@ def score() -> None:
     sh, sg = [], []
     n_asp = 0
     flag_tp = flag_fp = flag_fn = 0
-    per_cat = {c: Counter() for c in range(1, 14)}
+    # ⚠️ ช่วงเลขหมวดมาจาก shared/categories_v3.json แหล่งเดียว
+    #   เดิมฝัง range(1, 14) ไว้ พอเพิ่มหมวด 14 แล้วหมวดนั้นหายจากรายงาน
+    #   โดยไม่มีข้อความเตือนใด ๆ (นับถูกแต่ไม่พิมพ์ออกมา)
+    _cv3 = json.loads(
+        (ROOT / "shared" / "categories_v3.json").read_text(encoding="utf-8"))
+    CAT_IDS = sorted(c["id"] for c in _cv3["categories"])
+    per_cat = {c: Counter() for c in CAT_IDS}
     for r in rows:
         rid = r.get("review_id", "").strip()
         if rid not in gold or rid in broken:
@@ -327,9 +337,8 @@ def score() -> None:
         p(f"    tp {tp} · คนใส่เกิน {fp} · คนไม่ใส่ {fn}")
         p("")
         p("    รายหมวด (เฉพาะที่มีข้อมูล)")
-        v3 = json.loads((ROOT / "shared" / "categories_v3.json").read_text(encoding="utf-8"))
-        nm = {c["id"]: c["name"] for c in v3["categories"]}
-        for c in range(1, 14):
+        nm = {c["id"]: c["name"] for c in _cv3["categories"]}
+        for c in CAT_IDS:
             t = per_cat[c]
             if not sum(t.values()):
                 continue
@@ -351,6 +360,46 @@ def score() -> None:
     p("  kappa คือเพดานความแม่นที่เป็นไปได้ของโมเดลบนชุดหมวดนี้")
     p("  ถ้าโมเดลได้สูงกว่าค่านี้ แปลว่าโมเดลเหมือน Claude มากกว่าที่คนเหมือน Claude")
     p("  ซึ่งไม่ใช่ความถูกต้อง แต่เป็นการเรียนธรรมเนียมของผู้ติดป้าย")
+
+    # ⚠️ เขียนผลเป็น JSON ให้ scripts/measure_everything.py อ่านไปรวมในเล่ม
+    #   ใช้แพตเทิร์นเดียวกับ seed_sweep — ตัวรวมไม่คำนวณ kappa เองซ้ำ
+    #   เพื่อไม่ให้สูตรแตกเป็นสองชุดแล้วให้ค่าต่างกันโดยไม่มีใครเห็น
+    #
+    # ⚠️ ค่า หมวด_micro_f1 ที่ได้ตรงนี้วัดกับ gold **รุ่นปัจจุบัน**
+    #   แต่ผู้ตรวจกรอกไฟล์ตอน gold ยังเป็น v3.1 (ยังไม่มีหมวด 14)
+    #   ค่าที่อ้างในเล่มได้คือค่าของรอบ v3.1 ซึ่งบันทึกไว้ในคีย์ ค่าที่อ้างได้ด้านล่าง
+    #   ดู docs/limitations.md ข้อ 2.8
+    res = {
+        "สร้างเมื่อ": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "ชุดตรวจ": {"แถวในไฟล์": len(rows), "จับคู่กับ gold ได้": len(used)},
+        "อารมณ์รวม": {"ตรงกัน": round(agree, 4), "kappa": round(k, 4),
+                      "n": len(ov_h)},
+        "หมวด": ({"precision": round(pr, 4), "recall": round(rc, 4),
+                  "micro_f1": round(f1, 4), "tp": tp, "คนใส่เกิน": fp,
+                  "คนไม่ใส่": fn} if n_asp else {}),
+        "อารมณ์รายหมวด": ({"ตรงกัน": round(aa, 4), "kappa": round(ak, 4),
+                           "คู่ที่เทียบได้": len(sh)} if sh else {}),
+        "ธงไม่ระบุประเด็น": {"ตรงกัน": flag_tp, "คนติดเกิน": flag_fp,
+                             "คนไม่ติด": flag_fn},
+        "ค่าที่อ้างในเล่มได้": {
+            "อารมณ์รวม_kappa": 0.7790,
+            "อารมณ์รายหมวด_kappa": 0.8117,
+            "หมวด_micro_f1": 0.8000,
+            "จำนวนแถว": 95,
+            "เทียบกับ": ("gold รุ่นที่ผู้ตรวจเห็นตอนกรอก (ก่อนเพิ่มหมวด 14) "
+                         "และตัดรีวิวของสถานที่นอกขอบเขตออกแล้ว"),
+            "หมายเหตุ": ("ค่า หมวด_micro_f1 ที่คำนวณสด ๆ ด้านบนคือ 0.7872 ซึ่ง "
+                         "**ห้ามใช้** เพราะวัดกับ gold ปัจจุบันที่มีหมวด 14 "
+                         "อันเป็นหมวดที่ผู้ตรวจไม่เคยมีให้เลือกตอนกรอก "
+                         "ส่วน kappa ทั้งสองตัวเท่ากันทั้งสองแบบ เพราะหมวด 14 "
+                         "กระทบเฉพาะการเทียบหมวด ไม่กระทบการเทียบอารมณ์ "
+                         "ดู docs/limitations.md ข้อ 2.8"),
+        },
+    }
+    RESULT.write_text(json.dumps(res, ensure_ascii=False, indent=2) + "\n",
+                      encoding="utf-8")
+    p("")
+    p(f"เขียนผลเป็น {RESULT.relative_to(ROOT)} ให้ measure_everything.py อ่านต่อ")
 
 
 if __name__ == "__main__":

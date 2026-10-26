@@ -8,6 +8,11 @@
 
 ⚠️ สคริปต์นี้ "อ่านอย่างเดียว" ไม่แก้ฐานข้อมูลและไม่แตะไฟล์ชุดติดป้าย
 
+⚠️ ทุกยอดที่ใช้ในเล่มต้องเป็นยอด "ในขอบเขต" (places.in_scope = true)
+  แดชบอร์ดกรอง in_scope อยู่แล้วผ่าน api/filters.py แต่รายงานนี้เคยไม่กรอง
+  ทำให้ตัวเลขในเอกสารกับบนหน้าเว็บไม่ตรงกันโดยไม่มีใครเห็น (พบ 2026-10-13)
+  ตอนนี้รายงานทั้งสองยอดคู่กัน และระบุชัดว่ายอดไหนคือยอดที่ใช้อ้างในเล่ม
+
 ⚠️ กฎข้อ 1 ของโปรเจกต์ — ตัวเศษกับตัวส่วนต้องผ่านตัวกรองชุดเดียวกัน
   ในสคริปต์นี้ทุกสัดส่วนจึงคำนวณจากคิวรีเดียวที่นับทั้งตัวเศษและตัวส่วน
   ไม่ใช่สองคิวรีแยกกัน
@@ -26,6 +31,7 @@ sys.path.insert(0, str(ROOT))
 
 from sqlalchemy import text  # noqa: E402
 
+from api.filters import scope_filter, status_filter  # noqa: E402
 from db.database import engine  # noqa: E402
 
 OUT_JSON = ROOT / "reports" / "measurements.json"
@@ -39,6 +45,11 @@ def p(msg: str = "") -> None:
         print(msg.encode("ascii", "replace").decode("ascii"), flush=True)
 
 
+async def val(c, sql: str, **kw):
+    """คืนค่าเดียวจากคิวรี"""
+    return (await c.execute(text(sql), kw)).scalar()
+
+
 async def one(c, sql: str, **kw) -> dict:
     return dict((await c.execute(text(sql), kw)).mappings().one())
 
@@ -48,6 +59,62 @@ async def many(c, sql: str, **kw) -> list[dict]:
 
 
 # ---------------------------------------------------------------- ฐานข้อมูล
+async def collect_dashboard_parity() -> dict:
+    """ตัวเลขชุดเดียวกับที่แดชบอร์ดแสดง — ใช้ตัวกรองจาก api/filters.py ตรง ๆ
+
+    ⚠️ ทำไมต้องมีหัวข้อนี้แยก
+      endpoint หลัก (/api/insights/summary) ตั้งต้นด้วย status='operational'
+      **และ** scope='in' พร้อมกัน ส่วนหัวข้ออื่นในรายงานนี้แยกรายงานทีละตัวกรอง
+      ผลคือไม่มีตัวเลขไหนในรายงานตรงกับที่ผู้ใช้เห็นบนหน้าจอเลยสักตัว
+      (วัดเมื่อ 2026-10-13: หน้าจอโชว์ 694 สถานที่ แต่รายงานมีแต่ 762/737/719)
+
+    ⚠️ ห้ามเขียนเงื่อนไข SQL ซ้ำที่นี่ ให้เรียก status_filter()/scope_filter()
+      จาก api/filters.py เท่านั้น ถ้า endpoint เปลี่ยนตัวกรอง ตัวเลขตรงนี้จะ
+      เปลี่ยนตาม ไม่หลุดจากกันเงียบ ๆ
+    """
+    biz = status_filter("operational") + scope_filter()
+    async with engine.connect() as c:
+        d = await one(c, f"""
+            SELECT
+                (SELECT COUNT(*) FROM places p WHERE TRUE {biz}) AS total_places,
+                (SELECT COUNT(*) FROM reviews r JOIN places p ON p.id = r.place_id
+                  WHERE TRUE {biz}) AS total_reviews,
+                -- ⚠️ ต้อง JOIN analyzed_reviews ให้เหมือน endpoint เป๊ะ
+                --   ไม่งั้นจะเกินไป 3 แถวที่มีข้อความแต่ยังไม่มีผลวิเคราะห์
+                --   (เทียบกับ /api/insights/summary เมื่อ 2026-10-13: 69,062 vs 69,059)
+                (SELECT COUNT(*) FROM analyzed_reviews ar
+                   JOIN reviews r ON r.id = ar.review_id
+                   JOIN places p ON p.id = r.place_id
+                  WHERE r.text_clean <> '' {biz})
+                    AS total_with_text,
+                (SELECT COUNT(*) FROM review_aspects ra
+                   JOIN reviews r ON r.id = ra.review_id
+                   JOIN places p ON p.id = r.place_id WHERE TRUE {biz})
+                    AS aspect_mentions
+            """)
+        # ── หมวดที่ถูกบ่นมากที่สุด แบบเดียวกับที่แดชบอร์ดแสดงเป๊ะ ──
+        # ⚠️ หน่วยนับคนละตัวกับตารางในหัวข้อ 3
+        #   ที่นี่ = "รีวิว" (ar.primary_category_id 1 รีวิว 1 หมวด)
+        #   หัวข้อ 3 = "การกล่าวถึง" (review_aspects 1 รีวิวได้หลายหมวด)
+        #   ตัวเลขจึงต่างกันมากโดยไม่ได้ผิด เช่น การบริการ 2,298 vs 3,355
+        #   เวลาอ้างในเล่มต้องบอกหน่วยทุกครั้ง ไม่งั้นผู้อ่านจะคิดว่าขัดกัน
+        d["หมวดที่ถูกบ่นมากสุด (หน่วย: รีวิว)"] = await many(c, f"""
+            SELECT ar.primary_category_id AS id, cat.name, COUNT(*) AS n_reviews
+            FROM analyzed_reviews ar
+            JOIN reviews r ON r.id = ar.review_id
+            JOIN places p ON p.id = r.place_id
+            JOIN categories cat ON cat.id = ar.primary_category_id
+            WHERE ar.primary_category_id IS NOT NULL
+              AND r.text_clean <> ''
+              AND ar.overall_sentiment = 'negative'
+              {biz}
+            GROUP BY 1, 2 ORDER BY 3 DESC""")
+        d["_ตัวกรองที่ใช้"] = "status='operational' + scope='in' (ค่าตั้งต้นของ endpoint)"
+        d["_sql_filter"] = biz.strip()
+        d["_ตรงกับ"] = "GET /api/insights/summary โดยไม่ส่งพารามิเตอร์"
+    return d
+
+
 async def collect_db() -> dict:
     d: dict = {}
     async with engine.connect() as c:
@@ -62,7 +129,9 @@ async def collect_db() -> dict:
                                         IN ('closed_permanently','closed_temporarily'))
                        AS closed,
                    COUNT(*) FILTER (WHERE zone IS NOT NULL) AS has_zone,
-                   COUNT(DISTINCT zone) AS n_zones
+                   COUNT(DISTINCT zone) AS n_zones,
+                   COUNT(*) FILTER (WHERE in_scope) AS in_scope,
+                   COUNT(*) FILTER (WHERE NOT in_scope) AS out_of_scope
             FROM places""")
 
         # ⚠️ text_clean <> '' คือตัวกรองที่ทุกสัดส่วนต้องใช้ร่วมกัน
@@ -77,7 +146,11 @@ async def collect_db() -> dict:
                    COUNT(*) FILTER (WHERE review_date_approx IS NOT NULL) AS has_date,
                    MIN(review_date_approx)::text AS date_min,
                    MAX(review_date_approx)::text AS date_max,
-                   COUNT(DISTINCT text_hash) AS distinct_hash
+                   COUNT(DISTINCT text_hash) AS distinct_hash,
+                   COUNT(*) FILTER (
+                       WHERE text_clean IS NOT NULL AND text_clean <> ''
+                         AND place_id IN (SELECT id FROM places WHERE in_scope)
+                   ) AS with_text_in_scope
             FROM reviews""")
 
         # ⚠️ รีวิว 1-3 ดาวมีน้อย = ข้อจำกัดสำคัญ เพราะคำบ่นส่วนใหญ่อยู่ในกลุ่มนี้
@@ -143,6 +216,11 @@ async def collect_db() -> dict:
                    ROUND((COUNT(*)::numeric / NULLIF(COUNT(DISTINCT review_id), 0)), 4)::float
                        AS aspects_per_review
             FROM review_aspects""")
+        d["ชั้น aspect"]["rows_in_scope"] = await val(c, """
+            SELECT COUNT(*) FROM review_aspects ra
+            JOIN reviews r ON r.id = ra.review_id
+            JOIN places p ON p.id = r.place_id
+            WHERE p.in_scope""")
 
         d["label_source"] = {
             "analyzed_reviews": await many(c, """
@@ -158,19 +236,29 @@ async def collect_db() -> dict:
         #   primary = หมวดหลักของรีวิว       -> ผลรวมเท่าจำนวนรีวิวพอดี
         d["หมวด หน่วยการกล่าวถึง"] = await many(c, """
             SELECT ra.category_id AS id, cat.name,
-                   COUNT(*) AS n_reviews,
-                   COUNT(*) FILTER (WHERE ra.aspect_sentiment = 'positive') AS pos,
-                   COUNT(*) FILTER (WHERE ra.aspect_sentiment = 'neutral')  AS neu,
-                   COUNT(*) FILTER (WHERE ra.aspect_sentiment = 'negative') AS neg
+                   COUNT(*) FILTER (WHERE p.in_scope) AS n_reviews,
+                   COUNT(*) FILTER (WHERE p.in_scope
+                       AND ra.aspect_sentiment = 'positive') AS pos,
+                   COUNT(*) FILTER (WHERE p.in_scope
+                       AND ra.aspect_sentiment = 'neutral')  AS neu,
+                   COUNT(*) FILTER (WHERE p.in_scope
+                       AND ra.aspect_sentiment = 'negative') AS neg,
+                   COUNT(*) AS n_all_incl_out_of_scope
             FROM review_aspects ra
             JOIN categories cat ON cat.id = ra.category_id
+            JOIN reviews r ON r.id = ra.review_id
+            JOIN places p ON p.id = r.place_id
             GROUP BY 1, 2 ORDER BY 3 DESC""")
 
         d["หมวด หน่วยหมวดหลัก"] = await many(c, """
-            SELECT ra.category_id AS id, cat.name, COUNT(*) AS n_reviews
-            FROM review_aspects ra
-            JOIN categories cat ON cat.id = ra.category_id
-            WHERE ra.is_primary
+            SELECT ar.primary_category_id AS id, cat.name,
+                   COUNT(*) FILTER (WHERE p.in_scope) AS n_reviews,
+                   COUNT(*) AS n_all_incl_out_of_scope
+            FROM analyzed_reviews ar
+            JOIN categories cat ON cat.id = ar.primary_category_id
+            JOIN reviews r ON r.id = ar.review_id
+            JOIN places p ON p.id = r.place_id
+            WHERE ar.primary_category_id IS NOT NULL
             GROUP BY 1, 2 ORDER BY 3 DESC""")
 
         d["หมวดเดิม v1"] = await many(c, """
@@ -287,6 +375,59 @@ def collect_labelsets() -> dict:
     return out
 
 
+def collect_gold_v3() -> dict:
+    """ชุด gold v3 และผลความสอดคล้องกับคน
+
+    ⚠️ ชุดนี้ยัง **ไม่ได้ใช้เทรนโมเดล** — ระบบที่ทำงานอยู่ใช้หมวด v2 (11 หมวด)
+      ตัวเลขในหัวข้อนี้จึงเป็นหลักฐานประกอบ *ข้อเสนอ* ชุดหมวด v3
+      ไม่ใช่ผลของระบบที่ส่งมอบ อย่าเอาไปปนกับหัวข้อ 8
+
+    ⚠️ ไม่คำนวณ kappa เองที่นี่ อ่านจาก human_check_v3_result.json
+      ที่ scripts/human_check_v3.py --score เขียนไว้ เพื่อไม่ให้สูตรแตกเป็นสองชุด
+    """
+    import csv
+    from collections import Counter
+    out: dict = {}
+    f = ROOT / "reports" / "evaluation" / "gold_v3_2_labeled.csv"
+    cat = ROOT / "shared" / "categories_v3.json"
+    if not f.exists() or not cat.exists():
+        return {"สถานะ": "ยังไม่มีชุด gold v3"}
+    v3 = json.loads(cat.read_text(encoding="utf-8"))
+    names = {c["id"]: c["name"] for c in v3["categories"]}
+    nonprob = set(v3.get("non_problem_ids", []))
+    rows = list(csv.DictReader(open(f, encoding="utf-8-sig")))
+    low = int(v3.get("low_data_threshold", 10))
+    sign: dict[int, Counter] = {c: Counter() for c in names}
+    for r in rows:
+        for t in (x.strip() for x in r["aspects"].split(",") if x.strip()):
+            sign[int(t[:-1])][t[-1]] += 1
+    out["ชุด gold v3"] = {
+        "path": "reports/evaluation/gold_v3_2_labeled.csv",
+        "เวอร์ชันหมวด": v3.get("version"),
+        "สถานะชุดหมวด": v3.get("status"),
+        "จำนวนแถว": len(rows),
+        "คู่ (หมวด, อารมณ์)": sum(sum(c.values()) for c in sign.values()),
+        "อารมณ์รวม": dict(Counter(r["overall_sentiment"] for r in rows)),
+        "ที่มาของป้าย": dict(Counter(r["label_source"] for r in rows)),
+        "เกณฑ์จำนวนตัวอย่างที่ถือว่าวัดผลได้": 20,
+        "low_data_threshold ของชุดหมวด": low,
+    }
+    out["รายหมวด"] = [
+        {"id": c, "หมวด": names[c], "รวม": sum(sign[c].values()),
+         "+": sign[c]["+"], "n": sign[c]["n"], "-": sign[c]["-"],
+         "ไม่ใช่ปัญหา": "ใช่" if c in nonprob else "",
+         "วัดผลได้": "ได้" if sum(sign[c].values()) >= 20 else "ข้อมูลน้อย"}
+        for c in sorted(names)
+    ]
+    hc = ROOT / "reports" / "evaluation" / "human_check_v3_result.json"
+    if hc.exists():
+        out["ความสอดคล้องคนกับ gold"] = json.loads(hc.read_text(encoding="utf-8"))
+    else:
+        out["ความสอดคล้องคนกับ gold"] = {
+            "สถานะ": "ยังไม่ได้รัน scripts/human_check_v3.py --score"}
+    return out
+
+
 def collect_eval() -> dict:
     out = {}
     f = ROOT / "reports" / "evaluation" / "seed_sweep_final.json"
@@ -365,11 +506,15 @@ def main() -> None:
     models = collect_models()
     p("กำลังอ่านชุดติดป้าย...")
     labels = collect_labelsets()
+    goldv3 = collect_gold_v3()
+    parity = asyncio.run(collect_dashboard_parity())
     p("กำลังอ่านผลการประเมิน...")
     ev = collect_eval()
 
     doc = {"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-           "ฐานข้อมูล": db, "โมเดล": models, "ชุดติดป้าย": labels, "ผลการวัด": ev}
+           "ฐานข้อมูล": db, "โมเดล": models, "ชุดติดป้าย": labels,
+        "ชุด gold v3": goldv3,
+        "ตรงกับแดชบอร์ด": parity, "ผลการวัด": ev}
     OUT_JSON.write_text(json.dumps(doc, ensure_ascii=False, indent=2, default=str),
                         encoding="utf-8")
 
@@ -421,9 +566,12 @@ def main() -> None:
           "- *การกล่าวถึง* = ทุกหมวดที่รีวิวพูดถึง ผลรวมเกินจำนวนรีวิว",
           "- *หมวดหลัก* = หมวดเดียวต่อรีวิว ผลรวมเท่าจำนวนรีวิวพอดี", "",
           "### หน่วย: การกล่าวถึง (1 รีวิวนับได้หลายหมวด)", ""]
-    L += table(db["หมวด หน่วยการกล่าวถึง"], ["id", "name", "n_reviews", "pos", "neu", "neg"])
+    L += table(db["หมวด หน่วยการกล่าวถึง"],
+           ["id", "name", "n_reviews", "pos", "neu", "neg",
+            "n_all_incl_out_of_scope"])
     L += ["### หน่วย: หมวดหลัก (1 รีวิว 1 หมวด)", ""]
-    L += table(db["หมวด หน่วยหมวดหลัก"], ["id", "name", "n_reviews"])
+    L += table(db["หมวด หน่วยหมวดหลัก"],
+           ["id", "name", "n_reviews", "n_all_incl_out_of_scope"])
     L += ["### หมวดเดิม v1 (คอลัมน์ `pain_point_category` — legacy ไม่ลบทิ้ง)", ""]
     L += table(db["หมวดเดิม v1"], ["name", "n"])
 
@@ -503,6 +651,48 @@ def main() -> None:
             L += ["ต่อหมวด: " + " · ".join(f"{a}={b}" for a, b in v["ต่อหมวด"].items()), ""]
         if "อารมณ์" in v:
             L += ["อารมณ์: " + " · ".join(f"{a}={b}" for a, b in v["อารมณ์"].items()), ""]
+
+    L += ["---", "", "## 8.1 ตัวเลขที่ตรงกับแดชบอร์ด (ใช้ชุดนี้อ้างในเล่ม)", "",
+          "⚠️ **นี่คือชุดตัวเลขที่ผู้อ่านเห็นบนหน้าเว็บจริง** หัวข้อ 1-4 ด้านบน",
+          "แยกรายงานทีละตัวกรองเพื่อให้เห็นว่าตัวกรองแต่ละตัวตัดอะไรออกบ้าง",
+          "แต่ไม่มีตัวไหนตรงกับหน้าจอ เพราะหน้าจอใช้ทั้งสองตัวกรองพร้อมกัน", "",
+          f"ตัวกรอง: `{parity['_ตัวกรองที่ใช้']}`", "",
+          f"ตรงกับ: `{parity['_ตรงกับ']}`", ""]
+    L += kv({k: v for k, v in parity.items()
+             if not k.startswith("_") and not isinstance(v, list)})
+    if parity.get("หมวดที่ถูกบ่นมากสุด (หน่วย: รีวิว)"):
+        L += ["", "### หมวดที่ถูกบ่นมากที่สุด — หน่วย \"รีวิว\" (ตรงกับแดชบอร์ด)", "",
+              "⚠️ หน่วยนับคนละตัวกับตารางในหัวข้อ 3 ซึ่งเป็นหน่วย \"การกล่าวถึง\"",
+              "ตัวเลขต่างกันมากโดยไม่ได้ขัดกัน — เวลาอ้างในเล่มต้องบอกหน่วยทุกครั้ง", ""]
+        L += table(parity["หมวดที่ถูกบ่นมากสุด (หน่วย: รีวิว)"],
+                   ["id", "name", "n_reviews"])
+    L += ["", f"SQL ที่ใช้: `{parity['_sql_filter']}`",
+          "(มาจาก `api.filters.status_filter()` + `api.filters.scope_filter()` "
+          "โดยตรง ไม่ได้เขียนซ้ำ)", ""]
+
+    L += ["---", "", "## 9.1 ชุด gold v3 (ข้อเสนอชุดหมวดใหม่ 14 หมวด)", "",
+          "⚠️ **ชุดนี้ยังไม่ได้ใช้เทรนโมเดล** ระบบที่ทำงานอยู่และตัวเลขในหัวข้อ 1-8",
+          "ทั้งหมดใช้ชุดหมวด v2 (11 หมวด) ตัวเลขในหัวข้อนี้เป็นหลักฐานประกอบ",
+          "*ข้อเสนอ* ชุดหมวด v3 เท่านั้น **ห้ามเอาไปปนกับผลของระบบในหัวข้อ 8**", ""]
+    if "ชุด gold v3" in goldv3:
+        L += kv(goldv3["ชุด gold v3"])
+        L += ["### จำนวนตัวอย่างรายหมวด", ""]
+        L += table(goldv3["รายหมวด"],
+                   ["id", "หมวด", "รวม", "+", "n", "-", "ไม่ใช่ปัญหา", "วัดผลได้"])
+        hcv = goldv3.get("ความสอดคล้องคนกับ gold", {})
+        if "ค่าที่อ้างในเล่มได้" in hcv:
+            q = hcv["ค่าที่อ้างในเล่มได้"]
+            L += ["### ความสอดคล้องระหว่างคนกับป้าย gold", "",
+                  "ผู้ใช้ตรวจ 96 แถวแบบปิดตา (ไม่เห็นป้ายของ Claude)", "",
+                  f"- อารมณ์รวม kappa **{q['อารมณ์รวม_kappa']}**",
+                  f"- อารมณ์รายหมวด kappa **{q['อารมณ์รายหมวด_kappa']}**",
+                  f"- หมวด micro-F1 **{q['หมวด_micro_f1']}**",
+                  f"- เทียบกับ {q['เทียบกับ']}", "",
+                  f"⚠️ {q['หมายเหตุ']}", "",
+                  "**ค่านี้คือเพดานความแม่นของโมเดลบนชุดหมวดนี้** ถ้าโมเดลทำได้สูงกว่า",
+                  "แปลว่ามันเรียนธรรมเนียมของผู้ติดป้ายได้ดี ไม่ใช่ว่ามันถูกต้องกว่าคน", ""]
+    else:
+        L += [str(goldv3.get("สถานะ", "")), ""]
 
     L += ["---", "",
           "## 10. สิ่งที่ไฟล์นี้ยังวัดไม่ได้", "",
