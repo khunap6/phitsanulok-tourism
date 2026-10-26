@@ -112,8 +112,30 @@ PG_BIN=D:\PostgreSQL\16\bin
 uv run python project_paths.py --ps1 | Out-String | Invoke-Expression
 & "$PSQL" -U postgres -c "CREATE DATABASE phitsanulok_tourism;"
 & "$PSQL" -U postgres -d phitsanulok_tourism -c "CREATE EXTENSION postgis;"
-& "$PSQL" -U postgres -d phitsanulok_tourism -f "backup\seed.sql"
+& "$PG\pg_restore.exe" -U postgres -d phitsanulok_tourism --no-owner --no-privileges "backup\seed.dump"
 uv run alembic upgrade head
+```
+
+⚠️ **ต้อง `CREATE EXTENSION postgis;` ก่อน restore เสมอ**
+ตาราง `places.location` เป็นชนิด geometry ถ้ายังไม่มี extension จะ restore ไม่ผ่าน
+
+⚠️ `pg_restore` จะเตือนเรื่อง `spatial_ref_sys` ว่าข้อมูลซ้ำ
+**ไม่ใช่ข้อผิดพลาด** เพราะ extension สร้างตารางนั้นไว้แล้ว ข้ามไปได้
+
+| ไฟล์ | รูปแบบ | ขนาด | คำสั่ง restore |
+|---|---|---|---|
+| `backup/seed.dump` | custom บีบอัด | ~16 MB | `pg_restore` |
+| `backup/seed.sql` | ข้อความล้วน (เก่า 30 ก.ย.) | 89.5 MB | `psql -f` |
+
+ใช้ `seed.dump` เป็นหลัก ตัว `.sql` เก็บไว้เพื่อความเข้ากันได้ย้อนหลังเท่านั้น
+และ **ข้อมูลในนั้นเก่ากว่า** คือยังไม่มีคอลัมน์ `in_scope` และยังไม่ได้วิเคราะห์ใหม่ทั้งฐาน
+
+สร้าง dump รอบใหม่เมื่อข้อมูลเปลี่ยน
+
+```powershell
+uv run python project_paths.py --ps1 | Out-String | Invoke-Expression
+$env:PGPASSWORD = "<รหัสใน .env>"
+& "$PGDUMP" -U postgres -d phitsanulok_tourism -Fc -Z 9 --no-owner --no-privileges -f "backup\seed.dump"
 ```
 
 ### 3.5 โมเดล

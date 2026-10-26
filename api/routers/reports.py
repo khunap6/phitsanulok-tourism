@@ -4,6 +4,7 @@ reports.py — API สร้าง/ดาวน์โหลดรายงาน
 PDF สร้างด้วย Playwright (Chromium) → ภาษาไทยถูกต้อง 100%
 Word สร้างด้วย python-docx → ผู้ใช้แก้ไขต่อเองได้
 """
+import asyncio
 import tempfile
 from pathlib import Path
 from typing import Annotated
@@ -23,6 +24,31 @@ MEDIA = {
     "pdf": "application/pdf",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
+
+
+def _render_pdf(html: str) -> bytes:
+    """สร้าง PDF ด้วย Playwright (Chromium) แบบ sync — เรียกใน worker thread เท่านั้น
+
+    ไม่ใช้ async_playwright เพราะบน Windows ถ้ารัน uvicorn ด้วย --reload (หรือ --workers)
+    uvicorn จะเลือก SelectorEventLoop ซึ่งสร้าง subprocess ไม่ได้ ทำให้เปิด Chromium
+    ไม่สำเร็จ (NotImplementedError) ส่วน sync API รันในเธรดที่ไม่มี event loop จึงใช้ได้ทุกกรณี
+    """
+    from playwright.sync_api import sync_playwright
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "report.pdf"
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.set_content(html, wait_until="load")
+                page.pdf(
+                    path=str(out), format="A4", print_background=True,
+                    margin={"top": "14mm", "bottom": "14mm", "left": "12mm", "right": "12mm"},
+                )
+            finally:
+                browser.close()
+        return out.read_bytes()
 
 
 @router.get("/months")
@@ -69,20 +95,7 @@ async def download_report(
         return HTMLResponse(render_html(data))
 
     if format == "pdf":
-        from playwright.async_api import async_playwright
-        html = render_html(data)
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / f"{stem}.pdf"
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
-                page = await browser.new_page()
-                await page.set_content(html, wait_until="load")
-                await page.pdf(
-                    path=str(out), format="A4", print_background=True,
-                    margin={"top": "14mm", "bottom": "14mm", "left": "12mm", "right": "12mm"},
-                )
-                await browser.close()
-            content = out.read_bytes()
+        content = await asyncio.to_thread(_render_pdf, render_html(data))
     else:  # docx
         from reports.render_docx import build
         with tempfile.TemporaryDirectory() as tmp:
