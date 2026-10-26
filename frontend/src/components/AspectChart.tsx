@@ -4,6 +4,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -14,7 +15,7 @@ import type { CategorySummary, CategorySummaryItem } from '../hooks/useAspects'
 import { formatCount, formatPercent } from '../utils/format'
 
 /**
- * กราฟแท่งซ้อน 👍😐👎 รายหมวด
+ * กราฟแท่งซ้อน ชม/กลาง/ติ รายหมวด
  *
  * ⚠️ ทำไมเป็นแท่งซ้อน ไม่ใช่วงกลม
  *   วงกลมสื่อว่า "ส่วนย่อยรวมกันเป็น 100%" ซึ่งไม่จริงที่นี่
@@ -80,10 +81,14 @@ export default function AspectChart({
           {formatPercent(r[K.share] as number)} ของรีวิวทั้งหมด
           {' '}({formatCount(data.total_reviews)})
         </p>
-        <p className="text-green-400">👍 ชม {formatCount(r[K.pos] as number)}</p>
-        <p className="text-slate-400">😐 กลางๆ {formatCount(r[K.neu] as number)}</p>
-        <p className="text-red-400">
-          👎 ติ {formatCount(r[K.neg] as number)}
+        <p className="text-green-400 inline-flex items-center gap-1">
+          <ViewPraise size={12} /> ชม {formatCount(r[K.pos] as number)}
+        </p>
+        <p className="text-slate-400 inline-flex items-center gap-1">
+          <SentimentNeutral size={12} /> กลางๆ {formatCount(r[K.neu] as number)}
+        </p>
+        <p className="text-red-400 inline-flex items-center gap-1">
+          <ViewComplaints size={12} /> ติ {formatCount(r[K.neg] as number)}
           {mode === 'mention' && r.n_reviews > 0
             && ` (${formatPercent(r.negative_rate)} ของหมวดนี้)`}
         </p>
@@ -98,6 +103,62 @@ export default function AspectChart({
 
   const isSel = (r: Row, s: string) =>
     selected?.categoryId === r.category_id && selected?.sentiment === s
+
+  /**
+   * ตัวเลขในแต่ละช่วงสี — แสดงเมื่อช่วงนั้นกว้างพอเท่านั้น
+   *
+   * ⚠️ ต้องซ่อนเมื่อแคบ ไม่ใช่ย่อฟอนต์ลงเรื่อย ๆ
+   *   ถ้าฝืนวางตัวเลขในช่วงแคบ ตัวหนังสือจะล้นไปทับช่วงข้างเคียง
+   *   แล้วผู้อ่านจะอ่านตัวเลขผิดช่วงสี ซึ่งแย่กว่าการไม่เห็นตัวเลขเลย
+   *   (เลขที่ซ่อนยังดูได้จากการชี้เมาส์ และจากแถวสรุปใต้กราฟ)
+   */
+  const segLabel = (props: any) => {
+    const { x, y, width, height, value, index } = props
+    if (!value || width < 34) return null
+    const r = rows[index]
+    const tot = r ? (r[K.tot] as number) : 0
+    // ⚠️ ร้อยละของช่วงสี = ส่วนแบ่งอารมณ์ "ภายในหมวดนั้น" ไม่ใช่ของรีวิวทั้งหมด
+    //   ต่างจากร้อยละที่ป้ายท้ายแท่ง ซึ่งคิดจากจำนวนรีวิวทั้งหมด
+    //   สามช่วงในแท่งเดียวกันจึงรวมกันได้ 100% เสมอ
+    const pct = tot > 0 ? formatPercent(value / tot) : null
+    // ที่แคบลงมาแสดงแค่จำนวน แคบมากก็ซ่อนไปเลย ดีกว่าให้ตัวหนังสือล้นไปทับช่วงอื่น
+    const txt = pct && width >= 76 ? `${formatCount(value)} (${pct})`
+      : formatCount(value)
+    return (
+      <text x={x + width / 2} y={y + height / 2} fill="#fff" fontSize={10}
+            textAnchor="middle" dominantBaseline="central">
+        {txt}
+      </text>
+    )
+  }
+
+  /**
+   * ป้ายท้ายแท่ง — ยอดรวม ร้อยละ และอัตราคำติ
+   *
+   * ⚠️ แสดง n คู่กับ % เสมอ ตามกฎใน utils/format.ts
+   *   ร้อยละของคำติ (4.7%) มีจำนวนจริงอยู่ในช่วงสีแดงข้าง ๆ แล้ว
+   */
+  const endLabel = (props: any) => {
+    const { x, y, width, height, index } = props
+    const r = rows[index]
+    if (!r) return null
+    const tot = r[K.tot] as number
+    const neg = r[K.neg] as number
+    const showNeg = mode === 'mention' && tot > 0 && neg > 0
+    const cx = x + width + 10
+    const cy = y + height / 2
+    return (
+      <text x={cx} y={cy} fontSize={11} textAnchor="start">
+        <tspan x={cx} dy={showNeg ? -6 : 0} fill="#e2e8f0">{formatCount(tot)}</tspan>
+        <tspan fill="#94a3b8"> · {formatPercent(r[K.share] as number)}</tspan>
+        {showNeg && (
+          <tspan x={cx} dy={13} fill="#f87171">
+            ติ {formatCount(neg)} ({formatPercent(r.negative_rate)})
+          </tspan>
+        )}
+      </text>
+    )
+  }
 
   return (
     <div className="bg-brand-card rounded-xl p-5 border border-brand-border">
@@ -131,8 +192,10 @@ export default function AspectChart({
       )}
 
       <ResponsiveContainer width="100%" height={height}>
+        {/* right กว้างพอให้ป้ายท้ายแท่งสองบรรทัดไม่ถูกตัด
+            บรรทัดบน "45,057 · 65.2%" · บรรทัดล่าง "ติ 2,123 (4.7%)" */}
         <BarChart data={rows} layout="vertical"
-                  margin={{ top: 4, right: 56, left: 8, bottom: 4 }}>
+                  margin={{ top: 4, right: 118, left: 8, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
           <XAxis type="number" stroke="#94a3b8" fontSize={11} />
           <YAxis type="category" dataKey="label" width={190}
@@ -150,6 +213,9 @@ export default function AspectChart({
                 <Cell key={`${key}-${r.category_id}`} fill={color}
                       fillOpacity={selected && !isSel(r, sent) ? 0.35 : 1} />
               ))}
+              <LabelList dataKey={key} content={segLabel} />
+              {/* ป้ายสรุปวางไว้ที่ช่วงสุดท้ายของ stack เท่านั้น ไม่งั้นจะซ้ำสามรอบ */}
+              {sent === 'negative' && <LabelList content={endLabel} />}
             </Bar>
           ))}
         </BarChart>

@@ -6,6 +6,7 @@ import DateRangeSelector, { type DateRange } from '../components/DateRangeSelect
 import KPICard from '../components/KPICard'
 import PainPointChart from '../components/PainPointChart'
 import PositiveHighlights from '../components/PositiveHighlights'
+import SeverityPie from '../components/SeverityPie'
 import { STATUS_OPTIONS } from '../components/StatusBadge'
 import TrendingPanel from '../components/TrendingPanel'
 import { dateKey, type ViewMode } from '../hooks/useInsights'
@@ -56,7 +57,7 @@ interface PlaceTypeBreakdown {
   high_total: number
   medium_total: number
   low_total: number
-  top_places: { name: string; high_count: number }[]
+  top_places: { name: string; high_count: number; medium_count: number; low_count: number }[]
   top_pain_points: { category: string; count: number }[]
 }
 
@@ -248,18 +249,26 @@ function PlaceTypeCard({ group }: { group: PlaceTypeBreakdown }) {
       )}
 
       {/* Top places */}
-      {/* ⚠️ เงื่อนไขคือ "มีร้านที่ปัญหาระดับสูงมากกว่า 0" ไม่ใช่ "มีคำบ่น"
-          เพราะรายการนี้เรียงด้วย high_count — ถ้าทุกร้านเป็น 0 จะได้ลิสต์
-          ร้านพร้อมเลข 0 เรียงกันสามบรรทัด ซึ่งไม่บอกอะไรเลย (ข้อ 7) */}
-      {group.top_places.some(pl => pl.high_count > 0) && (
+      {/* ⚠️ แสดงครบทั้งสามระดับเสมอ ห้ามกลับไปโชว์แค่ high_count
+          เพราะร้านที่ "สูง = 0" แต่มีระดับกลาง/ต่ำอยู่ จะอ่านเหมือนไม่มีปัญหา
+          แต่ดันติดอันดับ ซึ่งทำให้คนอ่านสับสน — เลขอีกสองตัวคือคำอธิบาย
+          ⚠️ เขียนคำว่า สูง/กลาง/ต่ำ กำกับทุกตัว ไม่ใช้ไอคอนล้วน เพราะแถวชิป
+          ด้านบนซ่อนระดับที่เป็น 0 ไอคอนจึงอาจไม่มีคำอธิบายให้เทียบ
+          เงื่อนไขคือ "มีร้านติดอันดับ" ได้เลย เพราะฝั่ง API ตัดร้านที่ไม่มี
+          คำติเลยออกจาก top_places ให้แล้ว (ดู analysis.py by-place-type) */}
+      {group.top_places.length > 0 && (
         <div>
           <div className="text-brand-subtext text-xs mb-1.5 font-medium">สถานที่ที่มีปัญหามากสุด</div>
           <div className="space-y-1">
             {group.top_places.slice(0, 3).map((place) => (
-              <div key={place.name} className="flex items-center justify-between text-xs">
+              <div key={place.name} className="flex items-baseline justify-between gap-2 text-xs">
                 <span className="text-brand-text truncate flex-1">{place.name}</span>
-                <span className="text-red-400 ml-2 shrink-0 inline-flex items-center gap-1">
-                  <SeverityHigh size={11} /> {place.high_count} สูง
+                <span className="text-brand-subtext shrink-0 text-[11px] whitespace-nowrap">
+                  <span className="text-red-400">{place.high_count}</span> สูง
+                  {' · '}
+                  <span className="text-yellow-400">{place.medium_count}</span> กลาง
+                  {' · '}
+                  <span className="text-green-400">{place.low_count}</span> ต่ำ
                 </span>
               </div>
             ))}
@@ -388,11 +397,21 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
           rate={pp?.severity_share?.['high'] ?? null}
           denominator={negTotal}
           rateOf="คำบ่นทั้งหมด"
-          breakdown={{
-            high: pp?.severity_counts?.['high'] ?? 0,
-            medium: pp?.severity_counts?.['medium'] ?? 0,
-            low: pp?.severity_counts?.['low'] ?? 0,
-          }}
+          /* ใช้กราฟวงกลมชุดเดียวกับหน้าแดชบอร์ดหลัก เพื่อให้สองหน้าอ่านเหมือนกัน
+             เดิมหน้านี้ใช้ breakdown ซึ่งโชว์แต่จำนวน ไม่มีสัดส่วน
+             ⚠️ ต้องส่ง share จาก API เสมอ ห้ามให้ recharts คำนวณ % เอง
+               เพราะมันจะหารด้วยผลรวมสามก้อนในกราฟ ไม่ใช่ "คำบ่นทั้งหมด"
+               คำบ่นที่ severity เป็น NULL จะหายจากตัวส่วน แล้ว % สูงเกินจริง */
+          chart={
+            pp?.severity_counts ? (
+              <SeverityPie
+                embedded
+                data={pp.severity_counts}
+                share={pp.severity_share}
+                negativeTotal={negTotal}
+              />
+            ) : undefined
+          }
           riskPlaces={topRiskPlaces}
         />
         <KPICard
@@ -428,12 +447,12 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
         )}
       </div>
 
-      {/* รายชื่อร้านของโซนนี้ — แสดงตลอดเหมือนหน้าภาพรวม (ข้อ 5) */}
-      {/* วิเคราะห์รายหมวดของโซนนี้ — ชุดข้อมูลเดียวกับหน้าภาพรวม
-          แต่กรองเฉพาะโซน ตัวส่วนจึงเป็นรีวิวในโซนนี้เท่านั้น (กฎ 1) */}
-      <AspectPanel zone={zone} status={bizStatus} dateRange={dateRange}
-                   title={`วิเคราะห์รายหมวด — ${summary.label}`} />
+      {/* รายชื่อร้านของโซนนี้ — ต้องอยู่ติดกับกราฟด้านบนที่เป็นตัวคุมแผงนี้
+          ลำดับและเงื่อนไขต้องตรงกับหน้าภาพรวมเป๊ะ ไม่งั้นผู้ใช้สับสนเวลาสลับหน้า
 
+          ⚠️ ห้ามย้ายไปใต้ AspectPanel — นั่นเป็นกราฟคนละตัวที่ไม่ได้คุมแผงนี้
+          ⚠️ ห้ามซ่อนตามเงื่อนไข "มีหมวดที่เลือก" — ช่องเลือกหมวดมีตัวเลือก
+            "— ทุกหมวด —" ถ้าซ่อน การเลือกทุกหมวดจะทำให้ทั้งแผงหายไป */}
       <CategoryDrilldown
         category={drillCategory}
         zone={zone}
@@ -443,6 +462,11 @@ function ZoneDetail({ zone, summary, dateRange }: { zone: string; summary: ZoneS
         onClose={drillCategory ? () => setDrillCategory(null) : undefined}
         onCategoryChange={setDrillCategory}
       />
+
+      {/* วิเคราะห์รายหมวดของโซนนี้ — ชุดข้อมูลเดียวกับหน้าภาพรวม
+          แต่กรองเฉพาะโซน ตัวส่วนจึงเป็นรีวิวในโซนนี้เท่านั้น (กฎ 1) */}
+      <AspectPanel zone={zone} status={bizStatus} dateRange={dateRange}
+                   title={`วิเคราะห์รายหมวด — ${summary.label}`} />
 
       {/* แนวโน้มปัญหาของโซนนี้ */}
       <TrendingPanel zone={zone} zoneLabel={summary.label} dateRange={dateRange}

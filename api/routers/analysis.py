@@ -450,7 +450,12 @@ async def zone_breakdown(
                 "low_total": 0,
             }
         g = type_groups[ptype]
-        g["places"].append({"name": p.name, "high_count": p.high_count or 0})
+        g["places"].append({
+            "name": p.name,
+            "high_count": p.high_count or 0,
+            "medium_count": p.medium_count or 0,
+            "low_count": p.low_count or 0,
+        })
         g["high_total"] += p.high_count or 0
         g["medium_total"] += p.medium_count or 0
         g["low_total"] += p.low_count or 0
@@ -471,7 +476,17 @@ async def zone_breakdown(
             "high_total": g["high_total"],
             "medium_total": g["medium_total"],
             "low_total": g["low_total"],
-            "top_places": sorted(g["places"], key=lambda x: x["high_count"], reverse=True)[:5],
+            # ⚠️ ตัดร้านที่ไม่มีคำติเลยออกก่อน เพราะหัวข้อคือ "สถานที่ที่มีปัญหามากสุด"
+            #    ร้าน 0/0/0 ติดอันดับได้เมื่อกลุ่มนี้มีร้านน้อยกว่าสามร้าน
+            # ⚠️ เรียงด้วยคู่ลำดับ (สูง, กลาง, ต่ำ) ไม่ใช่ high_count ตัวเดียว
+            #    ไม่งั้นร้านที่ high=0 แต่ medium เพียบ จะถูกจัดเท่ากับร้านที่ว่างเปล่า
+            #    แล้วลำดับจะขึ้นกับลำดับที่ดึงมาจาก SQL ซึ่งไม่ได้นิยามไว้
+            "top_places": sorted(
+                (pl for pl in g["places"]
+                 if pl["high_count"] + pl["medium_count"] + pl["low_count"] > 0),
+                key=lambda x: (x["high_count"], x["medium_count"], x["low_count"]),
+                reverse=True,
+            )[:5],
             "top_pain_points": [{"category": c, "count": n} for c, n in top_pain],
         })
 

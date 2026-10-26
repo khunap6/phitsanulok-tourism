@@ -22,4 +22,16 @@ export default defineConfig({
       },
     },
   },
+  // ⚠️ preview ใช้ค่า proxy ของตัวเอง ไม่ได้สืบทอดจาก server ข้างบน
+  //   ถ้าไม่ตั้งไว้ `npm run preview` จะเรียก /api ไม่ติดทั้งที่ dev ใช้ได้ปกติ
+  //   ใช้ตอนทดสอบ/สาธิตด้วยไฟล์ที่ build แล้ว ซึ่งไม่มี StrictMode double-mount
+  preview: {
+    port: 4173,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
+  },
 })

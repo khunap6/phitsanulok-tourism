@@ -1,5 +1,4 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { Link, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom'
 import NotificationBell from './components/NotificationBell'
 import Dashboard from './pages/Dashboard'
@@ -61,7 +60,6 @@ export default function App() {
       <Router>
         <Layout />
       </Router>
-      <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
   )
 }
